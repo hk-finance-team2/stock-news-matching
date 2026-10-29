@@ -1,0 +1,47 @@
+# ===== 비밀 정보 (절대 올리지 않음) =====
+.env
+.env.*
+!.env.example
+application-local.yml
+application-local.yaml
+*.pem
+*.key
+
+# ===== 데이터 (KIS 시세 재배포 금지, 기사 본문 저작권) =====
+**/data/
+**/recordings/
+
+# ===== OS / IDE =====
+.DS_Store
+Thumbs.db
+.idea/
+*.iml
+.vscode/
+out/
+
+# ===== Java / Gradle =====
+.gradle/
+build/
+bin/
+*.class
+*.log
+logs/
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# ===== Node / React =====
+node_modules/
+dist/
+coverage/
+npm-debug.log*
+
+# ===== AI 에이전트 개인 설정 =====
+.claude/settings.local.json
+CLAUDE.local.md
