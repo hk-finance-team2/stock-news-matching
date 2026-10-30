@@ -24,4 +24,8 @@
         WHERE stock_code = #{stockCode}
     </select>
 
+    <select id="existsByCode" resultType="boolean">
+        SELECT EXISTS (SELECT 1 FROM stock_info WHERE stock_code = #{stockCode})
+    </select>
+
 </mapper>
