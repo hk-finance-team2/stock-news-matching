@@ -15,3 +15,8 @@ mybatis:
   configuration:
     # DB 컬럼 stock_code -> Java 필드 stockCode 자동 연결
     map-underscore-to-camel-case: true
+
+springdoc:
+  swagger-ui:
+    # API 문서 화면 주소: http://localhost:8080/swagger-ui.html
+    path: /swagger-ui.html
