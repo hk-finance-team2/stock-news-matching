@@ -3,6 +3,7 @@ package com.hkteam2.stocknews.common.config;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -21,10 +22,21 @@ import com.hkteam2.stocknews.common.error.ErrorCode;
 @Configuration
 public class SecurityConfig {
 
-    /** 로그인(JWT)이 있어야 하는 주소. 관심 종목·게시판 쓰기 등을 만들 때 여기에 추가 */
+    /** 로그인(JWT)이 있어야 하는 주소 (모든 방식) */
     private static final String[] AUTHENTICATED_PATHS = {
             "/api/auth/me",
             "/api/watchlist", "/api/watchlist/**",
+    };
+
+    /** 보기(GET)는 공개, 쓰기만 로그인이 필요한 주소 */
+    private static final String[] AUTHENTICATED_POST_PATHS = {
+            "/api/stocks/*/posts",
+            "/api/posts/*/comments",
+            "/api/posts/*/like",
+    };
+    private static final String[] AUTHENTICATED_DELETE_PATHS = {
+            "/api/posts/*",
+            "/api/comments/*",
     };
 
     private final HandlerExceptionResolver exceptionResolver;
@@ -45,6 +57,8 @@ public class SecurityConfig {
                 .cors(Customizer.withDefaults())
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(AUTHENTICATED_PATHS).authenticated()
+                        .requestMatchers(HttpMethod.POST, AUTHENTICATED_POST_PATHS).authenticated()
+                        .requestMatchers(HttpMethod.DELETE, AUTHENTICATED_DELETE_PATHS).authenticated()
                         .anyRequest().permitAll())
                 // "Authorization: Bearer {토큰}" 헤더를 읽어 JwtConfig의 검사기로 확인
                 .oauth2ResourceServer(oauth2 -> oauth2

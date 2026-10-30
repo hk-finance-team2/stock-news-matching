@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.hkteam2.stocknews.board.LikeMapper">
+
+    <!-- 기본키 (post_id, user_id)라서 같은 회원이 같은 글에 두 번 넣을 수 없음 -->
+    <insert id="insert">
+        INSERT INTO board_like (post_id, user_id)
+        VALUES (#{postId}, #{userId})
+    </insert>
+
+    <delete id="delete">
+        DELETE FROM board_like
+        WHERE post_id = #{postId}
+          AND user_id = #{userId}
+    </delete>
+
+    <select id="countByPost" resultType="long">
+        SELECT COUNT(*) FROM board_like WHERE post_id = #{postId}
+    </select>
+
+</mapper>
