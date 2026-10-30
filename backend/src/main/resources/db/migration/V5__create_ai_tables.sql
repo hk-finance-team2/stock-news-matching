@@ -11,7 +11,7 @@ CREATE TABLE article (
     title          VARCHAR(500)  NOT NULL COMMENT '제목',
     reporter       VARCHAR(100)  NULL     COMMENT '기자명',
     description    TEXT          NULL     COMMENT 'RSS 짧은 요약문',
-    body           MEDIUMTEXT    NULL     COMMENT '정제 본문. 7일 후 NULL로 지움, 백엔드는 조회하지 않음 (보관 정책 팀 확인 중)',
+    body           MEDIUMTEXT    NULL     COMMENT '정제 본문 (LLM 요약용). 7일 후 NULL로 지움. 백엔드·화면에서는 조회하지 않음',
     published_at   DATETIME      NOT NULL COMMENT '발행 시각 (없으면 수집 시각)',
     collected_at   DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '수집 시각',
     status         VARCHAR(20)   NOT NULL DEFAULT 'LISTED' COMMENT '처리 상태',
