@@ -16,6 +16,11 @@ mybatis:
     # DB 컬럼 stock_code -> Java 필드 stockCode 자동 연결
     map-underscore-to-camel-case: true
 
+app:
+  cors:
+    # 우리 API를 부를 수 있는 프론트 주소 (Vite 개발 서버)
+    allowed-origins: http://localhost:5173
+
 springdoc:
   swagger-ui:
     # API 문서 화면 주소: http://localhost:8080/swagger-ui.html
