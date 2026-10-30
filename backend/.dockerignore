@@ -1,0 +1,7 @@
+# 상자를 만들 때 복사하지 않을 것 (빌드 결과물, IDE 설정)
+build/
+.gradle/
+.idea/
+*.iml
+out/
+bin/
