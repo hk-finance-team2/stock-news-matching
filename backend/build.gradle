@@ -22,6 +22,8 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
     implementation 'org.springframework.boot:spring-boot-starter-flyway'
     implementation 'org.flywaydb:flyway-mysql'
+    // MyBatis는 Spring Boot가 버전을 관리하지 않아 직접 지정 (Boot 4.1 기준 버전)
+    implementation 'org.mybatis.spring.boot:mybatis-spring-boot-starter:4.1.0'
     runtimeOnly 'org.mariadb.jdbc:mariadb-java-client'
     testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'

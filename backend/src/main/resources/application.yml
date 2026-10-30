@@ -8,3 +8,10 @@ spring:
     url: jdbc:mariadb://${DB_HOST}:${DB_PORT}/${DB_NAME}
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
+
+mybatis:
+  # SQL은 resources/mapper 아래 XML 파일에 작성
+  mapper-locations: classpath:mapper/**/*.xml
+  configuration:
+    # DB 컬럼 stock_code -> Java 필드 stockCode 자동 연결
+    map-underscore-to-camel-case: true
