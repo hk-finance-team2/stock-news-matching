@@ -32,6 +32,7 @@ public class SecurityConfig {
     private static final String[] AUTHENTICATED_POST_PATHS = {
             "/api/stocks/*/posts",
             "/api/posts/*/comments",
+            "/api/posts/*/like",
     };
     private static final String[] AUTHENTICATED_DELETE_PATHS = {
             "/api/posts/*",
