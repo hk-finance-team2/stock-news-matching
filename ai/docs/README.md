@@ -18,7 +18,7 @@
 |---|---|
 | 에디터 | Antigravity |
 | Python | 3.12.10 (`ai/.venv`) |
-| DB | ⏸ 팀 공용 DB(Docker MariaDB, `stocknews`)에 맞출지 보류. 테이블은 [AI테이블_제안.md](AI테이블_제안.md) 로 백엔드와 합의 |
+| DB | 팀 공용 Docker MariaDB 11.8.9 (`docker compose up -d db`, `localhost:3308`, DB `stocknews`). 테이블은 [AI테이블_제안.md](AI테이블_제안.md) 로 백엔드와 합의 |
 | 코드 위치 | `ai/hk_llm/` |
 | 범위 | 뉴스·공시 수집, 기사-종목 연결, LLM 요약 (시세·거래 변동 감지는 백엔드) |
 | 지금 집중 | **RSS 실시간 뉴스** (네이버 API·SNS 는 보류) |
