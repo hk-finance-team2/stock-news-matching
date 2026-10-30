@@ -227,7 +227,12 @@ Swagger(http://localhost:8080/swagger-ui.html)에서:
 
   테이블을 직접 만들면 팀원마다 DB 구조가 달라지고, 나중에 Flyway가 같은 이름의 테이블을 만들 때 충돌해 서버가 켜지지 않을 수 있습니다. 이미 만들었다면 7절 "DB 초기화"로 정리하면 됩니다.
   - 테이블 설계 규칙: [db/schema.md](db/schema.md)의 "설계 원칙" (snake_case, 종목코드 `CHAR(6)`, 시각 `DATETIME`, ID `BIGINT`)
-  - 기사 본문은 저장하지 않음(저작권), 시세 테이블은 1차 제외
+  - 기사 본문(`article.body`)은 DB에만 LLM 요약용으로 저장하고 7일 후 지움. 화면·API로 내보내지 않고 GitHub에도 올리지 않음
+  - 시세 테이블은 1차 제외
+- **AI 파트가 쓰는 테이블 (V5):** `article`, `article_stock`, `collect_run`, `stock_daily_summary`
+  - AI 제안서 칸 그대로이고, `[확장]` 표시 칸은 비워 둬도 저장됨
+  - `article_stock`의 종목은 `stock_info`에 있어야 저장됨 (종목 사전은 백엔드가 채우는 중)
+  - 화면에는 `article.status = 'DONE'`인 기사만 나감
 - **읽기만 하는 테이블 (백엔드가 채움):**
 
 | 테이블 | 쓰는 곳 |
