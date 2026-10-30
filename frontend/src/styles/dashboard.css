@@ -1,0 +1,600 @@
+/* src/styles/dashboard.css */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body,
+#root {
+    width: 100%;
+    min-height: 100vh;
+    background-color: #f4f6f9;
+    color: #0f172a;
+    font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Malgun Gothic', sans-serif;
+    font-size: 14px;
+}
+
+.app-shell {
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+}
+
+/* 왼쪽 메뉴바 */
+.left-nav-menu {
+    width: 68px;
+    background-color: #0f172a;
+    color: #94a3b8;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 16px 0;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.nav-logo {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    color: #fff;
+    font-weight: 800;
+    font-size: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 16px;
+}
+
+.nav-item-btn {
+    width: 54px;
+    padding: 10px 4px;
+    border: none;
+    background: transparent;
+    color: #94a3b8;
+    border-radius: 8px;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    transition: all 0.15s;
+}
+
+.nav-item-btn:hover {
+    background-color: #1e293b;
+    color: #f8fafc;
+}
+
+.nav-item-btn.active {
+    background-color: #2563eb;
+    color: #ffffff;
+}
+
+.nav-icon {
+    font-size: 17px;
+}
+
+.main-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* 상단 헤더 */
+.top-header {
+    height: 60px;
+    background-color: #ffffff;
+    border-bottom: 1px solid #e2e8f0;
+    padding: 0 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-shrink: 0;
+}
+
+.brand-title {
+    font-size: 16px;
+    font-weight: 800;
+    color: #0f172a;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.brand-sub {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 7px;
+    background-color: #eff6ff;
+    color: #1d4ed8;
+    border-radius: 99px;
+}
+
+.search-container {
+    position: relative;
+    flex: 1;
+    max-width: 520px;
+    display: flex;
+    gap: 6px;
+}
+
+.search-input-wrap {
+    position: relative;
+    flex: 1;
+    display: flex;
+    align-items: center;
+}
+
+.search-input {
+    width: 100%;
+    padding: 8px 32px 8px 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 7px;
+    font-size: 13px;
+    outline: none;
+}
+
+.search-input:focus {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.12);
+}
+
+.clear-search-btn {
+    position: absolute;
+    right: 8px;
+    background: none;
+    border: none;
+    color: #94a3b8;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.autocomplete-dropdown {
+    position: absolute;
+    top: 40px;
+    left: 0;
+    right: 0;
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    box-shadow: 0 10px 25px rgba(15, 23, 42, 0.12);
+    z-index: 200;
+    max-height: 320px;
+    overflow-y: auto;
+    padding: 6px;
+}
+
+.auto-section-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: #64748b;
+    padding: 6px 8px 4px;
+}
+
+.auto-item {
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    padding: 8px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+}
+
+.auto-item:hover {
+    background-color: #eff6ff;
+}
+
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    white-space: nowrap;
+}
+
+.stream-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border-radius: 99px;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    border: none;
+}
+
+.stream-badge.CONNECTED {
+    background-color: #dcfce7;
+    color: #15803d;
+}
+
+.stream-badge.RECONNECTING {
+    background-color: #fef3c7;
+    color: #b45309;
+}
+
+.stream-badge.DISCONNECTED,
+.stream-badge.ERROR {
+    background-color: #fee2e2;
+    color: #b91c1c;
+}
+
+.update-times-box {
+    display: flex;
+    gap: 8px;
+    font-size: 11px;
+    color: #64748b;
+    background: #f8fafc;
+    padding: 5px 10px;
+    border-radius: 6px;
+    border: 1px solid #e2e8f0;
+}
+
+.btn-primary {
+    padding: 7px 13px;
+    background-color: #2563eb;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.btn-outline {
+    padding: 6px 11px;
+    background-color: #fff;
+    color: #334155;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.dashboard-grid {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 330px 1fr;
+    gap: 14px;
+    padding: 14px;
+    overflow: hidden;
+}
+
+.card-panel {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    flex-shrink: 0;
+}
+
+.card-title {
+    font-size: 14px;
+    font-weight: 800;
+    color: #0f172a;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.left-column {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    height: 100%;
+    overflow: hidden;
+}
+
+.watchlist-card {
+    flex: 0 0 43%;
+    min-height: 210px;
+}
+
+.newslist-card {
+    flex: 1;
+    min-height: 240px;
+}
+
+.scroll-list {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-right: 4px;
+}
+
+.stock-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 10px;
+    border: 1px solid #f1f5f9;
+    border-radius: 7px;
+    cursor: pointer;
+    background-color: #f8fafc;
+    transition: all 0.12s;
+}
+
+.stock-row:hover {
+    border-color: #cbd5e1;
+}
+
+.stock-row.selected {
+    background-color: #eff6ff;
+    border-color: #2563eb;
+}
+
+.stock-name-group {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.stock-name {
+    font-weight: 700;
+    font-size: 13px;
+    color: #0f172a;
+}
+
+.stock-meta {
+    font-size: 11px;
+    color: #64748b;
+}
+
+.stock-price-group {
+    text-align: right;
+}
+
+.price-text {
+    font-weight: 700;
+    font-size: 13px;
+}
+
+.up {
+    color: #dc2626;
+}
+
+.down {
+    color: #2563eb;
+}
+
+.filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-bottom: 8px;
+    flex-shrink: 0;
+}
+
+.chip-btn {
+    padding: 4px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    background: #f8fafc;
+    color: #475569;
+    cursor: pointer;
+}
+
+.chip-btn.active {
+    background: #1e293b;
+    color: #ffffff;
+    border-color: #1e293b;
+}
+
+.article-item {
+    padding: 10px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    cursor: pointer;
+    background: #fff;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.article-item:hover {
+    border-color: #94a3b8;
+}
+
+.article-top-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 11px;
+    color: #64748b;
+}
+
+.badge {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.badge-news {
+    background-color: #dbeafe;
+    color: #1e40af;
+}
+
+.badge-sns {
+    background-color: #fef3c7;
+    color: #92400e;
+}
+
+.badge-direct {
+    background-color: #dcfce7;
+    color: #166534;
+}
+
+.badge-indirect {
+    background-color: #f3e8ff;
+    color: #6b21a8;
+}
+
+.badge-pos {
+    background-color: #fee2e2;
+    color: #b91c1c;
+}
+
+.badge-neu {
+    background-color: #e2e8f0;
+    color: #334155;
+}
+
+.badge-neg {
+    background-color: #dbeafe;
+    color: #1d4ed8;
+}
+
+.sns-warning-inline {
+    font-size: 10px;
+    color: #b45309;
+    background: #fffbeb;
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid #fde68a;
+}
+
+.right-column {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    height: 100%;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.right-top-row {
+    display: grid;
+    grid-template-columns: 1.15fr 1fr;
+    gap: 14px;
+    flex-shrink: 0;
+}
+
+.right-bottom-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    flex: 1;
+    min-height: 360px;
+}
+
+.summary-box {
+    background-color: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 10px;
+    font-size: 12.5px;
+    line-height: 1.55;
+    margin-bottom: 8px;
+}
+
+.evidence-quote {
+    margin-top: 6px;
+    padding: 8px 10px;
+    background-color: #fffbeb;
+    border-left: 3px solid #f59e0b;
+    font-size: 11.5px;
+    color: #78350f;
+    border-radius: 4px;
+}
+
+/* 토스트 메시지 스타일 */
+.toast-popup {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background-color: #0f172a;
+    color: #ffffff;
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 13px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25);
+    z-index: 1000;
+    animation: fadeInOut 2.5s ease forwards;
+}
+
+@keyframes fadeInOut {
+    0% {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    15% {
+        opacity: 1;
+        transform: translateY(0);
+    }
+
+    85% {
+        opacity: 1;
+        transform: translateY(0);
+    }
+
+    100% {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+}
+
+/* 모달 */
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 500;
+}
+
+.modal-card {
+    width: 360px;
+    background: #fff;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+}
+
+/* 모바일 반응형 미디어 쿼리 */
+@media (max-width: 1024px) {
+    .app-shell {
+        height: auto;
+        overflow: visible;
+    }
+
+    .dashboard-grid,
+    .right-top-row,
+    .right-bottom-row {
+        grid-template-columns: 1fr;
+        overflow: visible;
+    }
+}
