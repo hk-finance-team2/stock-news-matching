@@ -147,3 +147,24 @@
   - 실행 이미지에 빌드 도구·소스를 넣지 않아 더 작고 안전함
 - **사용 구분:** 백엔드를 고치지 않는 사람은 Docker, 백엔드 개발자는 DB만 Docker로 켜고 `gradlew bootRun` (코드 변경이 바로 반영되도록). 둘 다 8080을 쓰므로 동시에 켜지 않음
 - **검토한 대안:** 한 단계 Dockerfile(JDK와 소스가 이미지에 남아 큼), 팀원마다 Java 21 설치(버전·환경 차이)
+
+## 2026-10-30 · AI 파트 테이블 (V5): AI 제안서 기반 + 확장 칸
+
+AI 파트(지승현)와 이야기해서 정함.
+
+- **결정:**
+  - AI 파트 제안서(`ai/docs/AI테이블_제안.md`)의 `article`, `article_stock`, `collect_run`을 **칸 이름·타입 그대로** 사용
+  - 요구사항에 있지만 아직 정해지지 않은 칸을 **[확장]**으로 덧붙임. 모두 NULL 허용 또는 기본값이 있어서 AI 코드가 몰라도 저장됨
+    - `article`: `source_type`(NEWS/SNS), `channel`, `collect_mode`(REALTIME/BACKFILL), `keywords`, `sentiment`
+    - `article_stock`: `match_type`(DIRECT/INDIRECT), `relevance`(0~1), `evidence`(근거 문장), `matched_keywords`
+    - `collect_run`: `channel`
+  - `stock_daily_summary`(종목별 하루 요약)는 표만 미리 만들고 AI가 나중에 채움
+  - 값 표기는 AI 코드에 맞춤: 감성 `POSITIVE/NEGATIVE/NEUTRAL`, 처리 상태 `LISTED … DONE`
+  - AI도 **팀 Docker DB**(`stocknews`, 3308, 앱 전용 계정)를 사용
+- **이유:**
+  - AI 파트가 이미 이 구조로 수집 코드를 짜고 있어서, 바꾸지 않고 그대로 저장을 시작할 수 있게
+  - 직접/간접·관련도·근거 문장은 서비스의 차별점(F-05·F-06)이라 자리를 미리 마련. "요구사항에 있는 것은 미리 넣고, 안 쓰면 나중에 지운다", 추측성 칸은 넣지 않음
+  - 같은 DB를 써야 백엔드가 AI 결과를 읽어 화면에 보여 줄 수 있음
+- **기사 본문(`body`):** 요구사항 문서에는 "본문 저장 안 함"이었으나, AI 파트와 이야기해 **DB에는 LLM 요약용으로 저장**하기로 함. 7일 후 NULL로 지우고, 백엔드·화면에서는 조회하지 않으며, GitHub에는 올리지 않음(AGENTS.md 3번)
+- **종목 사전:** `article_stock.stock_code`에 `stock_info` FK를 걸어서 종목 사전에 없는 종목은 저장되지 않음 → 종목 사전 채우기(B-01)를 백엔드가 이어서 진행. AI 파트가 가진 종목 데이터는 임시 테스트용
+- **검토한 대안:** 백엔드 초안 5개 테이블(글·분석·매칭·요약·수집 기록을 따로)로 새로 설계 (AI 코드를 크게 바꿔야 해서 제외)
