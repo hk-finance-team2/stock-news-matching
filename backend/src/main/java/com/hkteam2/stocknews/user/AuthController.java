@@ -28,4 +28,10 @@ public class AuthController {
     public SignupResponse signup(@Valid @RequestBody SignupRequest request) {
         return userService.signup(request);
     }
+
+    @Operation(summary = "로그인", description = "성공하면 JWT를 발급합니다. 아이디나 비밀번호가 틀리면 401 INVALID_CREDENTIALS")
+    @PostMapping("/login")
+    public LoginResponse login(@Valid @RequestBody LoginRequest request) {
+        return userService.login(request);
+    }
 }

@@ -13,10 +13,12 @@ public class UserService {
 
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
+    private final JwtTokenProvider jwtTokenProvider;
 
-    public UserService(UserMapper userMapper, PasswordEncoder passwordEncoder) {
+    public UserService(UserMapper userMapper, PasswordEncoder passwordEncoder, JwtTokenProvider jwtTokenProvider) {
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
+        this.jwtTokenProvider = jwtTokenProvider;
     }
 
     @Transactional
@@ -33,5 +35,15 @@ public class UserService {
             throw new BusinessException(ErrorCode.DUPLICATE_LOGIN_ID);
         }
         return new SignupResponse(user.getUserId(), user.getLoginId());
+    }
+
+    @Transactional(readOnly = true)
+    public LoginResponse login(LoginRequest request) {
+        User user = userMapper.findByLoginId(request.loginId())
+                .filter(found -> passwordEncoder.matches(request.password(), found.getPasswordHash()))
+                .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_CREDENTIALS));
+
+        String token = jwtTokenProvider.createToken(user);
+        return LoginResponse.bearer(token, jwtTokenProvider.getExpirationSeconds());
     }
 }

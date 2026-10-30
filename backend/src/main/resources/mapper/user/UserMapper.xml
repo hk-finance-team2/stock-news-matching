@@ -12,4 +12,10 @@
         VALUES (#{loginId}, #{passwordHash}, #{role})
     </insert>
 
+    <select id="findByLoginId" resultType="com.hkteam2.stocknews.user.User">
+        SELECT user_id, login_id, password_hash, role, created_at
+        FROM users
+        WHERE login_id = #{loginId}
+    </select>
+
 </mapper>
