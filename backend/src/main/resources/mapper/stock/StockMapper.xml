@@ -18,4 +18,10 @@
         ORDER BY stock_code
     </select>
 
+    <select id="findByCode" resultMap="stockResponse">
+        SELECT stock_code, stock_name, market, sector
+        FROM stock_info
+        WHERE stock_code = #{stockCode}
+    </select>
+
 </mapper>
