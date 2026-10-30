@@ -51,6 +51,7 @@ Copy-Item .env.example .env
 ```
 (Mac: `cp .env.example .env`)
 메모장이나 IDE로 `.env`를 열어 내 파트에 필요한 값만 채웁니다.
+단, **내 PC에서 DB·백엔드를 켜려면 파트와 상관없이** DB 칸 3개와 `JWT_SECRET`은 꼭 채워야 합니다. ([setup.md](setup.md) 2절)
 
 ### 1-6. 첫 push 때 로그인
 처음 push하면 GitHub 로그인 창이 뜹니다. 로그인하면 다음부터는 뜨지 않습니다.
@@ -59,7 +60,7 @@ Copy-Item .env.example .env
 
 | 역할 | 작업 폴더 | 브랜치 이름 예시 |
 |---|---|---|
-| 백엔드1, 백엔드2 | `backend/` (패키지 단위로 담당 나눔) | `feature/be-kis-collect` |
+| 백엔드1, 백엔드2 | `backend/` (패키지 단위로 담당 나눔) | `feature/be-watchlist` |
 | AI | `ai/` | `feature/ai-news-summary` |
 | 프론트 | `frontend/` | `feature/fe-news-chart` |
 | 공용 문서 | `docs/` (고치기 전에 Slack에 알림) | `feature/docs-api-spec` |
@@ -79,15 +80,15 @@ git pull
 
 ### ② 내 브랜치 만들기
 ```powershell
-git switch -c feature/be-kis-collect
+git switch -c feature/be-watchlist
 ```
-`-c`는 새로 만들 때만 붙입니다. 이미 있는 내 브랜치로 돌아갈 때는 `git switch feature/be-kis-collect`
+`-c`는 새로 만들 때만 붙입니다. 이미 있는 내 브랜치로 돌아갈 때는 `git switch feature/be-watchlist`
 
 ### ③ 작업하고 저장(커밋)
 ```powershell
 git status
 git add .
-git commit -m "feat: KIS 실시간 체결 수집 추가"
+git commit -m "feat: 관심 종목 추가 API"
 ```
 - `git status`: 무엇이 바뀌었는지 확인. `.env`나 `data/` 파일이 목록에 없어야 정상입니다.
 - 커밋 메시지는 `타입: 내용`
@@ -97,7 +98,7 @@ git commit -m "feat: KIS 실시간 체결 수집 추가"
 ### ④ GitHub에 올리기(push)
 처음 올릴 때:
 ```powershell
-git push -u origin feature/be-kis-collect
+git push -u origin feature/be-watchlist
 ```
 두 번째부터는:
 ```powershell
@@ -112,7 +113,7 @@ GitHub 화면에서 합니다. → 4번 참고
 ```powershell
 git switch main
 git pull
-git branch -d feature/be-kis-collect
+git branch -d feature/be-watchlist
 ```
 마지막 줄은 내 컴퓨터에 남은 다 쓴 브랜치를 지우는 것입니다. 다음 작업은 다시 ①부터.
 
@@ -200,7 +201,7 @@ git restore 파일이름
 | Claude Code | `CLAUDE.md` → `AGENTS.md`를 불러옴 |
 
 AI에게 이렇게 시킬 수 있습니다.
-- "`docs/git-guide.md` 3번대로 `feature/be-kis-collect` 브랜치를 만들어줘"
+- "`docs/git-guide.md` 3번대로 `feature/be-watchlist` 브랜치를 만들어줘"
 - "지금 바뀐 내용을 보여주고, 커밋 메시지 규칙에 맞게 커밋해줘"
 - "push해도 되는지 확인할게. 올라갈 파일 목록을 먼저 보여줘"
 - "PR에 충돌이 났어. 어느 부분이 왜 충돌인지 설명해줘"

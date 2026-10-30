@@ -52,7 +52,7 @@ docker run --rm hello-world
 
 > Mac: Docker 공식 사이트에서 Docker Desktop for Mac을 받아 설치합니다.
 
-### 1-3. Java 21 (백엔드만)
+### 1-3. Java 21 (백엔드 코드를 고치는 사람만)
 
 ```powershell
 winget install --id EclipseAdoptium.Temurin.21.JDK -e --source winget
@@ -79,6 +79,8 @@ JWT_SECRET=영문과-숫자로-32자-이상-아무-값
 - `JWT_SECRET`은 로그인 토큰의 서명 키입니다. **32자보다 짧으면 백엔드 서버가 켜지지 않습니다.**
 
 ## 3. DB 켜기
+
+> 4-1(Docker로 백엔드까지 켜기)을 쓸 사람은 이 절을 건너뛰어도 됩니다. 4-1 명령이 DB도 같이 켭니다.
 
 Docker Desktop이 켜져 있는 상태에서, 저장소 최상위 폴더에서:
 
@@ -156,6 +158,8 @@ curl.exe http://localhost:8080/api/stocks
 
 ## 6. DB 클라이언트로 접속 (HeidiSQL, DBeaver 등)
 
+수업용 DB(3306)와 다른 **팀 Docker DB**입니다. 포트를 꼭 `3308`로 바꾸세요.
+
 | 항목 | 값 |
 |---|---|
 | 종류 | MariaDB |
@@ -182,10 +186,11 @@ curl.exe http://localhost:8080/api/stocks
 
 ```powershell
 docker compose down -v
-docker compose up -d db
+docker compose up -d --build
 ```
 
-그다음 백엔드를 켜면 Flyway가 테이블과 예시 데이터를 처음부터 다시 만듭니다.
+DB와 백엔드가 새로 켜지면서 Flyway가 테이블과 예시 데이터를 처음부터 다시 만듭니다.
+(백엔드를 `gradlew`로 켜는 사람은 두 번째 줄 대신 `docker compose up -d db` 후 4-2)
 
 ## 8. 내 파트에서 백엔드 쓰는 법
 
@@ -211,9 +216,23 @@ Swagger(http://localhost:8080/swagger-ui.html)에서:
 
 - **DB 접속 (내 PC에서 Python 실행 시):** 호스트 `localhost`, 포트 `3308`, DB `stocknews`, 계정은 `.env`의 `DB_USERNAME`·`DB_PASSWORD`
   - 나중에 AI 서버도 Docker로 묶으면 그 안에서는 호스트 `db`, 포트 `3306`
-- **테이블은 백엔드가 만듭니다 (Flyway).** AI 파트는 직접 `CREATE TABLE` 하지 않고, 필요한 테이블·컬럼을 백엔드에 알려 주세요.
+- **어느 DB에 저장하나:** 팀 Docker DB(`localhost:3308`, `stocknews`)에 저장해야 백엔드가 읽을 수 있습니다. 수업용 DB(3306)나 각자 설치한 MySQL에 저장하면 백엔드·프론트에서 보이지 않습니다.
+- **어떤 계정으로:** `.env`의 앱 전용 계정(`DB_USERNAME`). 관리자 계정(root)은 쓰지 않습니다. (`.env.example`의 "root 금지"는 이 뜻이고, MariaDB를 쓰지 말라는 뜻이 아닙니다)
+- **SQL로 할 수 있는 것 / 백엔드에 요청할 것:**
+
+| 하고 싶은 것 | SQL | 누가 |
+|---|---|---|
+| 데이터 넣기·고치기·지우기·읽기 | `INSERT` `UPDATE` `DELETE` `SELECT` | **AI 파트가 자유롭게** |
+| 테이블 만들기·칸 바꾸기 | `CREATE TABLE` `ALTER TABLE` | **백엔드에 요청** → 백엔드가 Flyway로 반영 |
+
+  테이블을 직접 만들면 팀원마다 DB 구조가 달라지고, 나중에 Flyway가 같은 이름의 테이블을 만들 때 충돌해 서버가 켜지지 않을 수 있습니다. 이미 만들었다면 7절 "DB 초기화"로 정리하면 됩니다.
   - 테이블 설계 규칙: [db/schema.md](db/schema.md)의 "설계 원칙" (snake_case, 종목코드 `CHAR(6)`, 시각 `DATETIME`, ID `BIGINT`)
-  - 기사 본문은 저장하지 않음(저작권), 시세 테이블은 1차 제외
+  - 기사 본문(`article.body`)은 DB에만 LLM 요약용으로 저장하고 7일 후 지움. 화면·API로 내보내지 않고 GitHub에도 올리지 않음
+  - 시세 테이블은 1차 제외
+- **AI 파트가 쓰는 테이블 (V5):** `article`, `article_stock`, `collect_run`, `stock_daily_summary`
+  - AI 제안서 칸 그대로이고, `[확장]` 표시 칸은 비워 둬도 저장됨
+  - `article_stock`의 종목은 `stock_info`에 있어야 저장됨 (종목 사전은 백엔드가 채우는 중)
+  - 화면에는 `article.status = 'DONE'`인 기사만 나감
 - **읽기만 하는 테이블 (백엔드가 채움):**
 
 | 테이블 | 쓰는 곳 |
