@@ -13,8 +13,8 @@ AI 도구에게 "`docs/setup.md`대로 해줘"라고 시켜도 됩니다.
 |---|---|---|
 | Git | 모두 | 코드 받기·올리기 |
 | WSL 2 | 모두 (Windows) | Docker가 돌아가는 바탕(작은 리눅스) |
-| Docker Desktop | 모두 | 팀 공용 DB(MariaDB)를 똑같이 켜기 |
-| Java 21 (Eclipse Temurin) | 백엔드 | Spring Boot 서버 실행 |
+| Docker Desktop | 모두 | 팀 공용 DB와 백엔드 서버를 똑같이 켜기 |
+| Java 21 (Eclipse Temurin) | 백엔드 코드를 고치는 사람만 | `gradlew`로 서버를 직접 빌드·실행 (Docker로 켜면 필요 없음) |
 | IntelliJ IDEA | 백엔드 (권장) | 코드 편집 |
 
 ## 1. 설치 (처음 한 번)
@@ -100,7 +100,32 @@ STATUS에 `(healthy)`가 보이면 됩니다. 처음에는 MariaDB 이미지를 
 
 PC를 껐다 켜면 **Docker Desktop을 먼저 실행**해야 DB가 뜹니다.
 
-## 4. 백엔드 서버 켜기 (Java 필요)
+## 4. 백엔드 서버 켜기
+
+방법이 두 가지입니다. **백엔드 코드를 고치지 않는다면 4-1(Docker)을 쓰세요.**
+두 방법 모두 8080 포트를 쓰므로 **동시에 켜면 안 됩니다** (나중에 켠 쪽이 `8080 already in use`로 실패).
+
+### 4-1. Docker로 켜기 (Java 필요 없음, 프론트·AI 추천)
+
+저장소 최상위 폴더에서:
+
+```powershell
+docker compose up -d --build
+```
+
+- DB와 백엔드가 함께 켜집니다. 처음에는 상자를 만드느라 몇 분 걸립니다.
+- 상자 안에 Java 21이 들어 있어서 내 PC의 Java 버전과 상관없습니다.
+- **`git pull`로 백엔드 코드를 새로 받았다면 `--build`를 꼭 붙여** 상자를 다시 만듭니다. 붙이지 않으면 예전 백엔드가 켜집니다.
+
+| 하고 싶은 것 | 명령 |
+|---|---|
+| 백엔드 로그 보기 | `docker compose logs -f backend` (끄기: `Ctrl + C`) |
+| 백엔드만 끄기 | `docker compose stop backend` |
+| DB·백엔드 모두 끄기 (데이터 유지) | `docker compose stop` |
+
+### 4-2. gradlew로 켜기 (Java 21 필요, 백엔드 개발용)
+
+코드를 고치면서 바로 확인할 때 씁니다. DB만 Docker로 켜고(3절), 백엔드는 내 PC에서 실행합니다.
 
 ```powershell
 cd backend
@@ -113,8 +138,7 @@ cd backend
 - 로그에 `Started StocknewsApplication`이 나오면 성공입니다.
 - 켜질 때 Flyway가 테이블과 예시 데이터를 자동으로 만듭니다.
 - 끄기: `Ctrl + C`
-
-> Java 없이 백엔드를 켜는 방법(`docker compose`로 백엔드까지 실행)은 나중에 추가할 예정입니다.
+- 4-1로 백엔드 상자를 켜 둔 상태라면 먼저 `docker compose stop backend`
 
 ## 5. 확인
 
@@ -146,7 +170,9 @@ curl.exe http://localhost:8080/api/stocks
 |---|---|---|
 | `failed to connect to the docker API ... dockerDesktopLinuxEngine` | Docker Desktop이 꺼져 있음 | Docker Desktop 실행 후 Engine running 확인 |
 | `docker` 명령을 찾을 수 없음 | 설치 직후 열려 있던 터미널 | 터미널을 새로 열기 |
-| `Port 8080 was already in use` | 서버가 이미 다른 창에서 켜져 있음 | 그 창에서 `Ctrl + C`로 끄고 다시 실행 |
+| `Port 8080 was already in use` | 서버가 이미 다른 창이나 Docker 상자로 켜져 있음 | 그 창에서 `Ctrl + C`, 또는 `docker compose stop backend` 후 다시 실행 |
+| `Cannot find a Java installation ... languageVersion=21` | `gradlew`로 켰는데 PC에 Java 21이 없음 | Java 21 설치(1-3), 또는 4-1 Docker로 켜기 |
+| Docker로 켠 백엔드에 새 기능이 없음 | `git pull` 후 상자를 다시 안 만듦 | `docker compose up -d --build` |
 | DB를 켤 때 3308 포트 오류 (`port is already allocated`, `ports are not available` 등) | 다른 프로그램이 3308을 씀 | `.env`의 `DB_PORT`를 다른 번호로 바꾸고 백엔드도 같은 값 사용 |
 | `Validate failed: Migrations have failed validation` | 이미 실행된 V 파일 내용이 바뀜 | V 파일을 원래대로 되돌리고 새 V 파일로 추가. 내 PC에서만 실험 중이면 아래 "DB 초기화" |
 | `Access denied for user` | `.env` 비밀번호를 DB를 만든 뒤에 바꿈 | 아래 "DB 초기화" |

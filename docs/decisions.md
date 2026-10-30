@@ -132,3 +132,18 @@
 - **정렬:** 게시글은 최신순(페이지), 댓글은 오래된 순(전부, 페이지 없음)
 - **공감 토글:** "먼저 지워 보고, 지운 게 있으면 취소 / 없으면 추가". 1인 1회는 DB 기본키 `(post_id, user_id)`가 보장
 - **삭제:** 글을 지우면 댓글·공감은 DB `ON DELETE CASCADE`로 함께 삭제
+
+## 2026-10-30 · 백엔드 Docker화 (멀티 스테이지 빌드)
+
+- **결정:** `backend/Dockerfile`로 백엔드를 이미지로 만들고 `docker-compose.yml`에 `backend` 서비스 추가. `docker compose up -d --build` 한 줄로 DB와 백엔드가 함께 실행
+  - 1단계(`eclipse-temurin:21-jdk`): Gradle로 `bootJar` 빌드. 라이브러리 목록을 먼저 복사해 받아 두어 코드만 바뀌면 다시 받지 않음. 테스트는 DB가 필요해 이미지 빌드에서는 건너뜀
+  - 2단계(`eclipse-temurin:21-jre`): `.jar`만 복사해 실행. 소스·빌드 도구는 이미지에 남기지 않음
+  - root가 아닌 전용 계정(`app`)으로 실행, JVM 시간대 `Asia/Seoul`
+  - 상자 안에서는 DB를 `db:3306`으로 찾도록 `DB_HOST`·`DB_PORT`만 덮어씀. 나머지 값은 `.env`에서 읽음 (코드 수정 없음)
+  - DB `healthcheck`가 통과한 뒤에 백엔드 시작 (`depends_on: condition: service_healthy`)
+- **이유:**
+  - 프론트·AI 팀원이 Java·Gradle 설치나 버전 차이 없이 백엔드를 켤 수 있음
+  - 발표 때 `docker compose up` 한 번으로 전체 실행하는 목표(B-13)의 첫 조각
+  - 실행 이미지에 빌드 도구·소스를 넣지 않아 더 작고 안전함
+- **사용 구분:** 백엔드를 고치지 않는 사람은 Docker, 백엔드 개발자는 DB만 Docker로 켜고 `gradlew bootRun` (코드 변경이 바로 반영되도록). 둘 다 8080을 쓰므로 동시에 켜지 않음
+- **검토한 대안:** 한 단계 Dockerfile(JDK와 소스가 이미지에 남아 큼), 팀원마다 Java 21 설치(버전·환경 차이)
