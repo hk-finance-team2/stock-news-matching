@@ -55,3 +55,16 @@
 - **결정:** `springdoc-openapi-starter-webmvc-ui:3.2.0`. 화면 `/swagger-ui.html`, 명세 JSON `/v3/api-docs`
 - **이유:** 프론트가 백엔드 코드를 보지 않고 API를 확인하고 바로 호출해 볼 수 있음. 코드에서 자동으로 만들어져 문서가 항상 최신. 3.2.0은 Spring Boot 4.1.2 기준 버전
 - **검토한 대안:** 손으로 쓴 API 문서만 두기 (코드를 고치면 문서가 틀려지기 쉬움)
+
+## 2026-10-30 · CORS는 WebMvcConfigurer로, 허용 주소는 설정 파일에
+
+- **결정:** `common.config.WebConfig`에서 `/api/**`에 CORS 허용. 허용 주소는 `application.yml`의 `app.cors.allowed-origins` (지금은 `http://localhost:5173`)
+- **이유:** 브라우저는 주소가 다른 서버로의 요청을 기본으로 막아서, 프론트(5173)가 백엔드(8080)를 부르려면 허용이 필요. 주소를 설정 파일에 두면 배포 주소가 생겨도 코드를 고치지 않음
+- **참고:** 로그인(Spring Security)을 붙이면 CORS를 Security 설정에서도 함께 허용해야 함
+- **검토한 대안:** Controller마다 `@CrossOrigin` (빠뜨리기 쉬움), 모든 주소 허용 `*` (아무 사이트나 우리 API를 부를 수 있음)
+
+## 2026-10-30 · 공통 오류 응답 `{ code, message }`
+
+- **결정:** `common.error`에 `ErrorCode`(오류 목록 enum), `BusinessException`, `GlobalExceptionHandler`(`@RestControllerAdvice`). 서비스는 `throw new BusinessException(ErrorCode.STOCK_NOT_FOUND)`처럼 던지기만 함
+- **이유:** 프론트와 맞춘 실패 응답 형식. 오류 종류와 HTTP 상태·메시지를 한곳에서 관리. 예상하지 못한 오류는 원인을 로그에만 남기고 사용자에게는 일반 메시지만 보여 내부 정보가 새지 않음
+- **검토한 대안:** Spring 기본 오류 응답 (모양이 다르고 내부 정보가 섞일 수 있음), Controller마다 try-catch (중복 코드)

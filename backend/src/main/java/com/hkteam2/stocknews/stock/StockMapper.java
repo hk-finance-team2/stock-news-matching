@@ -1,6 +1,7 @@
 package com.hkteam2.stocknews.stock;
 
 import java.util.List;
+import java.util.Optional;
 
 import org.apache.ibatis.annotations.Mapper;
 
@@ -9,4 +10,7 @@ import org.apache.ibatis.annotations.Mapper;
 public interface StockMapper {
 
     List<StockResponse> findAll();
+
+    /** 없으면 Optional.empty() */
+    Optional<StockResponse> findByCode(String stockCode);
 }
