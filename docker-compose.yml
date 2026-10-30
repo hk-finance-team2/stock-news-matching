@@ -1,0 +1,29 @@
+# 팀 공용 실행 환경. 값은 .env 에서 읽습니다. (.env.example 참고)
+# DB만 켜기: docker compose up -d db
+services:
+  db:
+    image: mariadb:11.8.9
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
+      MARIADB_DATABASE: ${DB_NAME}
+      MARIADB_USER: ${DB_USERNAME}
+      MARIADB_PASSWORD: ${DB_PASSWORD}
+      TZ: Asia/Seoul
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+09:00
+    ports:
+      # 내 PC 포트(DB_PORT) -> 컨테이너 안 3306
+      - "${DB_PORT}:3306"
+    volumes:
+      # 컨테이너를 지워도 데이터는 남도록 별도 보관
+      - db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  db-data:

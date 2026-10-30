@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.hkteam2.stocknews.stock.StockMapper">
+
+    <!-- StockResponse는 record라서 생성자 순서대로 컬럼을 넣음 -->
+    <resultMap id="stockResponse" type="com.hkteam2.stocknews.stock.StockResponse">
+        <constructor>
+            <arg column="stock_code" javaType="String"/>
+            <arg column="stock_name" javaType="String"/>
+            <arg column="market" javaType="String"/>
+            <arg column="sector" javaType="String"/>
+        </constructor>
+    </resultMap>
+
+    <select id="findAll" resultMap="stockResponse">
+        SELECT stock_code, stock_name, market, sector
+        FROM stock_info
+        ORDER BY stock_code
+    </select>
+
+</mapper>
