@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.hkteam2.stocknews.board.CommentMapper">
+
+    <resultMap id="commentRow" type="com.hkteam2.stocknews.board.CommentRow">
+        <constructor>
+            <arg column="comment_id" javaType="Long"/>
+            <arg column="post_id" javaType="Long"/>
+            <arg column="content" javaType="String"/>
+            <arg column="author_login_id" javaType="String"/>
+            <arg column="created_at" javaType="java.time.LocalDateTime"/>
+        </constructor>
+    </resultMap>
+
+    <!-- 작성자 번호 대신 아이디를 보여 주려고 users와 이어 붙임 -->
+    <sql id="selectRow">
+        SELECT c.comment_id, c.post_id, c.content, u.login_id AS author_login_id, c.created_at
+        FROM board_comment c
+        JOIN users u ON u.user_id = c.user_id
+    </sql>
+
+    <!-- idx_board_comment_post_created (post_id, created_at) 인덱스를 타는 조회 -->
+    <select id="findAllByPost" resultMap="commentRow">
+        <include refid="selectRow"/>
+        WHERE c.post_id = #{postId}
+        ORDER BY c.created_at, c.comment_id
+    </select>
+
+    <select id="findById" resultMap="commentRow">
+        <include refid="selectRow"/>
+        WHERE c.comment_id = #{commentId}
+    </select>
+
+    <select id="findAuthorId" resultType="long">
+        SELECT user_id FROM board_comment WHERE comment_id = #{commentId}
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="commentId">
+        INSERT INTO board_comment (post_id, user_id, content)
+        VALUES (#{postId}, #{userId}, #{content})
+    </insert>
+
+    <delete id="delete">
+        DELETE FROM board_comment WHERE comment_id = #{commentId}
+    </delete>
+
+</mapper>

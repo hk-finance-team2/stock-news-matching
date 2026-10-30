@@ -58,6 +58,10 @@
         WHERE p.post_id = #{postId}
     </select>
 
+    <select id="existsById" resultType="boolean">
+        SELECT EXISTS (SELECT 1 FROM board_post WHERE post_id = #{postId})
+    </select>
+
     <select id="findAuthorId" resultType="long">
         SELECT user_id FROM board_post WHERE post_id = #{postId}
     </select>

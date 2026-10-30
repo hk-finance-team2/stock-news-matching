@@ -19,6 +19,8 @@ public interface PostMapper {
 
     Optional<PostDetailRow> findDetail(@Param("postId") Long postId);
 
+    boolean existsById(@Param("postId") Long postId);
+
     /** 작성자 회원 ID (글이 없으면 empty) */
     Optional<Long> findAuthorId(@Param("postId") Long postId);
 

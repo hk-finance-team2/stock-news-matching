@@ -31,9 +31,11 @@ public class SecurityConfig {
     /** 보기(GET)는 공개, 쓰기만 로그인이 필요한 주소 */
     private static final String[] AUTHENTICATED_POST_PATHS = {
             "/api/stocks/*/posts",
+            "/api/posts/*/comments",
     };
     private static final String[] AUTHENTICATED_DELETE_PATHS = {
             "/api/posts/*",
+            "/api/comments/*",
     };
 
     private final HandlerExceptionResolver exceptionResolver;
