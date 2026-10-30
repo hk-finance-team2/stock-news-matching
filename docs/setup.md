@@ -5,7 +5,8 @@ AI 도구에게 "`docs/setup.md`대로 해줘"라고 시켜도 됩니다.
 
 - 명령은 Windows **PowerShell** 기준입니다.
 - 레포 내려받기와 `.env` 복사는 [Git 사용 가이드](git-guide.md) 1절을 먼저 따라 하세요.
-- AI·프론트 부분은 각 파트가 아래 빈 절에 채웁니다.
+- **빠르게:** 백엔드 코드를 고치지 않는 사람은 **1-1·1-2(설치) → 2(`.env`) → 4-1(Docker로 켜기) → 5(확인) → 8(내 파트에서 쓰는 법)**만 보면 됩니다.
+- AI·프론트 개발 환경은 각 파트가 10·11절에 채웁니다.
 
 ## 0. 무엇을 설치하나
 
@@ -186,7 +187,51 @@ docker compose up -d db
 
 그다음 백엔드를 켜면 Flyway가 테이블과 예시 데이터를 처음부터 다시 만듭니다.
 
-## 8. 버전 정리
+## 8. 내 파트에서 백엔드 쓰는 법
+
+### 8-1. 공통: 시험용 계정 만들기
+
+Swagger(http://localhost:8080/swagger-ui.html)에서:
+
+1. **회원** → `POST /api/auth/signup` → Try it out → `{"loginId":"tester01","password":"password123"}` → Execute
+2. `POST /api/auth/login`에 같은 값 → 응답의 `accessToken` 복사
+3. 오른쪽 위 **Authorize** 🔒 → 토큰 붙여넣기 → 이제 로그인이 필요한 API도 시험 가능
+
+내 PC의 DB는 나만 쓰므로 계정·글은 각자 만들어야 합니다. (팀원 PC끼리 데이터는 공유되지 않음)
+
+### 8-2. 프론트엔드
+
+- API 목록과 공통 규칙: **[api.md](api.md)** (주소·로그인 방식·응답 모양·오류 코드)
+- 서버 주소는 `http://localhost:8080`. 개발 서버 `http://localhost:5173`에서 부르는 것은 백엔드가 허용해 둠(CORS)
+- 로그인 후 요청 헤더: `Authorization: Bearer {accessToken}`
+- **401을 받으면 토큰을 지우고 로그인 화면으로**
+- 아직 없는 API(뉴스·SNS 글 목록 등)는 예시 데이터로 화면을 먼저 만들고, API가 생기면 교체
+
+### 8-3. AI 파트
+
+- **DB 접속 (내 PC에서 Python 실행 시):** 호스트 `localhost`, 포트 `3308`, DB `stocknews`, 계정은 `.env`의 `DB_USERNAME`·`DB_PASSWORD`
+  - 나중에 AI 서버도 Docker로 묶으면 그 안에서는 호스트 `db`, 포트 `3306`
+- **테이블은 백엔드가 만듭니다 (Flyway).** AI 파트는 직접 `CREATE TABLE` 하지 않고, 필요한 테이블·컬럼을 백엔드에 알려 주세요.
+  - 테이블 설계 규칙: [db/schema.md](db/schema.md)의 "설계 원칙" (snake_case, 종목코드 `CHAR(6)`, 시각 `DATETIME`, ID `BIGINT`)
+  - 기사 본문은 저장하지 않음(저작권), 시세 테이블은 1차 제외
+- **읽기만 하는 테이블 (백엔드가 채움):**
+
+| 테이블 | 쓰는 곳 |
+|---|---|
+| `stock_info` | 종목코드·종목명·시장·업종 (지금은 예시 5개) |
+| `stock_alias` | 별칭 → 종목 (예: 삼전 → 005930) |
+| `stock_theme` | 테마 → 종목 (예: 방산 → 012450) |
+| `match_setting` | 매칭 가중치. `name_weight` 0.40, `theme_weight` 0.40, `context_weight` 0.20, `min_score` 0.70 |
+
+  가중치는 코드에 숫자로 쓰지 말고 `match_setting`에서 읽어 주세요. (나중에 관리자가 값을 바꿀 수 있게)
+
+```sql
+SELECT setting_key, setting_value FROM match_setting;
+```
+
+- 컬럼 자세히: [db/schema.md](db/schema.md)
+
+## 9. 버전 정리
 
 | 항목 | 버전 |
 |---|---|
@@ -200,10 +245,10 @@ docker compose up -d db
 
 버전을 고른 이유는 [결정 기록](decisions.md)에 있습니다.
 
-## 9. AI 파트 (Python · FastAPI)
+## 10. AI 파트 개발 환경 (Python · FastAPI)
 
 AI 파트가 채웁니다. (Python 버전, 가상환경, 패키지 설치, 실행 방법)
 
-## 10. 프론트엔드 (React · Vite)
+## 11. 프론트엔드 개발 환경 (React · Vite)
 
 프론트 파트가 채웁니다. (Node.js 버전, 패키지 설치, 실행 방법)
