@@ -63,17 +63,19 @@ winget install --id EclipseAdoptium.Temurin.21.JDK -e --source winget
 
 ## 2. `.env` 채우기
 
-[Git 사용 가이드](git-guide.md) 1-5대로 `.env`를 만든 뒤, DB 칸 세 개를 채웁니다.
+[Git 사용 가이드](git-guide.md) 1-5대로 `.env`를 만든 뒤, 아래 네 칸을 채웁니다.
 내 PC에서만 쓰는 값이라 아무 값이나 정하면 됩니다. (다른 사람과 같을 필요 없음)
 
 ```
 DB_USERNAME=stocknews_app
 DB_PASSWORD=내가-정한-비밀번호
 MARIADB_ROOT_PASSWORD=내가-정한-관리자-비밀번호
+JWT_SECRET=영문과-숫자로-32자-이상-아무-값
 ```
 
 - `DB_PORT=3308`은 그대로 둡니다. (수업용 MariaDB 3306과 겹치지 않게)
-- **주의:** 이 값은 DB를 **처음 켤 때** 한 번만 적용됩니다. 나중에 바꾸려면 7절의 "DB 초기화"를 해야 합니다.
+- **주의:** DB 값은 DB를 **처음 켤 때** 한 번만 적용됩니다. 나중에 바꾸려면 7절의 "DB 초기화"를 해야 합니다.
+- `JWT_SECRET`은 로그인 토큰의 서명 키입니다. **32자보다 짧으면 백엔드 서버가 켜지지 않습니다.**
 
 ## 3. DB 켜기
 

@@ -20,6 +20,11 @@ app:
   cors:
     # 우리 API를 부를 수 있는 프론트 주소 (Vite 개발 서버)
     allowed-origins: http://localhost:5173
+  jwt:
+    # 토큰 서명 키 (.env 의 JWT_SECRET, 32자 이상)
+    secret: ${JWT_SECRET}
+    # 토큰 유효 시간(분)
+    expiration-minutes: 60
 
 springdoc:
   swagger-ui:

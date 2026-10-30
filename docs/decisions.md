@@ -68,3 +68,35 @@
 - **결정:** `common.error`에 `ErrorCode`(오류 목록 enum), `BusinessException`, `GlobalExceptionHandler`(`@RestControllerAdvice`). 서비스는 `throw new BusinessException(ErrorCode.STOCK_NOT_FOUND)`처럼 던지기만 함
 - **이유:** 프론트와 맞춘 실패 응답 형식. 오류 종류와 HTTP 상태·메시지를 한곳에서 관리. 예상하지 못한 오류는 원인을 로그에만 남기고 사용자에게는 일반 메시지만 보여 내부 정보가 새지 않음
 - **검토한 대안:** Spring 기본 오류 응답 (모양이 다르고 내부 정보가 섞일 수 있음), Controller마다 try-catch (중복 코드)
+
+## 2026-10-30 · 회원가입: Spring Security + BCrypt, 입력값 검사
+
+- **결정:** `spring-boot-starter-security`(Security 7.1.2, Boot가 관리), 비밀번호는 `BCryptPasswordEncoder`로 암호화해 저장. `spring-boot-starter-validation`으로 입력값 검사 (아이디: 영문 소문자·숫자 4~20자, 비밀번호: 8~64자)
+- **이유:**
+  - BCrypt는 되돌릴 수 없는 방식이고, 같은 비밀번호도 매번 다른 결과(솔트)가 나와 DB가 유출돼도 원래 비밀번호를 알기 어려움
+  - 입력 규칙은 요청 클래스에 적어 두면 Controller에 들어오기 전에 400으로 거절됨. 어긴 규칙의 메시지를 그대로 응답해 프론트가 화면에 보여 줄 수 있음
+  - 아이디 중복은 서비스에서 먼저 확인하고, 동시에 가입하는 경우는 DB UNIQUE 오류를 잡아 같은 409로 응답 (DB가 최종 방어선)
+- **Security 설정:** JWT를 쓰는 API 서버라 CSRF·기본 로그인 화면·HTTP Basic은 끄고 세션은 만들지 않음(STATELESS). 지금은 모든 API를 열어 두고, JWT 검사를 붙일 때 로그인이 필요한 API만 잠금. CORS는 `.cors()`로 WebConfig 명단을 그대로 사용
+- **검토한 대안:** 비밀번호 SHA-256 직접 해시 (빠른 해시라 무차별 대입에 약함), 입력값을 Service에서 if문으로 검사 (규칙이 흩어짐)
+
+## 2026-10-30 · 로그인 토큰: Spring Security 공식 JWT 지원 (HS256)
+
+- **결정:** `spring-boot-starter-security-oauth2-resource-server`의 `JwtEncoder`(발급)·`JwtDecoder`(검사). 서명은 HS256, 키는 `.env`의 `JWT_SECRET`(32자 이상). 유효 시간 60분(`app.jwt.expiration-minutes`)
+- **토큰 내용:** `sub`(회원 ID), `loginId`, `role`, `iss`, `iat`, `exp`. 비밀번호 등 비밀 정보는 넣지 않음 (JWT 내용은 누구나 읽을 수 있고, 서명은 위조만 막음)
+- **이유:**
+  - Spring Security가 공식으로 제공하는 JWT 지원이라 Spring Boot가 버전을 맞춰 줌 (Boot 4로 바뀐 직후라 호환성이 중요)
+  - 토큰 검사는 Security가 표준 방식으로 처리 → 보안 코드를 직접 짜며 생길 실수를 줄임
+  - 서버 하나라 공개키/개인키(RS256)까지는 필요 없고, 비밀 키 하나(HS256)로 충분
+  - 로그인 실패 시 아이디가 없는지 비밀번호가 틀렸는지 구분하지 않고 같은 401 응답 (어떤 아이디가 가입돼 있는지 숨김)
+  - 서명 키가 32자보다 짧으면 서버가 시작하지 않게 막음
+- **검토한 대안:** jjwt + 직접 만든 검사 필터 (예제가 많지만 버전 호환을 직접 확인해야 하고 보안 코드를 직접 관리), 세션 로그인 (React와 분리된 API 구조에 맞지 않음)
+- **아직 안 정한 것:** 프론트의 토큰 저장 위치, 로그아웃·만료 처리 (프론트와 정함)
+
+## 2026-10-30 · 토큰 검사와 로그인이 필요한 API 잠그기
+
+- **결정:** `SecurityConfig`에서 `.oauth2ResourceServer().jwt()`로 `Authorization: Bearer {토큰}`을 검사. 기본은 모두 허용하고, 로그인이 필요한 주소만 `AUTHENTICATED_PATHS` 목록에 추가해 잠금 (지금은 `/api/auth/me`)
+- **이유:** 요구사항상 조회는 로그인 없이, 관심 종목·게시판 쓰기만 로그인 필요. 잠글 주소가 적어서 "잠글 것만 나열"이 읽기 쉬움
+- **오류 응답:** 토큰 없음·만료·위조는 401 `UNAUTHORIZED`, 권한 부족은 403 `FORBIDDEN`. Security 필터에서 난 오류도 `GlobalExceptionHandler`로 넘겨 `{ code, message }` 형식을 유지
+- **주의 (프론트와 공유):** 잘못되거나 만료된 토큰을 붙이면 **공개 API도 401**이 됨 (Spring Security가 토큰이 있으면 먼저 검사하기 때문). 프론트는 401을 받으면 저장한 토큰을 지우고 로그인 화면으로 보내거나, 토큰 없이 다시 요청
+- **Swagger:** Authorize 버튼에 토큰을 넣으면 잠긴 API도 시험 가능
+- **2차로 미룸:** 관리자(ADMIN) 권한 검사 (토큰의 `role`을 권한으로 연결)
