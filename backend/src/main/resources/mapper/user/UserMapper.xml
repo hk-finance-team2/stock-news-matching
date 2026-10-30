@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.hkteam2.stocknews.user.UserMapper">
+
+    <select id="existsByLoginId" resultType="boolean">
+        SELECT EXISTS (SELECT 1 FROM users WHERE login_id = #{loginId})
+    </select>
+
+    <!-- useGeneratedKeys: DB가 만든 user_id를 User.userId에 넣어 줌 -->
+    <insert id="insert" useGeneratedKeys="true" keyProperty="userId">
+        INSERT INTO users (login_id, password_hash, role)
+        VALUES (#{loginId}, #{passwordHash}, #{role})
+    </insert>
+
+</mapper>
