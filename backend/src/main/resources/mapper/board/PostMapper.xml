@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.hkteam2.stocknews.board.PostMapper">
+
+    <resultMap id="postSummaryRow" type="com.hkteam2.stocknews.board.PostSummaryRow">
+        <constructor>
+            <arg column="post_id" javaType="Long"/>
+            <arg column="title" javaType="String"/>
+            <arg column="author_login_id" javaType="String"/>
+            <arg column="created_at" javaType="java.time.LocalDateTime"/>
+            <arg column="comment_count" javaType="Long"/>
+            <arg column="like_count" javaType="Long"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="postDetailRow" type="com.hkteam2.stocknews.board.PostDetailRow">
+        <constructor>
+            <arg column="post_id" javaType="Long"/>
+            <arg column="stock_code" javaType="String"/>
+            <arg column="stock_name" javaType="String"/>
+            <arg column="title" javaType="String"/>
+            <arg column="content" javaType="String"/>
+            <arg column="author_login_id" javaType="String"/>
+            <arg column="created_at" javaType="java.time.LocalDateTime"/>
+            <arg column="comment_count" javaType="Long"/>
+            <arg column="like_count" javaType="Long"/>
+        </constructor>
+    </resultMap>
+
+    <!-- 글마다 댓글 수·공감 수를 함께 셈 (따로 저장하지 않고 그때그때 COUNT) -->
+    <sql id="counts">
+        (SELECT COUNT(*) FROM board_comment c WHERE c.post_id = p.post_id) AS comment_count,
+        (SELECT COUNT(*) FROM board_like l WHERE l.post_id = p.post_id) AS like_count
+    </sql>
+
+    <select id="countByStock" resultType="long">
+        SELECT COUNT(*) FROM board_post WHERE stock_code = #{stockCode}
+    </select>
+
+    <!-- idx_board_post_stock_created (stock_code, created_at) 인덱스를 타는 조회 -->
+    <select id="findPageByStock" resultMap="postSummaryRow">
+        SELECT p.post_id, p.title, u.login_id AS author_login_id, p.created_at,
+               <include refid="counts"/>
+        FROM board_post p
+        JOIN users u ON u.user_id = p.user_id
+        WHERE p.stock_code = #{stockCode}
+        ORDER BY p.created_at DESC, p.post_id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="findDetail" resultMap="postDetailRow">
+        SELECT p.post_id, p.stock_code, s.stock_name, p.title, p.content,
+               u.login_id AS author_login_id, p.created_at,
+               <include refid="counts"/>
+        FROM board_post p
+        JOIN users u ON u.user_id = p.user_id
+        JOIN stock_info s ON s.stock_code = p.stock_code
+        WHERE p.post_id = #{postId}
+    </select>
+
+    <select id="findAuthorId" resultType="long">
+        SELECT user_id FROM board_post WHERE post_id = #{postId}
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="postId">
+        INSERT INTO board_post (stock_code, user_id, title, content)
+        VALUES (#{stockCode}, #{userId}, #{title}, #{content})
+    </insert>
+
+    <delete id="delete">
+        DELETE FROM board_post WHERE post_id = #{postId}
+    </delete>
+
+</mapper>
