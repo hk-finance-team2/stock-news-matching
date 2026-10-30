@@ -68,3 +68,13 @@
 - **결정:** `common.error`에 `ErrorCode`(오류 목록 enum), `BusinessException`, `GlobalExceptionHandler`(`@RestControllerAdvice`). 서비스는 `throw new BusinessException(ErrorCode.STOCK_NOT_FOUND)`처럼 던지기만 함
 - **이유:** 프론트와 맞춘 실패 응답 형식. 오류 종류와 HTTP 상태·메시지를 한곳에서 관리. 예상하지 못한 오류는 원인을 로그에만 남기고 사용자에게는 일반 메시지만 보여 내부 정보가 새지 않음
 - **검토한 대안:** Spring 기본 오류 응답 (모양이 다르고 내부 정보가 섞일 수 있음), Controller마다 try-catch (중복 코드)
+
+## 2026-10-30 · 회원가입: Spring Security + BCrypt, 입력값 검사
+
+- **결정:** `spring-boot-starter-security`(Security 7.1.2, Boot가 관리), 비밀번호는 `BCryptPasswordEncoder`로 암호화해 저장. `spring-boot-starter-validation`으로 입력값 검사 (아이디: 영문 소문자·숫자 4~20자, 비밀번호: 8~64자)
+- **이유:**
+  - BCrypt는 되돌릴 수 없는 방식이고, 같은 비밀번호도 매번 다른 결과(솔트)가 나와 DB가 유출돼도 원래 비밀번호를 알기 어려움
+  - 입력 규칙은 요청 클래스에 적어 두면 Controller에 들어오기 전에 400으로 거절됨. 어긴 규칙의 메시지를 그대로 응답해 프론트가 화면에 보여 줄 수 있음
+  - 아이디 중복은 서비스에서 먼저 확인하고, 동시에 가입하는 경우는 DB UNIQUE 오류를 잡아 같은 409로 응답 (DB가 최종 방어선)
+- **Security 설정:** JWT를 쓰는 API 서버라 CSRF·기본 로그인 화면·HTTP Basic은 끄고 세션은 만들지 않음(STATELESS). 지금은 모든 API를 열어 두고, JWT 검사를 붙일 때 로그인이 필요한 API만 잠금. CORS는 `.cors()`로 WebConfig 명단을 그대로 사용
+- **검토한 대안:** 비밀번호 SHA-256 직접 해시 (빠른 해시라 무차별 대입에 약함), 입력값을 Service에서 if문으로 검사 (규칙이 흩어짐)
