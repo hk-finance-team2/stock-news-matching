@@ -13,4 +13,6 @@ public interface StockMapper {
 
     /** 없으면 Optional.empty() */
     Optional<StockResponse> findByCode(String stockCode);
+
+    boolean existsByCode(String stockCode);
 }

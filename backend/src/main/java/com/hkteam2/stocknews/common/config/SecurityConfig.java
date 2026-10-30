@@ -24,6 +24,7 @@ public class SecurityConfig {
     /** 로그인(JWT)이 있어야 하는 주소. 관심 종목·게시판 쓰기 등을 만들 때 여기에 추가 */
     private static final String[] AUTHENTICATED_PATHS = {
             "/api/auth/me",
+            "/api/watchlist", "/api/watchlist/**",
     };
 
     private final HandlerExceptionResolver exceptionResolver;
