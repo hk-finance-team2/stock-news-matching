@@ -39,24 +39,32 @@ public class ArticleService {
     @Transactional(readOnly = true)
     public ListResponse<ArticleResponse> getArticles(String source, String sort, Integer minRelevance,
                                                      String stockCode, PageQuery pageQuery) {
-        String sourceType = source == null ? null : source.toUpperCase();
-        if (sourceType != null && !SOURCE_TYPES.contains(sourceType)) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST);
-        }
-        if (!SORTS.contains(sort)) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST);
-        }
-        if (minRelevance != null && (minRelevance < 0 || minRelevance > 100)) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST);
-        }
+        String sourceType = toSourceType(source);
+        checkSort(sort);
+        BigDecimal minRelevanceDecimal = toMinRelevance(minRelevance);
         if (stockCode != null && !stockMapper.existsByCode(stockCode)) {
             throw new BusinessException(ErrorCode.STOCK_NOT_FOUND);
         }
-        // 화면은 %(80), DB는 소수(0.80)
-        BigDecimal minRelevanceDecimal = minRelevance == null ? null : BigDecimal.valueOf(minRelevance, 2);
+        return findPage(sourceType, stockCode, minRelevanceDecimal, null, sort, pageQuery);
+    }
 
-        long totalCount = articleMapper.countArticles(sourceType, stockCode, minRelevanceDecimal);
-        List<ArticleRow> rows = articleMapper.findArticles(sourceType, stockCode, minRelevanceDecimal, sort,
+    /**
+     * 관심 종목 글 모아 보기 (F-19). 내 관심 종목 중 하나라도 연결된 글.
+     * 목록과 같은 SQL에 "이 회원의 관심 종목" 조건만 더함. userId는 토큰에서 꺼낸 값만 받음
+     */
+    @Transactional(readOnly = true)
+    public ListResponse<ArticleResponse> getWatchlistArticles(Long userId, String source, String sort,
+                                                              Integer minRelevance, PageQuery pageQuery) {
+        String sourceType = toSourceType(source);
+        checkSort(sort);
+        return findPage(sourceType, null, toMinRelevance(minRelevance), userId, sort, pageQuery);
+    }
+
+    /** 조건에 맞는 기사 한 페이지 + 관련 종목 칩 (목록·관심 종목 글이 같이 씀) */
+    private ListResponse<ArticleResponse> findPage(String sourceType, String stockCode, BigDecimal minRelevance,
+                                                   Long watchUserId, String sort, PageQuery pageQuery) {
+        long totalCount = articleMapper.countArticles(sourceType, stockCode, minRelevance, watchUserId);
+        List<ArticleRow> rows = articleMapper.findArticles(sourceType, stockCode, minRelevance, watchUserId, sort,
                 pageQuery.limit(), pageQuery.offset());
         if (rows.isEmpty()) {
             return new ListResponse<>(List.of(), totalCount);
@@ -73,6 +81,31 @@ public class ArticleService {
                 .map(row -> ArticleResponse.from(row, stocksByArticle.getOrDefault(row.articleId(), List.of())))
                 .toList();
         return new ListResponse<>(items, totalCount);
+    }
+
+    private static String toSourceType(String source) {
+        String sourceType = source == null ? null : source.toUpperCase();
+        if (sourceType != null && !SOURCE_TYPES.contains(sourceType)) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+        return sourceType;
+    }
+
+    private static void checkSort(String sort) {
+        if (!SORTS.contains(sort)) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+    }
+
+    /** 화면은 %(80), DB는 소수(0.80). 0~100이 아니면 400 */
+    private static BigDecimal toMinRelevance(Integer minRelevance) {
+        if (minRelevance == null) {
+            return null;
+        }
+        if (minRelevance < 0 || minRelevance > 100) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+        return BigDecimal.valueOf(minRelevance, 2);
     }
 
     /**
