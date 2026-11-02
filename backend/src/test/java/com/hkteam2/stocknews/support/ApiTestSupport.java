@@ -1,5 +1,7 @@
 package com.hkteam2.stocknews.support;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -8,9 +10,13 @@ import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
+
+import com.jayway.jsonpath.JsonPath;
 
 import com.hkteam2.stocknews.common.TimeUtils;
 
@@ -88,5 +94,33 @@ public abstract class ApiTestSupport {
 
     protected void link(long articleId, String stockCode, double relevance) {
         link(articleId, stockCode, "POSITIVE", BigDecimal.valueOf(relevance), false);
+    }
+
+    // ----- 로그인 (진짜 사용자와 같은 길: 회원가입 API → 로그인 API → 토큰) -----
+
+    /** 테스트 계정 비밀번호. 트랜잭션 롤백으로 계정은 테스트가 끝나면 사라짐 */
+    protected static final String PASSWORD = "password123";
+
+    /** 회원가입 후 로그인해서 받은 토큰. 요청 헤더에는 bearer(token)으로 붙임 */
+    protected String tokenOf(String loginId) throws Exception {
+        mvc.perform(post("/api/auth/signup").contentType(MediaType.APPLICATION_JSON)
+                .content(loginJson(loginId, PASSWORD)));
+        MvcResult result = mvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+                        .content(loginJson(loginId, PASSWORD)))
+                .andReturn();
+        return JsonPath.read(result.getResponse().getContentAsString(), "$.accessToken");
+    }
+
+    protected static String bearer(String token) {
+        return "Bearer " + token;
+    }
+
+    protected static String loginJson(String loginId, String password) {
+        return "{\"loginId\":\"" + loginId + "\",\"password\":\"" + password + "\"}";
+    }
+
+    /** 응답 JSON에서 숫자 하나 꺼내기. 예: 방금 만든 글의 postId */
+    protected static long readLong(MvcResult result, String path) throws Exception {
+        return ((Number) JsonPath.read(result.getResponse().getContentAsString(), path)).longValue();
     }
 }
