@@ -1,4 +1,4 @@
-"""DB 연결 공통. 팀 Docker MariaDB (stocknews, 3308)
+"""DB 연결. 팀 Docker MariaDB (stocknews, 3308)
 
 DB 의 DATETIME 칸에는 시간대가 없다 → 넣을 때는 KST 로 맞춘 뒤 시간대를 떼고,
 읽을 때는 KST 를 다시 붙인다. (팀 약속: 시간대 Asia/Seoul)

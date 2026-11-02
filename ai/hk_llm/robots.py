@@ -1,7 +1,7 @@
 """본문 수집 전 robots.txt 확인. 사이트(호스트)별로 한 번만 받아서 캐시한다.
 
 사용:
-    from hk_llm.collector.robots_checker import allowed, crawl_delay
+    from hk_llm.robots import allowed, crawl_delay
     if allowed(url):
         time.sleep(crawl_delay(url))
         ...

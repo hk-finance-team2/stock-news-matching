@@ -1,14 +1,38 @@
-"""실패하면 다시 해보기 공통 모듈.
+"""공통 도구: 로그 남기기, 실패하면 다시 해보기
 
-사용:
-    from hk_llm.common.retry import retry
+    from hk_llm.util import get_logger, retry
+    log = get_logger(__name__)
+    log.info("RSS %d건", n)                              # 화면 + logs/hk_llm.log
     res = retry(lambda: requests.get(url, timeout=10))  # 실패하면 3번까지 다시
 """
+import logging
+import logging.handlers
 import time
 
 import requests
 
-from hk_llm.common.logger import get_logger
+from hk_llm.config import LOG_DIR
+
+FORMAT = "%(asctime)s %(levelname)-7s %(name)s | %(message)s"
+
+
+def _setup():
+    LOG_DIR.mkdir(exist_ok=True)
+    # 하루마다 새 파일, 14일치만 남김 (본문 보관 7일보다 길게 → 실패 원인 추적용)
+    file = logging.handlers.TimedRotatingFileHandler(
+        LOG_DIR / "hk_llm.log", when="midnight", backupCount=14, encoding="utf-8"
+    )
+    logging.basicConfig(level=logging.INFO, format=FORMAT, handlers=[logging.StreamHandler(), file])
+    # 라이브러리 잡음 줄이기
+    for name in ("urllib3", "httpx", "openai"):
+        logging.getLogger(name).setLevel(logging.WARNING)
+
+
+def get_logger(name):
+    if not logging.getLogger().handlers:
+        _setup()
+    return logging.getLogger(name)
+
 
 log = get_logger(__name__)
 

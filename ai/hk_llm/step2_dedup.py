@@ -1,16 +1,16 @@
-"""기사 중복 제거. 16번: 주소 기준 (17번 제목 유사도도 여기에 붙인다)
+"""2단계 (16번): 기사 중복 제거, 주소 기준
 
-    from hk_llm.service.dedup_service import dedup_by_url
-    articles = dedup_by_url(articles)  # ArticleDto 마다 url_key 가 채워지고, 같은 url_key 는 첫 건만 남음
+    from hk_llm.step2_dedup import dedup_by_url
+    articles = dedup_by_url(articles)  # Article 마다 url_key 가 채워지고, 같은 url_key 는 첫 건만 남음
 
-이번 실행 안에서의 중복만 거른다. 이미 DB 에 있는 기사는 18번에서
+이번 실행 안에서의 중복만 거른다. 이미 DB 에 있는 기사는 step3_save 에서
 `article.url_key` UNIQUE 로 걸러진다.
 """
 from dataclasses import replace
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from hk_llm.common.logger import get_logger
-from hk_llm.dto.article_dto import ArticleDto
+from hk_llm.util import get_logger
+from hk_llm.models import Article
 
 # 결정사항 4번: 추적용 꼬리만 뗀다. 기사 번호 꼬리(newsId, idxno 등)는 남김
 TRACKING = {"ref", "input"}
@@ -59,14 +59,14 @@ if __name__ == "__main__":
     from datetime import datetime
 
     def art(url, title):
-        return ArticleDto(url=url, press="연합뉴스", title=title, published_at=datetime(2026, 11, 2))
+        return Article(url=url, press="연합뉴스", title=title, published_at=datetime(2026, 11, 2))
 
     out = dedup_by_url([art("https://www.yna.co.kr/view/AKR1", "첫 건"),
                         art("https://www.yna.co.kr/view/AKR1?input=1195m", "꼬리만 다름"),
                         art("https://www.yna.co.kr/view/AKR2", "다른 기사")])
     assert [x.title for x in out] == ["첫 건", "다른 기사"] and out[0].url_key == "https://www.yna.co.kr/view/AKR1"
 
-    from hk_llm.collector.rss_collector import fetch_all
+    from hk_llm.step1_rss import fetch_all
     articles, _ = fetch_all()
     out = dedup_by_url(articles)
     assert len({x.url_key for x in out}) == len(out)

@@ -25,25 +25,27 @@
 
 ## 폴더
 
+파일 이름 = 파이프라인 단계. 위에서 아래로 읽으면 흐름 순서.
+
 ```
 ai/
 ├── README.md
 ├── requirements.txt
 ├── hk_llm/
-│   ├── config.py           설정 한곳: 폴더 위치, 시간대(KST), .env 값
-│   ├── collector/          밖에서 가져오기
-│   │   ├── rss_collector.py    언론사 RSS 8개 기사 목록 (15)
-│   │   └── robots_checker.py   본문 가져오기 전 robots.txt 허용 확인
-│   ├── service/            단계 처리
-│   │   ├── dedup_service.py    주소 기준 중복 제거 (16)
-│   │   └── collect_service.py  RSS 수집 1번 실행: 받기 → 중복 제거 → DB 저장 (18)
-│   ├── dao/                DB 읽기·쓰기 (테이블마다 1개, db.py 는 연결)
-│   ├── dto/                테이블 한 줄의 모양 (dataclass)
-│   ├── common/             logger.py 로그, retry.py 실패 시 재시도
-│   ├── tools/              한 번씩 돌리는 도구: naver_test.py 키 확인, stock_master.py 종목 목록
-│   ├── data/               (Git 제외) stocks.csv, kospi200.csv, sample_rss.json
-│   └── logs/               (Git 제외) hk_llm.log
-└── docs/                   문서 안내는 docs/README.md
+│   ├── run.py           ★ 파이프라인 1번 실행 (1→2→3, 실행 기록 collect_run)
+│   ├── step1_rss.py     1. 언론사 RSS 8개 기사 목록 받기 (15번)
+│   ├── step2_dedup.py   2. 주소 기준 중복 제거 (16번)
+│   ├── step3_save.py    3. article 에 LISTED 로 저장 (18번)
+│   │                    (다음: step4_body.py 본문, step5_summary.py 요약, step6_match.py 종목 매칭)
+│   ├── robots.py        본문 가져오기 전 robots.txt 허용 확인 (4단계에서 씀)
+│   ├── models.py        기사 한 건의 모양 (Article, article 테이블 한 줄)
+│   ├── db.py            DB 연결, KST 시각 변환
+│   ├── util.py          로그, 실패 시 재시도
+│   ├── config.py        설정: 폴더 위치, 시간대, .env 값
+│   ├── tools/           가끔 손으로 돌리는 도구: naver_test.py 키 확인, stock_master.py 종목 목록
+│   ├── data/            (Git 제외) stocks.csv, kospi200.csv, sample_rss.json
+│   └── logs/            (Git 제외) hk_llm.log
+└── docs/                문서 안내는 docs/README.md
 ```
 
 ## 실행
@@ -62,8 +64,8 @@ pip install -r requirements.txt
 
 | 하고 싶은 것 | 명령 |
 |---|---|
-| RSS 수집 1번 (DB 저장까지) | `python -m hk_llm.service.collect_service` |
-| RSS 만 받아 보기 | `python -m hk_llm.collector.rss_collector` |
+| 파이프라인 1번 (RSS → DB 저장) | `python -m hk_llm.run` |
+| RSS 만 받아 보기 | `python -m hk_llm.step1_rss` |
 | 네이버 API 키 확인 | `python -m hk_llm.tools.naver_test 삼성전자` |
 | 종목 목록 `data/stocks.csv` 만들기 | `python -m hk_llm.tools.stock_master` (먼저 KRX 코스피200 CSV 를 `hk_llm/data/kospi200.csv` 로, [docs/진행기록/1_준비.md](docs/진행기록/1_준비.md) 1-6) |
 

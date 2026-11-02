@@ -1,6 +1,6 @@
-"""언론사 RSS 8개에서 기사 목록 받기 (15번). 실행: python -m hk_llm.collector.rss_collector (ai 폴더에서) → 피드별 건수와 예시 출력
+"""1단계 (15번): 언론사 RSS 8개에서 기사 목록 받기. 실행: python -m hk_llm.step1_rss (ai 폴더에서) → 피드별 건수와 예시 출력
 
-돌려주는 값: ArticleDto 목록 (dto/article_dto.py)
+돌려주는 값: Article 목록 (models.py)
 중복 제거(16번)·DB 저장(18번)은 여기서 하지 않는다.
 """
 import re
@@ -10,10 +10,9 @@ from email.utils import parsedate_to_datetime
 
 import requests
 
-from hk_llm.common.logger import get_logger
-from hk_llm.common.retry import retry
+from hk_llm.util import get_logger, retry
 from hk_llm.config import KST, USER_AGENT
-from hk_llm.dto.article_dto import ArticleDto
+from hk_llm.models import Article
 
 FEEDS = {
     "한국경제": ["https://www.hankyung.com/feed/finance", "https://www.hankyung.com/feed/economy"],
@@ -56,7 +55,7 @@ def parse(xml, press, now=None):
         url, title = _text(it, "link"), _text(it, "title")
         if not url or not title:
             continue
-        items.append(ArticleDto(
+        items.append(Article(
             url=url,
             press=press,
             title=title,
