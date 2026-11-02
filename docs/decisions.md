@@ -353,3 +353,17 @@ AI 파트(지승현)와 이야기해서 정함.
 - **추가 (같은 날):** 로그인·관심 종목·게시판 API 테스트 18개 → 전체 55개. 테스트 안에서 실제 회원가입·로그인 API로 토큰을 받아 씀 (`ApiTestSupport.tokenOf`). 남의 관심 종목·글·댓글이 안 보이고 못 지우는지(401·403) 확인. 게시글 "본인 확인"을 일부러 끄면 테스트가 실패하는 것 확인
 - **다음:** ❌면 merge를 막는 것(main 브랜치 보호)은 팀 결정 후
 - **검토한 대안:** Testcontainers(테스트마다 새 DB, `build.gradle`에 라이브러리 추가 필요), 테스트 전용 DB(팀원마다 만들어야 함), 손으로만 확인(계속 늘어남)
+
+## 2026-11-02 · 데이터 상태 API: 뉴스·SNS는 article에서, 실행 상태는 collect_run에서
+
+- **결정:** `GET /api/status` (F-16, B-09). SQL 2번
+  - ① 마지막 갱신 시각 4개를 서브쿼리로 한 번에: 뉴스·SNS = `article.collected_at`의 `MAX`(`source_type`별), 요약 = `stock_daily_summary.generated_at`의 `MAX`, 마지막 성공 수집 = `collect_run`에서 `status = 'SUCCESS'`인 `MAX(finished_at)` (V5의 `idx_collect_run_status_finished`)
+  - ② 가장 최근 수집 실행 한 줄 (`RUNNING`/`SUCCESS`/`FAILED`, 건수). 실패 원인(`error`)은 내보내지 않음
+  - 데이터가 없으면 각 값 `null`. 값이 모두 NULL인 줄은 MyBatis가 `null`을 돌려주므로 Service에서 "전부 비어 있음"으로 바꿈
+  - 새 패키지 `status` (AI 표를 읽기만)
+- **이유:**
+  - 뉴스/SNS 구분을 `collect_run.channel`로 하면 [확장] 칸이라 AI가 비워 둘 수 있음. `article.source_type`은 항상 있어서 글이 들어오기만 하면 시각이 나옴
+  - 수집 시각은 화면에 보이기 전(분석 중) 글도 포함. "데이터가 들어오고 있는가"를 보여 주는 것이 목적
+  - 마지막 실행은 따로 줘야 "수집 중", "마지막 수집 실패"를 표시할 수 있음 (성공 시각만으로는 모름)
+  - 오류 내용은 내부 정보(주소·키 등이 섞일 수 있음)라 화면에 내보내지 않음
+- **검토한 대안:** `collect_run`만으로 모두 계산(뉴스/SNS 구분이 AI 기록 방식에 달림), 화면에 보이는 `DONE` 글 기준(분석이 밀리면 수집이 멈춘 것처럼 보임)
