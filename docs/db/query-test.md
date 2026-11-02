@@ -44,6 +44,16 @@
 | QT-23 | collect_run | `SELECT MAX(finished_at) ... WHERE status = 'SUCCESS'` | 마지막 성공 수집 시각 | 09:01 | 09:01 | ✅ |
 | QT-24 | article | 기사 DELETE 후 연결 수 조회 | 기사 삭제 시 연결도 삭제 | 0 | 0 | ✅ |
 
+## 2026-11-02 · V6 (종목 사전 2,655개)
+
+| 쿼리 ID | 테이블 | 테스트 쿼리 | 설명 | 예상 결과 | 실제 결과 | 검증 |
+|---|---|---|---|---|---|---|
+| QT-25 | flyway_schema_history | 서버 시작 로그 + `SELECT version ...` | V5까지 된 DB에 V6만 실행되는지 | V6만 실행 | `Current version: 5` → `Migrating to version 6` → v6 | ✅ |
+| QT-26 | stock_info | `SELECT market, COUNT(*) ... GROUP BY market` | 시장별 개수 | KOSPI 829, KOSDAQ 1,826 | KOSPI 829, KOSDAQ 1,826 | ✅ |
+| QT-27 | stock_info | 예시 5개 종목 조회 | 공식 값으로 덮어썼는지 | 업종이 공식 분류로 바뀜 | 삼성전자 "통신 및 방송 장비 제조업" 등 | ✅ |
+| QT-28 | article_stock | `035720`(카카오), `005380`(현대자동차) 연결 INSERT | QT-18에서 막혔던 종목 | 성공 | 성공 (ROLLBACK) | ✅ |
+| QT-29 | watchlist | V6 후 기존 관심 종목 조회 | 기존 데이터 유지 | 그대로 | 그대로 | ✅ |
+
 ## 다음에 추가할 항목
 
 - `EXPLAIN`으로 인덱스 사용 확인 (게시판 최신순 목록, 종목별 기사 목록, 별칭·테마 검색)

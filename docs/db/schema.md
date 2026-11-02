@@ -9,7 +9,7 @@
 
 | 테이블 | 설명 | 쓰는 파트 | 읽는 파트 | Flyway | 상태 |
 |---|---|---|---|---|---|
-| `stock_info` | 종목 기본 정보 | 백엔드 | AI, 백엔드 | V1 | ✅ |
+| `stock_info` | 종목 기본 정보 (코스피·코스닥 2,655개) | 백엔드 | AI, 백엔드 | V1, 데이터 V6 | ✅ |
 | `stock_alias` | 종목 약칭·별칭 | 백엔드 | AI, 백엔드 | V3 | ✅ |
 | `stock_theme` | 종목 테마 키워드 | 백엔드 | AI, 백엔드 | V3 | ✅ |
 | `match_setting` | 매칭 가중치·최소 점수 | 백엔드 | AI | V3 | ✅ |
@@ -165,6 +165,10 @@ erDiagram
 | 4 | sector | VARCHAR(100) | | N | | 업종 |
 | 5 | created_at | DATETIME | | Y | CURRENT_TIMESTAMP | 등록 시각 |
 | 6 | updated_at | DATETIME | | Y | CURRENT_TIMESTAMP (수정 시 갱신) | 수정 시각 |
+
+- 데이터: V6에서 **코스피 829 + 코스닥 1,826 = 2,655개** (한국거래소 KIND 상장법인목록, 2026-11-02). 코넥스·우선주·ETF 없음
+- 종목명은 KIND 공식 회사명 (예: 현대자동차, 케이티앤지). 기사 속 약칭(현대차, KT&G)은 `stock_alias`로
+- 종목코드에 영문이 섞일 수 있음 (예: `0127E0`) → 숫자 CHECK를 걸지 않음
 
 ### stock_alias · 종목 약칭·별칭 (V3)
 
@@ -376,3 +380,4 @@ erDiagram
 | 2026-10-30 | V3 | stock_alias, stock_theme, match_setting + 초기값 |
 | 2026-10-30 | V4 | users, watchlist, board_post, board_comment, board_like |
 | 2026-10-30 | V5 | article, article_stock, collect_run (AI 제안서 기반 + [확장] 칸), stock_daily_summary |
+| 2026-11-02 | V6 | stock_info 데이터: 코스피·코스닥 2,655개 (KIND). V2 예시 5개는 공식 값으로 덮어씀 |

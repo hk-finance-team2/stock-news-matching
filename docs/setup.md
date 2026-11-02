@@ -7,6 +7,7 @@ AI 도구에게 "`docs/setup.md`대로 해줘"라고 시켜도 됩니다.
 - 레포 내려받기와 `.env` 복사는 [Git 사용 가이드](git-guide.md) 1절을 먼저 따라 하세요.
 - **빠르게:** 백엔드 코드를 고치지 않는 사람은 **1-1·1-2(설치) → 2(`.env`) → 4-1(Docker로 켜기) → 5(확인) → 8(내 파트에서 쓰는 법)**만 보면 됩니다.
 - AI·프론트 개발 환경은 각 파트가 10·11절에 채웁니다.
+- Docker가 어떻게 돌아가는지, 자주 쓰는 명령은 [Docker 쉽게 보기](docker-guide.md)에 정리돼 있습니다.
 
 ## 0. 무엇을 설치하나
 
@@ -148,7 +149,7 @@ cd backend
 | 주소 | 무엇이 보이나 |
 |---|---|
 | http://localhost:8080/swagger-ui.html | API 목록 화면. `GET /api/stocks` → **Try it out** → **Execute** |
-| http://localhost:8080/api/stocks | 예시 종목 5개 JSON |
+| http://localhost:8080/api/stocks?q=삼성 | 종목 검색 결과 JSON (`{items, totalCount}`). `q` 없이 부르면 전체 2,655개 중 1쪽(20개) |
 
 터미널에서 확인하려면 (PowerShell에서는 `curl`이 아니라 `curl.exe`):
 
@@ -231,13 +232,13 @@ Swagger(http://localhost:8080/swagger-ui.html)에서:
   - 시세 테이블은 1차 제외
 - **AI 파트가 쓰는 테이블 (V5):** `article`, `article_stock`, `collect_run`, `stock_daily_summary`
   - AI 제안서 칸 그대로이고, `[확장]` 표시 칸은 비워 둬도 저장됨
-  - `article_stock`의 종목은 `stock_info`에 있어야 저장됨 (종목 사전은 백엔드가 채우는 중)
+  - `article_stock`의 종목은 `stock_info`에 있어야 저장됨. 종목 사전에는 **코스피·코스닥 2,655개**가 있음 (V6, AI의 `stock_master.py`와 같은 KIND 목록). 코넥스·우선주·ETF는 없음
   - 화면에는 `article.status = 'DONE'`인 기사만 나감
 - **읽기만 하는 테이블 (백엔드가 채움):**
 
 | 테이블 | 쓰는 곳 |
 |---|---|
-| `stock_info` | 종목코드·종목명·시장·업종 (지금은 예시 5개) |
+| `stock_info` | 종목코드·종목명·시장·업종 (코스피·코스닥 2,655개, 이름은 KIND 공식 회사명: 현대자동차, 케이티앤지 등) |
 | `stock_alias` | 별칭 → 종목 (예: 삼전 → 005930) |
 | `stock_theme` | 테마 → 종목 (예: 방산 → 012450) |
 | `match_setting` | 매칭 가중치. `name_weight` 0.40, `theme_weight` 0.40, `context_weight` 0.20, `min_score` 0.70 |
