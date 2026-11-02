@@ -86,6 +86,21 @@ public class StockService {
         return StockSummaryResponse.of(stock, today, summary, SentimentRatioResponse.from(counts));
     }
 
+    /**
+     * 종목 언급량 그래프. SQL은 글이 있는 칸만 세고, 빈 칸(0건)은 응답 만들 때 채움
+     */
+    public StockMentionsResponse getMentions(String stockCode, String period) {
+        MentionPeriod mentionPeriod = MentionPeriod.from(period);   // today/7d/30d가 아니면 400
+        if (!stockMapper.existsByCode(stockCode)) {
+            throw new BusinessException(ErrorCode.STOCK_NOT_FOUND);
+        }
+        LocalDateTime now = LocalDateTime.now(TimeUtils.KST);
+
+        List<MentionCountRow> rows = stockMapper.countMentions(stockCode, mentionPeriod.start(now),
+                mentionPeriod.end(now), mentionPeriod.unitName());
+        return StockMentionsResponse.of(stockCode, mentionPeriod, mentionPeriod.buckets(now), rows);
+    }
+
     /** 출처 조건: 없으면 null(전체), 대소문자 상관없이(sns → SNS) NEWS/SNS만. 그 밖은 400 */
     private static String toSourceType(String source) {
         String sourceType = source == null ? null : source.toUpperCase();
