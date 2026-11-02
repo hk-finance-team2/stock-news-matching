@@ -51,6 +51,7 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 | 🔓 | GET | `/api/stocks?q=삼성&page=1&size=20` | **종목 검색**. 종목명(포함)·종목코드(시작)·별칭(포함)으로 찾음. 이름이 딱 맞는 것 → 이름이 q로 시작 → 코드 순. `q`가 없으면 전체 2,655개를 이름순으로 페이지 |
 | 🔓 | GET | `/api/stocks/issues?source=&limit=10` | **오늘의 이슈 종목 순위**. 아래 참고 |
 | 🔓 | GET | `/api/stocks/{stockCode}` | 종목 하나 `{ stockCode, stockName, market, sector }` |
+| 🔓 | GET | `/api/stocks/{stockCode}/summary` | **오늘의 종합 요약·감성 비율**. 아래 참고 |
 
 **오늘의 이슈 종목** (홈 오른쪽, 종목별 조회 왼쪽 목록)
 - 오늘(한국 시간 **0시 ~ 지금**) 작성된 글에 **많이 나온 종목** 순. 글 수가 같으면 평균 관련도가 높은 순
@@ -58,6 +59,22 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 - 한 건: `{ rank, stockCode, stockName, articleCount, avgRelevance, lastPublishedAt }`
   - `articleCount`: 오늘 이 종목이 나온 글 수, `avgRelevance`: 평균 관련도 %(없으면 `null`), `lastPublishedAt`: 가장 최근 글 시각
 - 오늘 글이 없으면 `items: []`. 0시가 막 지나면 비어 있을 수 있음
+
+**오늘의 종합 요약** (종목별 조회 화면 가운데)
+
+```json
+{
+  "stockCode": "005930", "stockName": "삼성전자", "date": "2026-11-02",
+  "newsSummary": "고대역폭 메모리 공급 계약으로 …", "snsSummary": "반도체 업황 회복을 기대하는 …",
+  "generatedAt": "2026-11-02T11:10:28+09:00",
+  "sentiment": { "articleCount": 2, "positiveCount": 1, "negativeCount": 0, "neutralCount": 1,
+                 "positive": 50, "negative": 0, "neutral": 50 }
+}
+```
+
+- `newsSummary`·`snsSummary`: AI가 1시간마다 만드는 오늘 요약. **아직 없으면 `null`** → "요약 준비 중" 표시. SNS 글이 없는 종목은 `snsSummary`만 `null`일 수 있음
+- `sentiment`: 오늘(한국 시간 0시~지금) 이 종목이 나온 글을 **지금** 센 것 (이 종목에 대한 감성 기준). `positive`·`negative`·`neutral`은 % 정수이고 **합이 항상 100**. 오늘 글이 없으면 모두 0
+- 없는 종목은 404 `STOCK_NOT_FOUND`
 
 ### 뉴스·SNS 글
 
