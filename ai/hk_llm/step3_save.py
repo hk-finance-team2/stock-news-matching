@@ -42,7 +42,6 @@ if __name__ == "__main__":
     from datetime import datetime
 
     from hk_llm.config import KST
-    from hk_llm.db import from_db
     from hk_llm.models import Article
 
     key = "test://hk_llm/step3_save_check"
@@ -54,7 +53,7 @@ if __name__ == "__main__":
         assert save_listed([a]) == 0, "같은 url_key 는 두 번 안 들어감"
         with engine.connect() as conn:
             row = conn.execute(text("SELECT status, published_at FROM article WHERE url_key = :k"), {"k": key}).one()
-        assert row.status == "LISTED" and from_db(row.published_at) == a.published_at, "시각 KST 왕복"
+        assert row.status == "LISTED" and row.published_at == to_db(a.published_at), "시각 KST"
     finally:
         with engine.begin() as conn:
             conn.execute(text("DELETE FROM article WHERE url_key = :k"), {"k": key})

@@ -45,7 +45,7 @@ ai/
 │   ├── db.py            DB 연결, KST 시각 변환
 │   ├── util.py          로그, 실패 시 재시도
 │   ├── config.py        설정: 폴더 위치, 시간대, .env 값
-│   ├── tools/           가끔 손으로 돌리는 도구: naver_test.py 키 확인, stock_master.py 종목 목록
+│   ├── tools/           가끔 손으로 돌리는 도구: stock_master.py 종목 목록
 │   ├── data/            (Git 제외) stocks.csv, kospi200.csv, sample_rss.json
 │   └── logs/            (Git 제외) hk_llm.log
 └── docs/                문서 안내는 docs/README.md
@@ -73,7 +73,6 @@ pip install -r requirements.txt
 | 매칭 규칙 시험 (DB·비용 없음) | `python -m hk_llm.step6_match` |
 | 1~3단계 시험 | `python -m hk_llm.run --check` |
 | RSS 만 받아 보기 | `python -m hk_llm.step1_rss` |
-| 네이버 API 키 확인 | `python -m hk_llm.tools.naver_test 삼성전자` |
 | 종목 목록 `data/stocks.csv` 만들기 | `python -m hk_llm.tools.stock_master` **6단계에 꼭 필요** (먼저 KRX 코스피200 CSV 를 `hk_llm/data/kospi200.csv` 로, [docs/진행기록/1_준비.md](docs/진행기록/1_준비.md) 1-6) |
 
 - 각 파일 맨 아래 `if __name__ == "__main__":` 은 자체 시험. 실행해서 `ok` 가 나오면 통과
