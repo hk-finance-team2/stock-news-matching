@@ -16,7 +16,7 @@
 ## 지금 상태 (2026-11-02)
 
 - 끝: RSS 목록 받기(15) → 주소 중복 제거(16) → DB 저장 `LISTED`(18) → 본문 `FETCHED`(20~22) → LLM 요약 `SUMMARIZED`(27~34) → 종목 매칭 `DONE`(23·25). 다음: 오탐 처리(24)·정확도 확인(26) ([docs/개발순서.md](docs/개발순서.md))
-- 뉴스: **언론사 RSS 8개** (한경·연합·서경·파이낸셜뉴스, 5분마다 확인, 하루 약 1,000건)
+- 뉴스: **언론사 7곳 RSS 11개** (한경·연합·서경·파이낸셜·전자신문·연합인포맥스·비즈워치, 5분마다 확인, 하루 최대 약 1,600건 추정)
 - 흐름: RSS 목록 → 중복 제거 → 원문 본문 → LLM 요약 → 요약에서 종목 연결
 - 단계끼리는 `article.status` 로 넘김: `LISTED` → `FETCHED` → `SUMMARIZED` → `DONE` / `NO_STOCK`
 - 백엔드와는 **DB 로만** 주고받음 (AI 가 쓰고 백엔드가 읽음). 테이블은 백엔드 Flyway V5·V7
@@ -34,7 +34,7 @@ ai/
 ├── requirements.txt
 ├── hk_llm/
 │   ├── run.py           ★ 파이프라인 1번 실행 (1→6, 실행 기록 collect_run)
-│   ├── step1_rss.py     1. 언론사 RSS 8개 기사 목록 받기 (15번)
+│   ├── step1_rss.py     1. 언론사 RSS 11개 기사 목록 받기 (15번)
 │   ├── step2_dedup.py   2. 주소 기준 중복 제거 (16번)
 │   ├── step3_save.py    3. article 에 LISTED 로 저장 (18번)
 │   ├── step4_body.py    4. 원문 본문 가져와 FETCHED, 7일 지난 본문 삭제 (20~22번)

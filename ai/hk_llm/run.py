@@ -23,7 +23,7 @@ log = get_logger(__name__)
 
 
 def collect(engine):
-    """1~3단계. (새로 저장한 수, 실패한 피드 목록). RSS 8개가 전부 실패하면 예외"""
+    """1~3단계. (새로 저장한 수, 실패한 피드 목록). RSS 가 전부 실패하면 예외"""
     articles, failed = fetch_all()
     if len(failed) == sum(len(urls) for urls in FEEDS.values()):
         raise RuntimeError("RSS 전부 실패")

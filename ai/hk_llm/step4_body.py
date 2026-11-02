@@ -21,12 +21,15 @@ from hk_llm.db import get_engine
 from hk_llm.robots import allowed, crawl_delay
 from hk_llm.util import get_logger, retry
 
-# 언론사 4곳뿐이라 범용 추출기 대신 사이트별 본문 칸을 직접 지정 (2026-11-02 기사 페이지 확인)
+# 언론사가 적어서 범용 추출기 대신 사이트별 본문 칸을 직접 지정 (2026-11-02 기사 페이지 확인)
 BODY_XPATH = {
     "www.hankyung.com": '//*[@id="articletxt"]',
     "www.yna.co.kr": '//div[contains(@class, "story-news")]/p',  # 문단만: 칸 안에 구독 버튼·송고 시각이 섞여 있음
     "www.sedaily.com": '//*[@id="article-body"]',
     "www.fnnews.com": '//div[contains(@class, "article-view__body")]',
+    "www.etnews.com": '//*[@itemprop="articleBody"]',
+    "news.einfomax.co.kr": '//*[@itemprop="articleBody"]',
+    "news.bizwatch.co.kr": '//*[@itemprop="articleBody"]',
 }
 DROP = ".//figure | .//figcaption | .//aside | .//script | .//style | .//table"  # 사진 설명·광고·표는 요약에 방해
 PAYWALL = b"paywall-popup__body"  # 한경 프리미엄: 본문 대신 결제 안내만 옴 → 우회하지 않고 SKIPPED
@@ -64,7 +67,7 @@ def clean(text_):
     for line in text_.splitlines():
         line = re.sub(r"\s+", " ", line).strip()
         # 기자 이메일·저작권·제보 안내 줄은 요약에 쓸모없음
-        if (not line or re.search(r"\S+@\S+\.\S+|무단 전재", line) or line.startswith(("ⓒ", "©", "<저작권자", "제보는"))
+        if (not line or re.search(r"\S+@\S+\.\S+|무단\s*전재", line) or line.startswith(("ⓒ", "©", "<저작권자", "제보는"))
                 or line.endswith(" 송고")):  # 연합 "2026/11/02 10:30 송고"
             continue
         lines.append(line)
@@ -84,7 +87,7 @@ def fetch_bodies(engine=None, limit=BATCH):
     last_hit = {}  # 사이트별 마지막 요청 시각
     for r in rows:
         p = urlsplit(r.url)
-        if p.scheme != "https" or p.netloc not in BODY_XPATH:  # 정한 언론사 4곳 말고는 요청 자체를 안 보냄
+        if p.scheme != "https" or p.netloc not in BODY_XPATH:  # 정한 언론사 말고는 요청 자체를 안 보냄
             _update(engine, r.article_id, status="SKIPPED", error="모르는 사이트")
             done["SKIPPED"] += 1
             continue
@@ -150,14 +153,14 @@ if __name__ == "__main__":
     assert got == "SOOP이 3분기 실적 부진에 급락하고 있다.\n2일 오전 9시16분 코스닥시장에서", repr(got)
     assert extract(html, "https://unknown.example/1") is None
 
-    # 실제 사이트 4곳 1건씩 (DB 에서 언론사별 최신 기사)
+    # 실제 사이트 1건씩 (DB 에서 언론사별 최신 기사)
     with get_engine().connect() as conn:
         urls = conn.execute(text("SELECT url FROM article WHERE article_id IN "
                                  "(SELECT MAX(article_id) FROM article GROUP BY press)")).scalars().all()
     for u in urls:
         b = extract(_get(u).content, u)
         assert b and len(b) >= MIN_LEN, u
-        assert not re.search("구독중|무단 전재| 송고$", b, re.M), f"꼬리 잡음 섞임: {u}"
+        assert not re.search(r"구독중|무단\s*전재| 송고$", b, re.M), f"꼬리 잡음 섞임: {u}"
         log.info("%s %d자: %s …", urlsplit(u).netloc, len(b), b[:60].replace("\n", " / "))
         time.sleep(1)
     print("ok")
