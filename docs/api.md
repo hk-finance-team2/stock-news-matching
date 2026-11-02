@@ -51,6 +51,42 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 | 🔓 | GET | `/api/stocks?q=삼성&page=1&size=20` | **종목 검색**. 종목명(포함)·종목코드(시작)·별칭(포함)으로 찾음. 이름이 딱 맞는 것 → 이름이 q로 시작 → 코드 순. `q`가 없으면 전체 2,655개를 이름순으로 페이지 |
 | 🔓 | GET | `/api/stocks/{stockCode}` | 종목 하나 `{ stockCode, stockName, market, sector }` |
 
+### 뉴스·SNS 글
+
+| | 방식 | 주소 | 설명 |
+|---|---|---|---|
+| 🔓 | GET | `/api/articles` | **글 목록**. AI 분석이 끝난 글만, 기본은 최신순. 아래 조건을 골라 붙임 |
+
+| 조건 | 값 | 쓰는 곳 |
+|---|---|---|
+| `stockCode` | 종목코드 6자리. 이 종목과 연결된 글만 (없는 종목이면 404) | 종목별 조회 화면 |
+| `source` | `NEWS` / `SNS` (없으면 전체) | 출처 탭 |
+| `sort` | `latest` 최신순(기본) / `relevance` 관련도순 | 정렬 버튼 |
+| `minRelevance` | 0~100 (%). 관련도가 이 값 이상인 종목이 있는 글만. `stockCode`와 같이 쓰면 그 종목 기준 | 관련도 필터 |
+| `page`, `size` | 1부터, 1~100 (기본 20) | |
+
+예: 홈 `GET /api/articles` · 삼성전자 화면 `GET /api/articles?stockCode=005930` · SNS만 관련도순 `GET /api/articles?source=SNS&sort=relevance`
+
+응답 한 건:
+
+```json
+{
+  "articleId": 2, "sourceType": "NEWS", "channel": "RSS",
+  "title": "...", "press": "예시일보", "publishedAt": "2026-11-02T09:04:19+09:00",
+  "summary": "3줄 요약", "url": "원문 링크",
+  "stocks": [
+    { "stockCode": "010950", "stockName": "S-Oil", "matchType": "INDIRECT",
+      "relevance": 85, "sentiment": "POSITIVE", "isMain": true }
+  ]
+}
+```
+
+- `stocks`는 관련도 높은 순. `relevance`는 **%(정수)**, `matchType`은 `DIRECT`(직접)·`INDIRECT`(간접)
+- `matchType`·`relevance`는 AI가 아직 안 채웠으면 `null` → 화면에서 칩 모양·% 표시를 생략
+- `sourceType`이 `SNS`면 "참고용 · 확인되지 않은 정보" 표시 (요구사항 N-05)
+- 기사 본문은 내보내지 않습니다. 요약과 원문 링크(`url`)만
+- 개발 중에 글이 없으면 [setup.md](setup.md) 2절의 **예시 기사**를 켜세요
+
 ### 관심 종목
 
 | | 방식 | 주소 | 설명 |
@@ -72,9 +108,9 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 | 🔒 | DELETE | `/api/comments/{commentId}` | 댓글 삭제 (본인만) |
 | 🔒 | POST | `/api/posts/{postId}/like` | 공감 토글 → `{ liked, likeCount }` (누르면 공감, 다시 누르면 취소) |
 
-### 아직 없는 API (AI 기사 테이블이 생긴 뒤 추가)
+### 아직 없는 API (차례로 추가)
 
-뉴스·SNS 글 목록·상세, 종목별 조회(이슈 순위·종합 요약·감성 비율·언급량), 통합 검색, 데이터 상태, 관심 종목의 오늘 매칭 글 수.
+글 상세, 종목별 조회(이슈 순위·종합 요약·감성 비율·언급량), 통합 검색, 데이터 상태, 관심 종목의 오늘 매칭 글 수.
 그동안은 프론트에서 예시 데이터로 화면을 만들어 두면 됩니다.
 
 ## 4. 오류 코드
