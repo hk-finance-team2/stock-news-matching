@@ -177,10 +177,17 @@ erDiagram
 | 1 | alias_id | BIGINT | PK | Y | AUTO_INCREMENT | 별칭 ID |
 | 2 | stock_code | CHAR(6) | FK → stock_info, UK① | Y | | 종목코드 |
 | 3 | alias | VARCHAR(100) | UK①, IDX | Y | | 약칭·별칭 (예: 삼전) |
-| 4 | created_at | DATETIME | | Y | CURRENT_TIMESTAMP | 등록 시각 |
+| 4 | alias_type | VARCHAR(20) | CHECK | Y | `SHORT` | 별칭 종류 (V8): `SHORT` 공식 약칭·흔한 표기, `FORMER` 예전 이름, `NICKNAME` 별명, `AMBIGUOUS` 다른 종목과 헷갈림 |
+| 5 | created_at | DATETIME | | Y | CURRENT_TIMESTAMP | 등록 시각 |
 
 - UK① `uk_stock_alias (stock_code, alias)`: 같은 종목에 같은 별칭은 한 번만. 다른 종목에는 같은 별칭 가능
 - IDX `idx_stock_alias_alias (alias)`: 별칭으로 종목 찾기
+- CHECK `ck_stock_alias_type`: 종류는 위 4개 값만
+- 데이터: `db/migration/R__stock_alias.sql` (반복 지시서, 고치면 다시 실행되어 전부 지우고 다시 넣음). **99개**: SHORT 76, FORMER 8, NICKNAME 8, AMBIGUOUS 7
+  - 출처: 한국투자증권 종목 마스터 파일의 약명 중 KIND 공식명과 다른 것(현대자동차 → 현대차, 케이티 → KT) + 직접 정리(삼전, 엔씨소프트, 에스오일 등)
+  - `AMBIGUOUS`: 포스코·POSCO(포스코 이름 종목 5개), LIG(LIG아큐버), 레인보우(일반 단어), 티웨이(티웨이홀딩스), 아모레(아모레퍼시픽홀딩스), 모비스(같은 이름의 다른 상장사)
+- 쓰는 곳: 종목 검색은 모든 별칭, **AI 매칭은 `WHERE alias_type <> 'AMBIGUOUS'`**
+- 지켜야 할 것 (자동 테스트 `StockDictionaryTest`가 검사): 헷갈림이 아닌 별칭은 다른 종목의 공식 이름과 같으면 안 되고, 두 종목에 걸치면 안 됨
 
 ### stock_theme · 종목 테마 키워드 (V3)
 
@@ -192,6 +199,9 @@ erDiagram
 | 4 | created_at | DATETIME | | Y | CURRENT_TIMESTAMP | 등록 시각 |
 
 - UK① `uk_stock_theme (stock_code, theme)`, IDX `idx_stock_theme_theme (theme)`: 테마로 종목 찾기
+- 데이터: `db/migration/R__stock_theme.sql` (반복 지시서). **테마 34개, 종목 연결 198개** (종목 187개, 그중 코스피200 162개). 직접 정리
+  - 테마 이름은 LLM이 뽑는 기사 키워드처럼 짧은 명사 (반도체, 2차전지, 방산, 정유, 항공 등). AI 매칭은 기사 키워드와 글자 그대로 비교
+  - 한 종목이 여러 테마에 들어갈 수 있음 (한화에어로스페이스 → 방산, 우주항공)
 
 ### match_setting · 매칭 설정값 (V3)
 
@@ -386,3 +396,5 @@ erDiagram
 | 2026-10-30 | V5 | article, article_stock, collect_run (AI 제안서 기반 + [확장] 칸), stock_daily_summary |
 | 2026-11-02 | V6 | stock_info 데이터: 코스피·코스닥 2,655개 (KIND). V2 예시 5개는 공식 값으로 덮어씀 |
 | 2026-11-02 | V7 | article.companies (JSON): LLM이 뽑은 회사 목록, 종목 매칭 입력 (AI 파트 요청) |
+| 2026-11-02 | V8 | stock_alias.alias_type (별칭 종류) + CHECK |
+| 2026-11-02 | R__stock_alias, R__stock_theme | 별칭 99개, 테마 34개·연결 198개 (반복 지시서: 파일을 고치면 다시 실행) |
