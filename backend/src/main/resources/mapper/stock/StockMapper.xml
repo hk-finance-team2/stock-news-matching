@@ -151,4 +151,40 @@
         GROUP BY s.sentiment
     </select>
 
+    <resultMap id="mentionCountRow" type="com.hkteam2.stocknews.stock.MentionCountRow">
+        <constructor>
+            <arg column="bucket" javaType="java.time.LocalDateTime"/>
+            <arg column="news_count" javaType="_long"/>
+            <arg column="sns_count" javaType="_long"/>
+        </constructor>
+    </resultMap>
+
+    <!--
+        언급량 그래프 (F-14): from ~ to 사이 이 종목이 나온 글을 시간 칸별로 묶어(GROUP BY) 셈
+        ① 작성 시각을 칸 이름으로 깎기: HOUR면 08:34 → 08:00, DAY면 11/01 08:04 → 11/01 00:00
+        ② 칸마다 뉴스·SNS를 따로 세기: SUM(CASE ...) = "뉴스면 1, 아니면 0"을 더함 (투표함 하나에서 색깔별로 세기)
+        글이 있는 칸만 나옴 → 빈 칸(0건)은 Java가 채움
+    -->
+    <select id="countMentions" resultMap="mentionCountRow">
+        SELECT
+            <choose>
+                <when test="unit == 'HOUR'">
+                    CAST(DATE_FORMAT(a.published_at, '%Y-%m-%d %H:00:00') AS DATETIME)
+                </when>
+                <otherwise>
+                    CAST(DATE(a.published_at) AS DATETIME)
+                </otherwise>
+            </choose> AS bucket,
+            SUM(CASE WHEN a.source_type = 'NEWS' THEN 1 ELSE 0 END) AS news_count,
+            SUM(CASE WHEN a.source_type = 'SNS' THEN 1 ELSE 0 END) AS sns_count
+        FROM article_stock s
+        JOIN article a ON a.article_id = s.article_id
+        WHERE s.stock_code = #{stockCode}
+          AND a.status = 'DONE'
+          AND a.published_at &gt;= #{from}
+          AND a.published_at &lt; #{to}
+        GROUP BY bucket
+        ORDER BY bucket
+    </select>
+
 </mapper>

@@ -286,3 +286,17 @@ AI 파트(지승현)와 이야기해서 정함.
   - 백엔드 SQL은 `SELECT *` 없이 칸 이름을 적어서 조회하므로 기존 API에 영향 없음
 - **확인:** MariaDB의 JSON은 `LONGTEXT` + `CHECK (json_valid(...))`로 만들어짐. 올바른 JSON은 들어가고 `JSON_VALUE`로 꺼낼 수 있으며, 깨진 JSON은 DB가 거부함 (로컬에서 넣었다가 되돌려 확인)
 - **검토한 대안:** 회사별 표 `article_company`(AI만 쓰는 중간 값에 비해 과함), `TEXT` 칸(깨진 값을 DB가 못 막음)
+
+## 2026-11-02 · 언급량 추이 API: SQL은 있는 칸만, 빈 칸은 Java가 0으로
+
+- **결정:** `GET /api/stocks/{stockCode}/mentions?period=today|7d|30d` (F-14)
+  - `today`: 오늘 0시부터 지금 시각 칸까지 1시간 칸 / `7d`·`30d`: **오늘 포함** 7일·30일, 1일 칸 (맨 오른쪽 칸이 항상 오늘)
+  - SQL: 작성 시각을 칸 시각으로 깎아(`DATE_FORMAT`·`DATE`) `GROUP BY`, 칸마다 `SUM(CASE WHEN source_type = 'NEWS' ...)`로 뉴스·SNS를 따로 셈
+  - Java: 기간의 모든 칸을 먼저 0으로 만들고 SQL 결과가 있는 칸만 숫자를 덮어씀 → 응답에 **모든 칸이 빠짐없이**
+  - 기간은 enum `MentionPeriod`(시작 시각·칸 단위·칸 목록)로, 칸 계산·빈 칸 채우기는 단위 테스트(`MentionPeriodTest`)로 확인
+  - 응답은 `{stockCode, period, unit, items}`. 페이지가 없는 그래프라 목록 공통 모양 `{items, totalCount}`는 쓰지 않음 (`totalCount`가 칸 수인지 글 수인지 헷갈림)
+- **이유:**
+  - `GROUP BY`는 0건인 칸을 돌려주지 않음. 있는 칸만 주면 그래프가 8시 옆에 10시를 붙여 그려 "9시엔 조용했다"가 안 보임
+  - 0인 칸을 SQL로 만들려면 재귀 쿼리 등으로 숫자표를 만들어야 해서 복잡함. Java는 반복문 몇 줄이고 단위 테스트가 쉬움
+  - 마지막 칸의 끝(`end`)을 상한으로 둬서 작성 시각이 미래로 잘못 들어온 글은 빠짐
+- **검토한 대안:** SQL 재귀 쿼리로 빈 칸 만들기, 있는 칸만 주고 프론트가 채우기(화면마다 같은 코드가 필요), 7일 = 오늘 제외 지난 7일(오늘 칸이 안 보임)

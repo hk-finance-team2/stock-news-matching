@@ -59,6 +59,18 @@ public class StockController {
         return stockService.getSummary(stockCode, source);
     }
 
+    @Operation(summary = "종목 언급량 추이 (그래프)",
+            description = "이 종목이 나온 글 수를 시간 칸별로. period=today면 오늘 0시부터 1시간 칸,"
+                    + " 7d·30d면 오늘 포함 7일·30일을 1일 칸 (작성 시각 기준). 글이 없는 칸도 0으로 빠짐없이."
+                    + " 칸마다 뉴스·SNS 따로. 없는 종목 404, 잘못된 period 400")
+    @GetMapping("/{stockCode}/mentions")
+    public StockMentionsResponse getMentions(
+            @Parameter(description = "종목코드 6자리", example = "005930") @PathVariable String stockCode,
+            @Parameter(description = "기간: today(기본), 7d, 30d", example = "today")
+            @RequestParam(defaultValue = "today") String period) {
+        return stockService.getMentions(stockCode, period);
+    }
+
     @Operation(summary = "종목 상세 조회", description = "종목코드로 종목 한 개를 조회합니다. 없으면 404 STOCK_NOT_FOUND.")
     @GetMapping("/{stockCode}")
     public StockResponse getStock(

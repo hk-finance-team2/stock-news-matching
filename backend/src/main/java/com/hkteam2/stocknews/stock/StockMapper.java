@@ -39,4 +39,10 @@ public interface StockMapper {
     List<SentimentCountRow> countSentiments(@Param("stockCode") String stockCode,
                                             @Param("from") LocalDateTime from,
                                             @Param("sourceType") String sourceType);
+
+    /** from 이상 to 미만, 시간 칸(unit: HOUR/DAY)별 뉴스·SNS 글 수. 글이 있는 칸만, 시각 순 */
+    List<MentionCountRow> countMentions(@Param("stockCode") String stockCode,
+                                        @Param("from") LocalDateTime from,
+                                        @Param("to") LocalDateTime to,
+                                        @Param("unit") String unit);
 }
