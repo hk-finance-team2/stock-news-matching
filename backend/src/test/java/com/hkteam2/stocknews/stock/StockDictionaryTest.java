@@ -97,4 +97,39 @@ class StockDictionaryTest extends ApiTestSupport {
                 String.class);
         assertThat(groupAliases).isEmpty();
     }
+
+    @Test
+    void 바뀐_회사_이름도_지금_종목으로() {
+        String sql = "SELECT stock_code FROM stock_alias WHERE alias = ? AND alias_type = 'FORMER'";
+        assertThat(jdbc.queryForList(sql, String.class, "HD현대인프라코어")).containsExactly("267270");   // HD건설기계
+        assertThat(jdbc.queryForList(sql, String.class, "이베스트투자증권")).containsExactly("078020");  // LS증권
+        assertThat(jdbc.queryForList(sql, String.class, "아프리카TV")).containsExactly("067160");        // SOOP
+    }
+
+    @Test
+    void 코스닥_종목도_별칭과_테마가_있음() {
+        assertThat(jdbc.queryForList(AI_ALIASES, String.class)).contains("에코비엠", "JYP", "에이치엘비");
+        List<String> themes = jdbc.queryForList(
+                "SELECT theme FROM stock_theme WHERE stock_code = '247540'", String.class);   // 에코프로비엠
+        assertThat(themes).contains("2차전지");
+    }
+
+    @Test
+    void 업종_규칙_테마는_스팩과_예외를_뺌() {
+        List<String> spacThemes = jdbc.queryForList("""
+                SELECT CONCAT(s.stock_name, ' → ', t.theme) FROM stock_theme t JOIN stock_info s USING (stock_code)
+                WHERE s.stock_name LIKE '%스팩%' OR s.stock_name LIKE '%기업인수목적%'
+                """, String.class);
+        assertThat(spacThemes).isEmpty();
+        assertThat(jdbc.queryForList("SELECT theme FROM stock_theme t JOIN stock_info s USING (stock_code) "
+                + "WHERE s.stock_name = '메디콕스'", String.class)).doesNotContain("조선");
+    }
+
+    @Test
+    void 이름만_비슷한_회사는_그룹에_없음() {
+        String sql = "SELECT s.stock_name FROM stock_group g JOIN stock_info s USING (stock_code) WHERE g.group_name = ?";
+        assertThat(jdbc.queryForList(sql, String.class, "SK그룹")).doesNotContain("SK증권");   // 2018 매각
+        assertThat(jdbc.queryForList(sql, String.class, "삼성그룹")).doesNotContain("삼성제약", "삼성공조");
+        assertThat(jdbc.queryForList(sql, String.class, "HLB그룹")).contains("HLB", "HLB생명과학");
+    }
 }
