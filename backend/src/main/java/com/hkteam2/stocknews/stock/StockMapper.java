@@ -35,7 +35,8 @@ public interface StockMapper {
     Optional<StockDailySummaryRow> findDailySummary(@Param("stockCode") String stockCode,
                                                     @Param("date") LocalDate date);
 
-    /** from 이후 이 종목이 나온 글의 감성별 개수. 0건인 감성은 결과에 없음 */
+    /** from 이후 이 종목이 나온 글의 감성별 개수. sourceType이 null이면 뉴스·SNS 모두. 0건인 감성은 결과에 없음 */
     List<SentimentCountRow> countSentiments(@Param("stockCode") String stockCode,
-                                            @Param("from") LocalDateTime from);
+                                            @Param("from") LocalDateTime from,
+                                            @Param("sourceType") String sourceType);
 }

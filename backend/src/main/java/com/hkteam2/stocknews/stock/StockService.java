@@ -53,10 +53,7 @@ public class StockService {
      * 세고 정렬하는 일은 SQL(GROUP BY·COUNT)이 하고, 여기서는 오늘 0시 계산·조건 검사·순위 번호만
      */
     public ListResponse<StockIssueResponse> getIssues(String source, int limit) {
-        String sourceType = source == null ? null : source.toUpperCase();
-        if (sourceType != null && !SOURCE_TYPES.contains(sourceType)) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST);
-        }
+        String sourceType = toSourceType(source);
         if (limit < 1 || limit > MAX_ISSUE_LIMIT) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
@@ -75,16 +72,27 @@ public class StockService {
      * 종목의 오늘 종합 요약. 두 곳에서 가져와 합침
      * - 요약 문장: AI가 저장한 stock_daily_summary (없으면 null → 화면은 "요약 준비 중")
      * - 감성 비율: 오늘 이 종목이 나온 글을 지금 직접 셈 (AI 요약이 없어도, 1시간을 기다리지 않아도 최신)
+     *   source가 없으면 뉴스·SNS 합계 (요구사항 기본), NEWS/SNS면 그 출처만
      */
-    public StockSummaryResponse getSummary(String stockCode) {
+    public StockSummaryResponse getSummary(String stockCode, String source) {
+        String sourceType = toSourceType(source);
         StockResponse stock = getStock(stockCode);   // 없는 종목이면 404
         LocalDate today = LocalDate.now(TimeUtils.KST);
 
         StockDailySummaryRow summary = stockMapper.findDailySummary(stockCode, today).orElse(null);
-        Map<String, Long> counts = stockMapper.countSentiments(stockCode, today.atStartOfDay()).stream()
+        Map<String, Long> counts = stockMapper.countSentiments(stockCode, today.atStartOfDay(), sourceType).stream()
                 .collect(Collectors.toMap(SentimentCountRow::sentiment, SentimentCountRow::articleCount));
 
         return StockSummaryResponse.of(stock, today, summary, SentimentRatioResponse.from(counts));
+    }
+
+    /** 출처 조건: 없으면 null(전체), 대소문자 상관없이(sns → SNS) NEWS/SNS만. 그 밖은 400 */
+    private static String toSourceType(String source) {
+        String sourceType = source == null ? null : source.toUpperCase();
+        if (sourceType != null && !SOURCE_TYPES.contains(sourceType)) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+        return sourceType;
     }
 
     /** LIKE의 특수 문자(\, %, _)를 글자 그대로 찾도록 앞에 \를 붙임. 예: "10%" -> "10\%" */

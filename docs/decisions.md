@@ -265,6 +265,7 @@ AI 파트(지승현)와 이야기해서 정함.
 - **결정:** `GET /api/stocks/{stockCode}/summary`. 두 곳에서 가져와 합침
   - 뉴스·SNS 요약 문장: AI가 1시간마다 저장하는 `stock_daily_summary`의 오늘 줄. **없으면 404가 아니라 `null`** (화면은 "요약 준비 중")
   - 감성 비율: 오늘(한국 시간 0시~) 이 종목이 나온 `DONE` 글을 `article_stock.sentiment`별로 `GROUP BY`해서 지금 셈
+  - 감성 비율은 기본이 **뉴스·SNS 합계**(요구사항 F-08, 프론트 목업도 비율 하나). `source=NEWS|SNS`로 나눠 볼 수도 있게 선택 조건 추가 (SNS는 "확인되지 않은 정보"라 따로 보고 싶을 수 있음)
   - %는 **최대 나머지 방식**으로 합이 항상 100 (소수점을 버리고, 모자란 만큼 버린 소수점이 큰 칸부터 1씩 더함). 계산은 단위 테스트(`SentimentRatioResponseTest`)로 확인
   - 예시 데이터: `R__sample_articles.sql`에 3종목의 오늘 요약 추가 (`[예시]`로 시작, `INSERT IGNORE`로 진짜 요약은 덮어쓰지 않음)
 - **이유:**

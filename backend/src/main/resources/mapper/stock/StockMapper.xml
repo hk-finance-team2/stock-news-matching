@@ -135,6 +135,7 @@
     <!--
         감성 비율 재료: from(오늘 0시) 이후 이 종목이 나온 글을 감성별로 묶어서(GROUP BY) 셈
         글 전체 감성(article.sentiment)이 아니라 "이 종목에 대한" 감성(article_stock.sentiment)
+        sourceType이 있으면 그 출처(NEWS/SNS) 글만, 없으면 둘 다 (요구사항 기본)
         결과 예: POSITIVE 1, NEUTRAL 1 (0건인 감성은 줄이 안 나옴)
     -->
     <select id="countSentiments" resultMap="sentimentCountRow">
@@ -144,6 +145,9 @@
         WHERE s.stock_code = #{stockCode}
           AND a.status = 'DONE'
           AND a.published_at >= #{from}
+          <if test="sourceType != null">
+              AND a.source_type = #{sourceType}
+          </if>
         GROUP BY s.sentiment
     </select>
 
