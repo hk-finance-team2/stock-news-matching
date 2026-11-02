@@ -149,7 +149,7 @@ cd backend
 | 주소 | 무엇이 보이나 |
 |---|---|
 | http://localhost:8080/swagger-ui.html | API 목록 화면. `GET /api/stocks` → **Try it out** → **Execute** |
-| http://localhost:8080/api/stocks | 종목 목록 JSON (코스피·코스닥 2,655개) |
+| http://localhost:8080/api/stocks?q=삼성 | 종목 검색 결과 JSON (`{items, totalCount}`). `q` 없이 부르면 전체 2,655개 중 1쪽(20개) |
 
 터미널에서 확인하려면 (PowerShell에서는 `curl`이 아니라 `curl.exe`):
 
