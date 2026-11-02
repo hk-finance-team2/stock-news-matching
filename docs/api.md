@@ -52,6 +52,7 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 | 🔓 | GET | `/api/stocks/issues?source=&limit=10` | **오늘의 이슈 종목 순위**. 아래 참고 |
 | 🔓 | GET | `/api/stocks/{stockCode}` | 종목 하나 `{ stockCode, stockName, market, sector }` |
 | 🔓 | GET | `/api/stocks/{stockCode}/summary?source=` | **오늘의 종합 요약·감성 비율**. 아래 참고 |
+| 🔓 | GET | `/api/stocks/{stockCode}/mentions?period=today` | **언급량 추이 (그래프)**. 아래 참고 |
 
 **오늘의 이슈 종목** (홈 오른쪽, 종목별 조회 왼쪽 목록)
 - 오늘(한국 시간 **0시 ~ 지금**) 작성된 글에 **많이 나온 종목** 순. 글 수가 같으면 평균 관련도가 높은 순
@@ -77,6 +78,23 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
   - 기본은 **뉴스·SNS 합계** (요구사항 F-08). `source=NEWS` / `source=SNS`를 붙이면 그 출처 글만 셈 (요약 문장은 그대로)
 - 없는 종목은 404 `STOCK_NOT_FOUND`
 
+**언급량 추이** (종목별 조회 화면 그래프)
+
+```json
+{
+  "stockCode": "005930", "period": "today", "unit": "HOUR",
+  "items": [
+    { "time": "2026-11-02T00:00:00+09:00", "newsCount": 0, "snsCount": 0, "totalCount": 0 },
+    { "time": "2026-11-02T09:00:00+09:00", "newsCount": 1, "snsCount": 1, "totalCount": 2 }
+  ]
+}
+```
+
+- `period`: `today`(기본, 오늘 0시부터 **1시간** 칸, 지금 시각 칸까지) / `7d`·`30d`(오늘 포함 7일·30일, **1일** 칸). 그 밖은 400
+- `items`: 기간의 **모든 칸이 시각 순으로 빠짐없이**. 글이 없는 칸도 0으로 들어 있어서 그대로 그리면 됨
+- `time`은 칸 시작 시각 (`09:00` = 9시대), `unit`(`HOUR`/`DAY`)으로 아래 글자를 "09시"로 쓸지 "11/02"로 쓸지 정함
+- 글의 **작성 시각** 기준, 칸마다 뉴스·SNS를 따로 셈. 없는 종목은 404
+
 ### 뉴스·SNS 글
 
 | | 방식 | 주소 | 설명 |
@@ -90,6 +108,8 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 | `source` | `NEWS` / `SNS` (없으면 전체) | 출처 탭 |
 | `sort` | `latest` 최신순(기본) / `relevance` 관련도순 | 정렬 버튼 |
 | `minRelevance` | 0~100 (%). 관련도가 이 값 이상인 종목이 있는 글만. `stockCode`와 같이 쓰면 그 종목 기준 | 관련도 필터 |
+| `q` | 검색어 (50자 이하). 제목·요약·키워드에 들어 있는 글만 | 검색 |
+| `period` | `today` / `7d` / `30d` (없으면 전체). 7d = 오늘 포함 7일 (언급량 그래프와 같은 뜻) | 기간 버튼 |
 | `page`, `size` | 1부터, 1~100 (기본 20) | |
 
 예: 홈 `GET /api/articles` · 삼성전자 화면 `GET /api/articles?stockCode=005930` · SNS만 관련도순 `GET /api/articles?source=SNS&sort=relevance`
@@ -127,13 +147,36 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 | `stocks[]` | 목록 칩 칸 + **`reason`**(연결 이유, 항상 있음), **`evidence`**(근거 문장, 없으면 `null`), `matchedKeywords`(목록, 없으면 `[]`) |
 | `relatedSns[]` | **뉴스일 때만.** 같은 종목이 나온 SNS 중 작성 시각 앞뒤 24시간 안, 가까운 순 최대 5개 `{ articleId, channel, title, press, publishedAt, summary, url }`. SNS 글이면 `[]` |
 
+### 통합 검색
+
+| | 방식 | 주소 | 설명 |
+|---|---|---|---|
+| 🔓 | GET | `/api/search?q=삼성&period=7d` | **종목 + 글 한 번에** (F-13) |
+
+```json
+{
+  "q": "삼성",
+  "stocks":   { "items": [ { "stockCode": "005930", "stockName": "삼성전자", ... } ], "totalCount": 21 },
+  "articles": { "items": [ { "articleId": 23, "title": "...", "stocks": [...] } ],     "totalCount": 1 }
+}
+```
+
+- `stocks`: 위에서 **5개만**. 규칙은 `GET /api/stocks?q=`와 같음. `totalCount`가 5보다 크면 "종목 더 보기" → `GET /api/stocks?q=삼성&page=1`
+- `articles`: 한 페이지. 규칙·칸은 `GET /api/articles?q=`와 같음. 조건 `period`, `source`, `sort`, `page`, `size`
+- `q`는 **필수** (없거나 공백뿐이거나 50자 넘으면 400)
+- 글은 **제목·요약·키워드에 검색어가 글자로 들어 있어야** 나옴. 종목과 연결됐어도 글자가 없으면 안 나옴 (그런 글은 종목 화면에서)
+
 ### 관심 종목
 
 | | 방식 | 주소 | 설명 |
 |---|---|---|---|
-| 🔒 | GET | `/api/watchlist` | 내 관심 종목 (최근 추가 순) |
+| 🔒 | GET | `/api/watchlist` | 내 관심 종목 (최근 추가 순) `{ stockCode, stockName, market, addedAt, todayArticleCount, lastMatchedAt }` |
+| 🔒 | GET | `/api/watchlist/articles` | **관심 종목 글 모아 보기**. 내 관심 종목 중 하나라도 연결된 글 |
 | 🔒 | POST | `/api/watchlist` | 추가 `{ stockCode }` |
 | 🔒 | DELETE | `/api/watchlist/{stockCode}` | 삭제 |
+
+- `todayArticleCount`: 오늘(한국 시간 0시~) 이 종목이 나온 글 수, `lastMatchedAt`: 이 종목이 나온 가장 최근 글 시각 (오늘이 아니어도, 한 번도 없으면 `null`)
+- `/api/watchlist/articles`: 조건(`source`, `sort`, `minRelevance`, `page`, `size`)과 응답 모양은 `GET /api/articles`와 같음 (`stockCode`만 없음). 관심 종목 두 개에 걸친 글도 **한 번만** 나옴. 관심 종목이 없으면 `items: []`
 
 ### 종목 토론 게시판
 
@@ -150,7 +193,7 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 
 ### 아직 없는 API (차례로 추가)
 
-종목별 조회(이슈 순위·종합 요약·감성 비율·언급량), 통합 검색, 데이터 상태, 관심 종목의 오늘 매칭 글 수.
+데이터 상태, 종합 요약 다시 생성.
 그동안은 프론트에서 예시 데이터로 화면을 만들어 두면 됩니다.
 
 ## 4. 오류 코드

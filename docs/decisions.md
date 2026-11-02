@@ -286,3 +286,70 @@ AI 파트(지승현)와 이야기해서 정함.
   - 백엔드 SQL은 `SELECT *` 없이 칸 이름을 적어서 조회하므로 기존 API에 영향 없음
 - **확인:** MariaDB의 JSON은 `LONGTEXT` + `CHECK (json_valid(...))`로 만들어짐. 올바른 JSON은 들어가고 `JSON_VALUE`로 꺼낼 수 있으며, 깨진 JSON은 DB가 거부함 (로컬에서 넣었다가 되돌려 확인)
 - **검토한 대안:** 회사별 표 `article_company`(AI만 쓰는 중간 값에 비해 과함), `TEXT` 칸(깨진 값을 DB가 못 막음)
+
+## 2026-11-02 · 언급량 추이 API: SQL은 있는 칸만, 빈 칸은 Java가 0으로
+
+- **결정:** `GET /api/stocks/{stockCode}/mentions?period=today|7d|30d` (F-14)
+  - `today`: 오늘 0시부터 지금 시각 칸까지 1시간 칸 / `7d`·`30d`: **오늘 포함** 7일·30일, 1일 칸 (맨 오른쪽 칸이 항상 오늘)
+  - SQL: 작성 시각을 칸 시각으로 깎아(`DATE_FORMAT`·`DATE`) `GROUP BY`, 칸마다 `SUM(CASE WHEN source_type = 'NEWS' ...)`로 뉴스·SNS를 따로 셈
+  - Java: 기간의 모든 칸을 먼저 0으로 만들고 SQL 결과가 있는 칸만 숫자를 덮어씀 → 응답에 **모든 칸이 빠짐없이**
+  - 기간은 enum `MentionPeriod`(시작 시각·칸 단위·칸 목록)로, 칸 계산·빈 칸 채우기는 단위 테스트(`MentionPeriodTest`)로 확인
+  - 응답은 `{stockCode, period, unit, items}`. 페이지가 없는 그래프라 목록 공통 모양 `{items, totalCount}`는 쓰지 않음 (`totalCount`가 칸 수인지 글 수인지 헷갈림)
+- **이유:**
+  - `GROUP BY`는 0건인 칸을 돌려주지 않음. 있는 칸만 주면 그래프가 8시 옆에 10시를 붙여 그려 "9시엔 조용했다"가 안 보임
+  - 0인 칸을 SQL로 만들려면 재귀 쿼리 등으로 숫자표를 만들어야 해서 복잡함. Java는 반복문 몇 줄이고 단위 테스트가 쉬움
+  - 마지막 칸의 끝(`end`)을 상한으로 둬서 작성 시각이 미래로 잘못 들어온 글은 빠짐
+- **검토한 대안:** SQL 재귀 쿼리로 빈 칸 만들기, 있는 칸만 주고 프론트가 채우기(화면마다 같은 코드가 필요), 7일 = 오늘 제외 지난 7일(오늘 칸이 안 보임)
+
+## 2026-11-02 · 관심 종목 마무리: 오늘 글 수·최근 시각, 관심 종목 글 모아 보기
+
+- **결정:** (F-19, B-11 나머지)
+  - `GET /api/watchlist` 응답에 `todayArticleCount`(오늘 0시~ 글 수), `lastMatchedAt`(가장 최근 글 시각, 오늘이 아니어도) 추가. 관심 종목 조회 SQL 안에 종목마다 `COUNT`·`MAX` **서브쿼리**
+  - `GET /api/watchlist/articles`: 글 목록 SQL(`listCondition`)에 `watchUserId` 조건 하나 추가 — "이 글의 종목 중 이 회원의 관심 종목이 하나라도 있나"를 `EXISTS`로. `ArticleService`의 페이지 조회 부분을 `findPage`로 빼서 글 목록과 같이 씀
+  - 회원 ID는 요청 값이 아니라 **토큰(JWT)에서만** 꺼냄 (남의 관심 종목 글 조회 방지, 관심 종목 추가·삭제와 같은 원칙)
+- **이유:**
+  - 서브쿼리는 줄마다 계산하지만 **SQL은 1번**이라 N+1(Java가 DB를 여러 번 왕복)이 아님. 관심 종목은 사람당 몇 개라 충분히 빠름
+  - `lastMatchedAt`을 오늘로 한정하면 오늘 글이 없는 종목은 늘 비어서 쓸모가 줄어듦
+  - `EXISTS`는 예/아니오만 묻기 때문에 관심 종목 두 개에 걸친 글도 **한 번만** 나옴 (JOIN이면 두 줄로 불어남)
+  - 같은 SQL을 다시 쓰면 정렬·관련도 거르기·칩 모양이 홈 목록과 똑같이 유지됨
+- **검토한 대안:** 종목별 집계를 따로 부르기(Java 왕복이 늘어남), 관심 종목 코드 목록을 먼저 꺼내 `stock_code IN (...)`으로 넘기기(SQL 2번, 결과는 같음), 관심 종목 글용 SQL 따로 만들기(같은 SQL 두 벌)
+
+## 2026-11-02 · 통합 검색 API: 종목 검색 + 글 목록을 불러서 합치기
+
+- **결정:** `GET /api/search?q=&period=&source=&sort=&page=&size=` (F-13, B-07). 새 `search` 패키지에는 SQL이 없고 `StockService.getStocks`(위에서 5개)와 `ArticleService.getArticles`(한 페이지)를 불러서 `{ q, stocks, articles }`로 묶기만 함
+  - 글 목록 SQL(`listCondition`)에 조건 2개 추가: `q`(제목·요약·키워드 `LIKE`), `period`(작성 시각 `>=` 시작). 일반 글 목록 `/api/articles?q=&period=`에서도 그대로 씀
+  - 기간 계산은 언급량의 `MentionPeriod`를 다시 씀 → 그래프와 검색의 "7일"이 같은 뜻 (오늘 포함 7일)
+  - 검색어 처리(앞뒤 공백 제거, 50자 제한, LIKE 특수 문자 처리)를 `StockService` 안에서 공용 `common/SearchKeyword`로 옮겨 종목·글 검색이 같이 씀 (동작은 그대로)
+  - 검색어가 없으면 400 (전체 목록은 각 목록 API로)
+  - `ArticleService` 안의 조건이 6개가 되어 `Filter` record로 묶어 넘김
+- **이유:**
+  - 종목 순위·글 정렬·칩 규칙을 다시 만들지 않아서 각 화면과 검색 결과가 항상 같음. 고칠 곳도 한 곳
+  - 검색 대상은 요구사항(F-13) 그대로 제목·요약·키워드. 본문(`body`)은 조회하지 않는 칸이라 제외
+  - 종목 수천 개·글 하루 천 건 수준이라 `LIKE '%q%'`로 충분 (종목 검색과 같은 판단)
+- **한계와 다음:**
+  - 글자가 들어 있어야 찾음. "삼성"으로 검색해도 삼성전자와 연결만 되고 "삼성" 글자가 없는 글은 안 나옴 → 필요하면 "연결된 종목 이름"도 검색 대상에 추가 검토
+  - 글이 많이 쌓여 느려지면 FULLTEXT 인덱스 검토
+  - Windows 터미널 `curl`로 한글을 보내면 CP949로 바뀌어 500이 남 (Swagger·브라우저는 정상). setup.md 7절에 기록
+- **검토한 대안:** 검색용 SQL을 따로 만들기(규칙 두 벌), 종목·글을 SQL 한 번에 UNION(모양이 달라 복잡), 프론트가 두 API를 각각 부르기(가능하지만 검색 화면 한 번 호출이 편함)
+
+## 2026-11-02 · API 자동 테스트 + GitHub Actions (CI)
+
+- **결정:**
+  - **API 테스트**: `@SpringBootTest` + MockMvc로 프론트가 보내는 요청을 똑같이 보내고 응답(상태 코드, JSON 칸, 오류 `code`)이 `docs/api.md` 약속대로인지 확인. 글·종목·검색 API 24개 (단위 테스트 13개와 합쳐 37개)
+  - **테스트 데이터는 "투명 필름" 방식**: 테스트 하나 = 트랜잭션 하나(`@Transactional`) → 끝나면 롤백. 시작할 때 기사 표를 비우고 필요한 기사만 넣음. 종목 사전(V6)은 그대로 씀
+  - **GitHub Actions** (`.github/workflows/backend-ci.yml`): `backend/`가 바뀐 PR과 main merge 때 MariaDB 11.8.9를 띄우고 `./gradlew test`. 실패하면 테스트 보고서를 7일 보관
+  - DB는 `services:`가 아니라 `docker run`으로 띄움: `services:`로는 시작 옵션(한국 시간 `+09:00`, utf8mb4)을 넘길 수 없음. `docker-compose.yml`과 같은 버전·옵션
+  - JVM도 `TZ=Asia/Seoul` (백엔드 Docker 실행과 같음)
+  - `gradlew`에 실행 권한(100755): Windows에서 커밋해 권한이 빠져 있었음. Linux(GitHub)·Mac에서 `Permission denied` 방지
+  - 공식 액션 버전은 추가하는 날 최신 확인: `actions/checkout@v7`, `actions/setup-java@v6`, `gradle/actions/setup-gradle@v6`, `actions/upload-artifact@v7`
+- **이유:**
+  - 지금까지는 기능마다 서버를 켜고 손으로 확인 → 그때 한 번뿐. 다른 기능을 고치다 망가져도 모름 (예: 검색 때 고친 글 목록 코드를 관심 종목 글도 씀)
+  - 4명 + AI 코딩 도구라 누가 무엇을 망가뜨렸는지 사람이 찾기 어려움. 사람이 테스트를 잊어도 GitHub가 PR마다 돌림
+  - PC마다 DB 내용(예시 기사, 진짜 기사)이 달라도 결과가 같아야 해서 테스트가 자기 데이터를 넣고 지움
+  - 빌드 설정(`build.gradle`) 변경 없음: Boot 4 테스트 스타터에 MockMvc·JsonPath·AssertJ가 이미 있음. 로그인 테스트는 실제 로그인 API로 토큰을 받음
+- **확인:**
+  - 일부러 SQL의 `status = 'DONE'` 조건을 지우자 `목록에는_분석이_끝난_글만_최신순으로_나온다`가 실패 → 테스트가 실제로 잡아냄 (되돌림)
+  - 빈 MariaDB를 새로 띄워 GitHub와 같은 조건(Flyway V1~V7부터, 예시 기사 없음)으로 37개 통과
+- **추가 (같은 날):** 로그인·관심 종목·게시판 API 테스트 18개 → 전체 55개. 테스트 안에서 실제 회원가입·로그인 API로 토큰을 받아 씀 (`ApiTestSupport.tokenOf`). 남의 관심 종목·글·댓글이 안 보이고 못 지우는지(401·403) 확인. 게시글 "본인 확인"을 일부러 끄면 테스트가 실패하는 것 확인
+- **다음:** ❌면 merge를 막는 것(main 브랜치 보호)은 팀 결정 후
+- **검토한 대안:** Testcontainers(테스트마다 새 DB, `build.gradle`에 라이브러리 추가 필요), 테스트 전용 DB(팀원마다 만들어야 함), 손으로만 확인(계속 늘어남)

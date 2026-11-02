@@ -1,6 +1,7 @@
 package com.hkteam2.stocknews.article;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -11,8 +12,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.hkteam2.stocknews.common.ListResponse;
 import com.hkteam2.stocknews.common.PageQuery;
+import com.hkteam2.stocknews.common.SearchKeyword;
+import com.hkteam2.stocknews.common.TimeUtils;
 import com.hkteam2.stocknews.common.error.BusinessException;
 import com.hkteam2.stocknews.common.error.ErrorCode;
+import com.hkteam2.stocknews.stock.MentionPeriod;
 import com.hkteam2.stocknews.stock.StockMapper;
 
 @Service
@@ -32,32 +36,49 @@ public class ArticleService {
         this.stockMapper = stockMapper;
     }
 
+    /** 기사 목록 거르기 조건 묶음. 모두 선택 (null이면 안 거름). SQL listCondition과 한 칸씩 짝 */
+    private record Filter(String sourceType, String stockCode, BigDecimal minRelevance, Long watchUserId,
+                          String likeKeyword, LocalDateTime from) {
+    }
+
     /**
-     * 기사 목록. 홈(조건 없음)·종목 화면(stockCode)·필터(source, minRelevance)가 모두 이 하나를 씀.
+     * 기사 목록. 홈(조건 없음)·종목 화면(stockCode)·필터(source, minRelevance)·검색(q, period)이 모두 이 하나를 씀.
      * SQL은 2번: ① 기사 한 페이지 ② 그 기사들의 관련 종목 (기사마다 따로 부르면 N+1)
      */
     @Transactional(readOnly = true)
     public ListResponse<ArticleResponse> getArticles(String source, String sort, Integer minRelevance,
-                                                     String stockCode, PageQuery pageQuery) {
-        String sourceType = source == null ? null : source.toUpperCase();
-        if (sourceType != null && !SOURCE_TYPES.contains(sourceType)) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST);
-        }
-        if (!SORTS.contains(sort)) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST);
-        }
-        if (minRelevance != null && (minRelevance < 0 || minRelevance > 100)) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST);
-        }
+                                                     String stockCode, String q, String period,
+                                                     PageQuery pageQuery) {
+        String sourceType = toSourceType(source);
+        checkSort(sort);
+        BigDecimal minRelevanceDecimal = toMinRelevance(minRelevance);
         if (stockCode != null && !stockMapper.existsByCode(stockCode)) {
             throw new BusinessException(ErrorCode.STOCK_NOT_FOUND);
         }
-        // 화면은 %(80), DB는 소수(0.80)
-        BigDecimal minRelevanceDecimal = minRelevance == null ? null : BigDecimal.valueOf(minRelevance, 2);
+        String likeKeyword = SearchKeyword.escapeLike(SearchKeyword.normalize(q));
+        return findPage(new Filter(sourceType, stockCode, minRelevanceDecimal, null, likeKeyword, toFrom(period)),
+                sort, pageQuery);
+    }
 
-        long totalCount = articleMapper.countArticles(sourceType, stockCode, minRelevanceDecimal);
-        List<ArticleRow> rows = articleMapper.findArticles(sourceType, stockCode, minRelevanceDecimal, sort,
-                pageQuery.limit(), pageQuery.offset());
+    /**
+     * 관심 종목 글 모아 보기 (F-19). 내 관심 종목 중 하나라도 연결된 글.
+     * 목록과 같은 SQL에 "이 회원의 관심 종목" 조건만 더함. userId는 토큰에서 꺼낸 값만 받음
+     */
+    @Transactional(readOnly = true)
+    public ListResponse<ArticleResponse> getWatchlistArticles(Long userId, String source, String sort,
+                                                              Integer minRelevance, PageQuery pageQuery) {
+        String sourceType = toSourceType(source);
+        checkSort(sort);
+        return findPage(new Filter(sourceType, null, toMinRelevance(minRelevance), userId, null, null),
+                sort, pageQuery);
+    }
+
+    /** 조건에 맞는 기사 한 페이지 + 관련 종목 칩 (목록·관심 종목 글·검색이 같이 씀) */
+    private ListResponse<ArticleResponse> findPage(Filter f, String sort, PageQuery pageQuery) {
+        long totalCount = articleMapper.countArticles(f.sourceType(), f.stockCode(), f.minRelevance(),
+                f.watchUserId(), f.likeKeyword(), f.from());
+        List<ArticleRow> rows = articleMapper.findArticles(f.sourceType(), f.stockCode(), f.minRelevance(),
+                f.watchUserId(), f.likeKeyword(), f.from(), sort, pageQuery.limit(), pageQuery.offset());
         if (rows.isEmpty()) {
             return new ListResponse<>(List.of(), totalCount);
         }
@@ -73,6 +94,42 @@ public class ArticleService {
                 .map(row -> ArticleResponse.from(row, stocksByArticle.getOrDefault(row.articleId(), List.of())))
                 .toList();
         return new ListResponse<>(items, totalCount);
+    }
+
+    private static String toSourceType(String source) {
+        String sourceType = source == null ? null : source.toUpperCase();
+        if (sourceType != null && !SOURCE_TYPES.contains(sourceType)) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+        return sourceType;
+    }
+
+    /**
+     * 기간 → 시작 시각. 없으면 null(전체). today/7d/30d는 언급량 그래프(MentionPeriod)와 같은 뜻
+     * (7d = 오늘 포함 7일 = 6일 전 0시부터). 그 밖은 400
+     */
+    private static LocalDateTime toFrom(String period) {
+        if (period == null || period.isBlank()) {
+            return null;
+        }
+        return MentionPeriod.from(period).start(LocalDateTime.now(TimeUtils.KST));
+    }
+
+    private static void checkSort(String sort) {
+        if (!SORTS.contains(sort)) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+    }
+
+    /** 화면은 %(80), DB는 소수(0.80). 0~100이 아니면 400 */
+    private static BigDecimal toMinRelevance(Integer minRelevance) {
+        if (minRelevance == null) {
+            return null;
+        }
+        if (minRelevance < 0 || minRelevance > 100) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+        return BigDecimal.valueOf(minRelevance, 2);
     }
 
     /**

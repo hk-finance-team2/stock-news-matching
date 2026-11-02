@@ -9,12 +9,30 @@
             <arg column="stock_name" javaType="String"/>
             <arg column="market" javaType="String"/>
             <arg column="added_at" javaType="java.time.LocalDateTime"/>
+            <arg column="today_article_count" javaType="_long"/>
+            <arg column="last_matched_at" javaType="java.time.LocalDateTime"/>
         </constructor>
     </resultMap>
 
-    <!-- 관심 종목(watchlist)과 종목 정보(stock_info)를 이어 붙여 종목명까지 꺼냄 -->
+    <!--
+        관심 종목(watchlist)과 종목 정보(stock_info)를 이어 붙여 종목명까지 꺼냄
+        + 종목마다 기사 숫자 2개 (F-19). 서브쿼리라 SQL은 여전히 1번 (Java가 여러 번 부르는 N+1과 다름)
+        - today_article_count: from(오늘 0시) 이후 이 종목이 나온 DONE 글 수
+        - last_matched_at: 이 종목이 나온 가장 최근 DONE 글의 작성 시각 (오늘이 아니어도, 없으면 NULL)
+    -->
     <sql id="selectRow">
-        SELECT w.stock_code, s.stock_name, s.market, w.created_at AS added_at
+        SELECT w.stock_code, s.stock_name, s.market, w.created_at AS added_at,
+               (SELECT COUNT(*)
+                FROM article_stock x
+                JOIN article a ON a.article_id = x.article_id
+                WHERE x.stock_code = w.stock_code
+                  AND a.status = 'DONE'
+                  AND a.published_at >= #{from}) AS today_article_count,
+               (SELECT MAX(a.published_at)
+                FROM article_stock x
+                JOIN article a ON a.article_id = x.article_id
+                WHERE x.stock_code = w.stock_code
+                  AND a.status = 'DONE') AS last_matched_at
         FROM watchlist w
         JOIN stock_info s ON s.stock_code = w.stock_code
     </sql>

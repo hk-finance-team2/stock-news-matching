@@ -208,6 +208,7 @@ curl.exe http://localhost:8080/api/stocks
 | DB를 켤 때 3308 포트 오류 (`port is already allocated`, `ports are not available` 등) | 다른 프로그램이 3308을 씀 | `.env`의 `DB_PORT`를 다른 번호로 바꾸고 백엔드도 같은 값 사용 |
 | `Validate failed: Migrations have failed validation` | 이미 실행된 V 파일 내용이 바뀜 | V 파일을 원래대로 되돌리고 새 V 파일로 추가. 내 PC에서만 실험 중이면 아래 "DB 초기화" |
 | `Access denied for user` | `.env` 비밀번호를 DB를 만든 뒤에 바꿈 | 아래 "DB 초기화" |
+| 터미널 `curl`로 한글 검색어(`?q=삼성`)를 보내면 500, 서버 로그에 `Character decoding failed` | Windows 터미널이 한글을 UTF-8이 아닌 다른 방식(CP949)으로 바꿔 보냄. 코드 문제 아님 | Swagger나 브라우저로 시험 (항상 UTF-8). 터미널이면 미리 인코딩한 주소 사용: `?q=%EC%82%BC%EC%84%B1` |
 
 **DB 초기화** (내 PC의 DB 데이터가 **모두 지워집니다**):
 
@@ -299,3 +300,26 @@ AI 파트가 채웁니다. (Python 버전, 가상환경, 패키지 설치, 실�
 ## 11. 프론트엔드 개발 환경 (React · Vite)
 
 프론트 파트가 채웁니다. (Node.js 버전, 패키지 설치, 실행 방법)
+
+## 12. 백엔드 자동 테스트와 CI
+
+### 내 PC에서 테스트 돌리기 (백엔드 코드를 고친 사람)
+
+DB를 켠 상태(3절)에서 `backend` 폴더에서:
+
+```powershell
+./gradlew test
+```
+
+- `BUILD SUCCESSFUL`이면 통과. 실패하면 `backend/build/reports/tests/test/index.html`을 브라우저로 열면 어느 테스트가 왜 실패했는지 보임
+- 테스트는 기사 표를 비우고 필요한 기사만 넣은 뒤 **끝나면 전부 되돌림(롤백)**. 내 PC의 예시 기사·계정은 그대로 남음
+- 테스트 코드 위치: `backend/src/test/java/` (API 테스트는 `*ApiTest.java`, 공통 바탕은 `support/ApiTestSupport.java`)
+
+### GitHub에서 자동으로 (CI)
+
+`backend/` 폴더를 바꾼 PR을 올리면 GitHub가 자동으로 MariaDB를 띄우고 같은 테스트를 돌림 (`.github/workflows/backend-ci.yml`).
+
+- PR 화면 아래쪽 **Checks**에 ✅(통과) / ❌(실패)가 보임. 2~3분 걸림
+- ❌면 **Details** → 실패한 테스트 이름 확인 → 고쳐서 다시 push하면 다시 돌아감
+- PR 코드만이 아니라 **"PR + 최신 main을 합친 모습"**으로 돌림
+- `ai/`, `frontend/`, `docs/`만 바꾼 PR은 돌리지 않음

@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 
 import com.hkteam2.stocknews.common.ListResponse;
 import com.hkteam2.stocknews.common.PageQuery;
+import com.hkteam2.stocknews.common.SearchKeyword;
 import com.hkteam2.stocknews.common.TimeUtils;
 import com.hkteam2.stocknews.common.error.BusinessException;
 import com.hkteam2.stocknews.common.error.ErrorCode;
@@ -19,7 +20,6 @@ import com.hkteam2.stocknews.common.error.ErrorCode;
 @Service
 public class StockService {
 
-    private static final int MAX_KEYWORD_LENGTH = 50;
     private static final Set<String> SOURCE_TYPES = Set.of("NEWS", "SNS");
     private static final int MAX_ISSUE_LIMIT = 50;
 
@@ -31,11 +31,8 @@ public class StockService {
 
     /** 종목 검색. q가 비어 있으면 전체를 이름순으로 */
     public ListResponse<StockResponse> getStocks(String q, PageQuery pageQuery) {
-        String keyword = (q == null || q.isBlank()) ? null : q.strip();
-        if (keyword != null && keyword.length() > MAX_KEYWORD_LENGTH) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST);
-        }
-        String likeKeyword = keyword == null ? null : escapeLike(keyword);
+        String keyword = SearchKeyword.normalize(q);
+        String likeKeyword = SearchKeyword.escapeLike(keyword);
 
         long totalCount = stockMapper.countSearch(keyword, likeKeyword);
         return new ListResponse<>(
@@ -86,6 +83,21 @@ public class StockService {
         return StockSummaryResponse.of(stock, today, summary, SentimentRatioResponse.from(counts));
     }
 
+    /**
+     * 종목 언급량 그래프. SQL은 글이 있는 칸만 세고, 빈 칸(0건)은 응답 만들 때 채움
+     */
+    public StockMentionsResponse getMentions(String stockCode, String period) {
+        MentionPeriod mentionPeriod = MentionPeriod.from(period);   // today/7d/30d가 아니면 400
+        if (!stockMapper.existsByCode(stockCode)) {
+            throw new BusinessException(ErrorCode.STOCK_NOT_FOUND);
+        }
+        LocalDateTime now = LocalDateTime.now(TimeUtils.KST);
+
+        List<MentionCountRow> rows = stockMapper.countMentions(stockCode, mentionPeriod.start(now),
+                mentionPeriod.end(now), mentionPeriod.unitName());
+        return StockMentionsResponse.of(stockCode, mentionPeriod, mentionPeriod.buckets(now), rows);
+    }
+
     /** 출처 조건: 없으면 null(전체), 대소문자 상관없이(sns → SNS) NEWS/SNS만. 그 밖은 400 */
     private static String toSourceType(String source) {
         String sourceType = source == null ? null : source.toUpperCase();
@@ -93,10 +105,5 @@ public class StockService {
             throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
         return sourceType;
-    }
-
-    /** LIKE의 특수 문자(\, %, _)를 글자 그대로 찾도록 앞에 \를 붙임. 예: "10%" -> "10\%" */
-    private static String escapeLike(String keyword) {
-        return keyword.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
     }
 }

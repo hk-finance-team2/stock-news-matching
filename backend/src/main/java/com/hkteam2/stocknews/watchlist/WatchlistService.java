@@ -1,10 +1,14 @@
 package com.hkteam2.stocknews.watchlist;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.hkteam2.stocknews.common.ListResponse;
+import com.hkteam2.stocknews.common.TimeUtils;
 import com.hkteam2.stocknews.common.error.BusinessException;
 import com.hkteam2.stocknews.common.error.ErrorCode;
 import com.hkteam2.stocknews.stock.StockMapper;
@@ -22,7 +26,7 @@ public class WatchlistService {
 
     @Transactional(readOnly = true)
     public ListResponse<WatchlistResponse> getMyWatchlist(Long userId) {
-        return ListResponse.of(watchlistMapper.findAllByUserId(userId).stream()
+        return ListResponse.of(watchlistMapper.findAllByUserId(userId, todayStart()).stream()
                 .map(WatchlistResponse::from)
                 .toList());
     }
@@ -41,9 +45,14 @@ public class WatchlistService {
             // 같은 요청이 동시에 두 번 오면 위 확인을 둘 다 통과할 수 있음 -> DB 기본키가 최종으로 막음
             throw new BusinessException(ErrorCode.ALREADY_IN_WATCHLIST);
         }
-        return watchlistMapper.findOne(userId, stockCode)
+        return watchlistMapper.findOne(userId, stockCode, todayStart())
                 .map(WatchlistResponse::from)
                 .orElseThrow();
+    }
+
+    /** 오늘 = 한국 시간 0시부터 (이슈 종목·종합 요약과 같은 기준) */
+    private static LocalDateTime todayStart() {
+        return LocalDate.now(TimeUtils.KST).atStartOfDay();
     }
 
     @Transactional
