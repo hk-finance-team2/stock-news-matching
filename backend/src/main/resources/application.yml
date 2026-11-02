@@ -8,6 +8,11 @@ spring:
     url: jdbc:mariadb://${DB_HOST}:${DB_PORT}/${DB_NAME}
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
+  flyway:
+    # 기본은 진짜 공사 지시서(db/migration)만. 예시 기사(db/sample)는 .env 의 FLYWAY_LOCATIONS 로 켬
+    locations: ${FLYWAY_LOCATIONS:classpath:db/migration}
+    # 예시 기사를 켰다가 끈 PC에서도 서버가 멈추지 않게 (기록엔 있는데 파일 위치가 빠진 반복 지시서는 무시)
+    ignore-migration-patterns: "*:future,repeatable:missing"
 
 mybatis:
   # SQL은 resources/mapper 아래 XML 파일에 작성
