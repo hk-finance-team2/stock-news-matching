@@ -37,14 +37,15 @@ Sentiment = Literal["POSITIVE", "NEGATIVE", "NEUTRAL"]
 class Company(BaseModel):
     name: str = Field(description="기사에 나온 회사 이름 (기사에 쓰인 그대로)")
     is_main: bool = Field(description="기사의 주인공 회사면 true")
-    sentiment: Sentiment = Field(description="이 기사가 그 회사 주가에 주는 영향")
-    reason: str = Field(description="감성 판단 이유, 한국어 짧은 한 문장 (50자 이내)")
+    sentiment: Sentiment = Field(description="이 소식이 그날 그 회사 주가에 주는 영향")
+    long_term: Sentiment = Field(description="이 소식이 그 회사의 장기 실적·가치에 주는 영향. 판단 어려우면 NEUTRAL")
+    reason: str = Field(description="판단 이유, 한국어 짧은 한 문장 (40자 이내, 수치 나열 금지)")
 
 
 class ArticleSummary(BaseModel):
-    summary: str = Field(description="기사 요약, 한국어 2~3문장")
-    sentiment: Sentiment = Field(description="기사 전체가 시장에 주는 분위기")
-    keywords: list[str] = Field(description="핵심 키워드 3~5개, 각각 1~3단어 명사 (예: HBM, 3분기 실적, 금리 인하)")
+    summary: str = Field(description="기사 요약, 한국어 2~3문장, 전체 150자 안팎")
+    sentiment: Sentiment = Field(description="이 소식이 그날 시장·주가에 주는 분위기")
+    keywords: list[str] = Field(description="핵심 키워드 3~5개, 숫자 없는 1~3단어 명사 (예: HBM, 3분기 실적, 금리 인하)")
     companies: list[Company] = Field(description="기사에서 다룬 기업. 없으면 빈 목록")
 
 
@@ -52,8 +53,9 @@ PROMPT = ChatPromptTemplate.from_messages([
     ("system",
      "너는 한국 주식 투자자를 위한 경제 뉴스 요약가다.\n"
      "- 기사에 있는 사실만 쓴다. 추측·투자 권유 금지\n"
-     "- 요약은 숫자(실적, 등락률 등)를 살려 2~3문장, 문장마다 짧게. '~다' 체\n"
-     "- 감성은 주가 영향 기준: 호재 POSITIVE, 악재 NEGATIVE, 판단 어렵거나 단순 언급 NEUTRAL\n"
+     "- 요약은 2~3문장, 전체 150자 안팎, '~다' 체. 핵심 숫자(실적, 등락률)만 쓰고 거래량·거래대금·시간 같은 세부는 뺀다\n"
+     "- 감성은 두 가지로 따로 판단한다. sentiment 는 그날 주가 영향, long_term 은 회사의 장기 실적·가치 영향\n"
+     "- 값: 호재 POSITIVE, 악재 NEGATIVE, 판단 어렵거나 단순 언급 NEUTRAL\n"
      "- 회사(companies)는 영리 기업만. 정부·부처·공공기관·공기업·협회·사람은 넣지 않는다\n"
      "- 장소·행사장으로만 나온 회사, 출처(증권사 리포트 인용 등)로만 나온 회사는 넣지 않는다\n"
      "- 회사 이름은 기사에 쓰인 그대로 (그룹명으로 바꾸지 않음)\n"
@@ -140,8 +142,8 @@ if __name__ == "__main__":
 
     # check() 는 OpenAI 없이 시험 (비용 0)
     fake = ArticleSummary(summary="요약", sentiment="NEUTRAL", keywords=["a" * 80] * 7, companies=[
-        Company(name="샘표", is_main=True, sentiment="POSITIVE", reason="r" * 300),
-        Company(name="지어낸회사", is_main=False, sentiment="NEUTRAL", reason="기사에 없음")])
+        Company(name="샘표", is_main=True, sentiment="POSITIVE", long_term="NEUTRAL", reason="r" * 300),
+        Company(name="지어낸회사", is_main=False, sentiment="NEUTRAL", long_term="NEUTRAL", reason="기사에 없음")])
     got = check(fake, "샘표·샘표식품 합병", "본문")
     assert [c.name for c in got.companies] == ["샘표"], "기사에 없는 회사는 빠져야 함"
     assert len(got.companies[0].reason) == 200 and len(got.keywords) == 5 and len(got.keywords[0]) == 50

@@ -48,6 +48,12 @@ def score(is_main, code, keywords, themes, s):
     return round(sum(s[k] * v for k, v in parts.items()) / total_w, 2)
 
 
+def reason_text(c):
+    """화면에 나가는 이유. sentiment 는 그날 기준이고 장기 판단은 이유 뒤에 붙인다 (이전 요약에는 long_term 없음)"""
+    long_term = {"POSITIVE": "호재", "NEGATIVE": "악재", "NEUTRAL": "중립"}.get(c.get("long_term"))
+    return f"{c['reason']} (장기: {long_term})" if long_term else c["reason"]
+
+
 def match_one(companies, keywords, dictionary):
     """[(종목코드, 회사 dict, 점수, 일치한 이름)] — 최소 점수 이상, 종목당 1개 (점수 높은 쪽)"""
     names, themes, s = dictionary
@@ -79,7 +85,7 @@ def match_articles(engine=None, statuses=("SUMMARIZED",)):
                                          match_type, relevance, matched_keywords)
                                      VALUES (:id, :code, :main, :sent, :reason, 'DIRECT', :rel, :kw)"""),
                              {"id": r.article_id, "code": code, "main": c["is_main"], "sent": c["sentiment"],
-                              "reason": c["reason"][:500], "rel": sc, "kw": name[:300]})
+                              "reason": reason_text(c)[:500], "rel": sc, "kw": name[:300]})
             conn.execute(text("UPDATE article SET status = :st WHERE article_id = :id"),
                          {"st": "DONE" if found else "NO_STOCK", "id": r.article_id})
         done, no_stock = done + bool(found), no_stock + (not found)
@@ -100,4 +106,6 @@ if __name__ == "__main__":
                      {"name": "샘표", "is_main": True, "sentiment": "POSITIVE", "reason": "r"},
                      {"name": "바이낸스", "is_main": False, "sentiment": "NEUTRAL", "reason": "r"}], [], d)
     assert [g[0] for g in got] == ["204320", "007540"], got  # 사전에 없는 바이낸스는 빠짐
+    assert reason_text({"reason": "수주", "long_term": "POSITIVE"}) == "수주 (장기: 호재)"
+    assert reason_text({"reason": "수주"}) == "수주"
     print("ok")
