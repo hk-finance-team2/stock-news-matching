@@ -15,7 +15,7 @@
 
 ## 지금 상태 (2026-11-02)
 
-- 끝: RSS 목록 받기(15) → 주소 중복 제거(16) → DB 저장 `LISTED`(18). 다음: 원문 본문 가져오기(20) ([docs/개발순서.md](docs/개발순서.md))
+- 끝: RSS 목록 받기(15) → 주소 중복 제거(16) → DB 저장 `LISTED`(18) → 본문 `FETCHED`(20~22). 다음: LLM 요약(27) ([docs/개발순서.md](docs/개발순서.md))
 - 뉴스: **언론사 RSS 8개** (한경·연합·서경·파이낸셜뉴스, 30분마다 확인, 하루 약 1,000건)
 - 흐름: RSS 목록 → 중복 제거 → 원문 본문 → LLM 요약 → 요약에서 코스피200 종목 연결
 - 단계끼리는 `article.status` 로 넘김: `LISTED` → `FETCHED` → `SUMMARIZED` → `DONE` / `NO_STOCK`
@@ -32,12 +32,13 @@ ai/
 ├── README.md
 ├── requirements.txt
 ├── hk_llm/
-│   ├── run.py           ★ 파이프라인 1번 실행 (1→2→3, 실행 기록 collect_run)
+│   ├── run.py           ★ 파이프라인 1번 실행 (1→2→3→4, 실행 기록 collect_run)
 │   ├── step1_rss.py     1. 언론사 RSS 8개 기사 목록 받기 (15번)
 │   ├── step2_dedup.py   2. 주소 기준 중복 제거 (16번)
 │   ├── step3_save.py    3. article 에 LISTED 로 저장 (18번)
-│   │                    (다음: step4_body.py 본문, step5_summary.py 요약, step6_match.py 종목 매칭)
-│   ├── robots.py        본문 가져오기 전 robots.txt 허용 확인 (4단계에서 씀)
+│   ├── step4_body.py    4. 원문 본문 가져와 FETCHED, 7일 지난 본문 삭제 (20~22번)
+│   │                    (다음: step5_summary.py 요약, step6_match.py 종목 매칭)
+│   ├── robots.py        본문 가져오기 전 robots.txt 허용 확인
 │   ├── models.py        기사 한 건의 모양 (Article, article 테이블 한 줄)
 │   ├── db.py            DB 연결, KST 시각 변환
 │   ├── util.py          로그, 실패 시 재시도
@@ -64,7 +65,8 @@ pip install -r requirements.txt
 
 | 하고 싶은 것 | 명령 |
 |---|---|
-| 파이프라인 1번 (RSS → DB 저장) | `python -m hk_llm.run` |
+| 파이프라인 1번 (RSS → 본문까지) | `python -m hk_llm.run` |
+| 1~3단계 시험 | `python -m hk_llm.run --check` |
 | RSS 만 받아 보기 | `python -m hk_llm.step1_rss` |
 | 네이버 API 키 확인 | `python -m hk_llm.tools.naver_test 삼성전자` |
 | 종목 목록 `data/stocks.csv` 만들기 | `python -m hk_llm.tools.stock_master` (먼저 KRX 코스피200 CSV 를 `hk_llm/data/kospi200.csv` 로, [docs/진행기록/1_준비.md](docs/진행기록/1_준비.md) 1-6) |

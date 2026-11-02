@@ -1,6 +1,7 @@
-"""파이프라인 1번 실행: 1 RSS 받기 → 2 중복 제거 → 3 DB 저장, 실행 기록은 collect_run 에
+"""파이프라인 1번 실행: 1 RSS 받기 → 2 중복 제거 → 3 DB 저장 → 4 본문, 실행 기록은 collect_run 에
 
-    python -m hk_llm.run   (ai 폴더에서, DB 켜져 있어야 함)
+    python -m hk_llm.run           (ai 폴더에서, DB 켜져 있어야 함)
+    python -m hk_llm.run --check   1~3단계 시험 (두 번 연속 수집해서 새 기사만 들어가는지)
 
 뒷단계(본문·요약·매칭)가 생기면 여기에 이어 붙인다. 30분마다 이 파일을 돌리는 게 35번 스케줄러.
 """
@@ -13,6 +14,7 @@ from hk_llm.db import get_engine, to_db
 from hk_llm.step1_rss import FEEDS, fetch_all
 from hk_llm.step2_dedup import dedup_by_url
 from hk_llm.step3_save import save_listed
+from hk_llm.step4_body import fetch_bodies, purge_old_bodies
 from hk_llm.util import get_logger
 
 log = get_logger(__name__)
@@ -50,7 +52,18 @@ def collect_rss(engine=None):
     return new
 
 
+def run():
+    collect_rss()
+    fetch_bodies()
+    purge_old_bodies()
+
+
 if __name__ == "__main__":
+    import sys
+
+    if "--check" not in sys.argv:
+        run()
+        sys.exit()
     engine = get_engine()
 
     def count():
