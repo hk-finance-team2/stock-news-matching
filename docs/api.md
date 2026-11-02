@@ -48,7 +48,7 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 
 | | 방식 | 주소 | 설명 |
 |---|---|---|---|
-| 🔓 | GET | `/api/stocks` | 종목 목록 (지금은 예시 종목 5개) |
+| 🔓 | GET | `/api/stocks` | 종목 목록 (코스피·코스닥 2,655개 전체. 검색 `?q=`·페이지는 추가 예정) |
 | 🔓 | GET | `/api/stocks/{stockCode}` | 종목 하나 `{ stockCode, stockName, market, sector }` |
 
 ### 관심 종목
