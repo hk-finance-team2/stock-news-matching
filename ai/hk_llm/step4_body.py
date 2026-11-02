@@ -117,7 +117,7 @@ def fetch_bodies(engine=None, limit=BATCH):
             done["FAILED" if status == "FAILED" else "RETRY"] += 1
             log.warning("본문 실패 %d/%d %s: %s", tries, MAX_TRIES, r.url, e)
             continue
-        _update(engine, r.article_id, status="FETCHED", body=body)
+        _update(engine, r.article_id, status="FETCHED", body=body, tries=0)
         done["FETCHED"] += 1
     log.info("본문: %d건 중 %s", len(rows), done)
     return done
