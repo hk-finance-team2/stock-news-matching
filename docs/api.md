@@ -49,7 +49,15 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 | | 방식 | 주소 | 설명 |
 |---|---|---|---|
 | 🔓 | GET | `/api/stocks?q=삼성&page=1&size=20` | **종목 검색**. 종목명(포함)·종목코드(시작)·별칭(포함)으로 찾음. 이름이 딱 맞는 것 → 이름이 q로 시작 → 코드 순. `q`가 없으면 전체 2,655개를 이름순으로 페이지 |
+| 🔓 | GET | `/api/stocks/issues?source=&limit=10` | **오늘의 이슈 종목 순위**. 아래 참고 |
 | 🔓 | GET | `/api/stocks/{stockCode}` | 종목 하나 `{ stockCode, stockName, market, sector }` |
+
+**오늘의 이슈 종목** (홈 오른쪽, 종목별 조회 왼쪽 목록)
+- 오늘(한국 시간 **0시 ~ 지금**) 작성된 글에 **많이 나온 종목** 순. 글 수가 같으면 평균 관련도가 높은 순
+- `source`: `NEWS` / `SNS` (없으면 둘 다), `limit`: 1~50 (기본 10). 페이지 없음
+- 한 건: `{ rank, stockCode, stockName, articleCount, avgRelevance, lastPublishedAt }`
+  - `articleCount`: 오늘 이 종목이 나온 글 수, `avgRelevance`: 평균 관련도 %(없으면 `null`), `lastPublishedAt`: 가장 최근 글 시각
+- 오늘 글이 없으면 `items: []`. 0시가 막 지나면 비어 있을 수 있음
 
 ### 뉴스·SNS 글
 
