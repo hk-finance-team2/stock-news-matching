@@ -38,9 +38,14 @@ public class ArticleController {
             @RequestParam(required = false) Integer minRelevance,
             @Parameter(description = "이 종목과 연결된 글만 (종목코드 6자리)", example = "005930")
             @RequestParam(required = false) String stockCode,
+            @Parameter(description = "검색어: 제목·요약·키워드에 들어 있는 글만 (50자 이하)", example = "반도체")
+            @RequestParam(required = false) String q,
+            @Parameter(description = "기간: today, 7d, 30d (없으면 전체). 7d = 오늘 포함 7일", example = "7d")
+            @RequestParam(required = false) String period,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "" + PageQuery.DEFAULT_SIZE) int size) {
-        return articleService.getArticles(source, sort, minRelevance, stockCode, new PageQuery(page, size));
+        return articleService.getArticles(source, sort, minRelevance, stockCode, q, period,
+                new PageQuery(page, size));
     }
 
     @Operation(summary = "글 상세",

@@ -108,6 +108,8 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 | `source` | `NEWS` / `SNS` (없으면 전체) | 출처 탭 |
 | `sort` | `latest` 최신순(기본) / `relevance` 관련도순 | 정렬 버튼 |
 | `minRelevance` | 0~100 (%). 관련도가 이 값 이상인 종목이 있는 글만. `stockCode`와 같이 쓰면 그 종목 기준 | 관련도 필터 |
+| `q` | 검색어 (50자 이하). 제목·요약·키워드에 들어 있는 글만 | 검색 |
+| `period` | `today` / `7d` / `30d` (없으면 전체). 7d = 오늘 포함 7일 (언급량 그래프와 같은 뜻) | 기간 버튼 |
 | `page`, `size` | 1부터, 1~100 (기본 20) | |
 
 예: 홈 `GET /api/articles` · 삼성전자 화면 `GET /api/articles?stockCode=005930` · SNS만 관련도순 `GET /api/articles?source=SNS&sort=relevance`
@@ -145,6 +147,25 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 | `stocks[]` | 목록 칩 칸 + **`reason`**(연결 이유, 항상 있음), **`evidence`**(근거 문장, 없으면 `null`), `matchedKeywords`(목록, 없으면 `[]`) |
 | `relatedSns[]` | **뉴스일 때만.** 같은 종목이 나온 SNS 중 작성 시각 앞뒤 24시간 안, 가까운 순 최대 5개 `{ articleId, channel, title, press, publishedAt, summary, url }`. SNS 글이면 `[]` |
 
+### 통합 검색
+
+| | 방식 | 주소 | 설명 |
+|---|---|---|---|
+| 🔓 | GET | `/api/search?q=삼성&period=7d` | **종목 + 글 한 번에** (F-13) |
+
+```json
+{
+  "q": "삼성",
+  "stocks":   { "items": [ { "stockCode": "005930", "stockName": "삼성전자", ... } ], "totalCount": 21 },
+  "articles": { "items": [ { "articleId": 23, "title": "...", "stocks": [...] } ],     "totalCount": 1 }
+}
+```
+
+- `stocks`: 위에서 **5개만**. 규칙은 `GET /api/stocks?q=`와 같음. `totalCount`가 5보다 크면 "종목 더 보기" → `GET /api/stocks?q=삼성&page=1`
+- `articles`: 한 페이지. 규칙·칸은 `GET /api/articles?q=`와 같음. 조건 `period`, `source`, `sort`, `page`, `size`
+- `q`는 **필수** (없거나 공백뿐이거나 50자 넘으면 400)
+- 글은 **제목·요약·키워드에 검색어가 글자로 들어 있어야** 나옴. 종목과 연결됐어도 글자가 없으면 안 나옴 (그런 글은 종목 화면에서)
+
 ### 관심 종목
 
 | | 방식 | 주소 | 설명 |
@@ -172,7 +193,7 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 
 ### 아직 없는 API (차례로 추가)
 
-통합 검색, 데이터 상태, 종합 요약 다시 생성.
+데이터 상태, 종합 요약 다시 생성.
 그동안은 프론트에서 예시 데이터로 화면을 만들어 두면 됩니다.
 
 ## 4. 오류 코드
