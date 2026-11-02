@@ -15,7 +15,7 @@
 
 ## 지금 상태 (2026-10-30)
 
-- 준비 단계 진행 중 → 다음: 로깅 모듈, RSS 수집 구현 ([docs/개발순서.md](docs/개발순서.md))
+- 준비 단계 끝 → 다음: RSS 수집 구현 (15번) ([docs/개발순서.md](docs/개발순서.md))
 - 뉴스: **언론사 RSS 8개로 실시간** 수집 (한경·연합·서경·파이낸셜뉴스, 30분마다, 하루 약 1,000건)
 - 흐름: RSS 목록 → 중복 제거 → 원문 본문 → LLM 요약 → 요약에서 코스피200 종목 연결
 - 화면에는 **요약 + 원문 링크만** (본문은 7일 후 삭제, 언론사 AI 정책)
@@ -29,6 +29,7 @@ ai/
 ├── README.md
 ├── requirements.txt
 ├── hk_llm/
+│   ├── common.py         로깅·재시도 공통 모듈 (로그는 logs/, Git 제외)
 │   ├── naver_test.py     네이버 API HUB 키 확인
 │   ├── robots.py         본문 가져오기 전 robots.txt 허용 확인
 │   ├── stock_master.py   종목 마스터 data/stocks.csv 생성 (코스피200 표시)
