@@ -1,4 +1,4 @@
-"""KRX 상장 종목 마스터(종목명-코드) 받기. 실행: python stock_master.py → data/stocks.csv
+"""KRX 상장 종목 마스터(종목명-코드) 받기. 실행: python -m hk_llm.tools.stock_master (ai 폴더에서) → data/stocks.csv
 
 출처: KIND(한국거래소 기업공시채널) 상장법인목록 '엑셀 다운로드' 버튼과 같은 주소.
 엑셀이라고 하지만 실제로는 EUC-KR HTML 표라서 표준 라이브러리로 읽는다.
@@ -8,15 +8,14 @@
 """
 import csv
 from html.parser import HTMLParser
-from pathlib import Path
 
 import requests
 
-from robots import USER_AGENT
+from hk_llm.config import DATA_DIR, USER_AGENT
 
 URL = "https://kind.krx.co.kr/corpgeneral/corpList.do"
-OUT = Path(__file__).parent / "data" / "stocks.csv"
-KOSPI200 = Path(__file__).parent / "data" / "kospi200.csv"
+OUT = DATA_DIR / "stocks.csv"
+KOSPI200 = DATA_DIR / "kospi200.csv"
 COLUMNS = ["종목코드", "회사명", "시장구분", "업종", "코스피200"]
 MARKETS = {"유가": "KOSPI", "코스닥": "KOSDAQ", "코넥스": "KONEX"}
 

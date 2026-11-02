@@ -41,6 +41,7 @@ erDiagram
 | 14 | summary | TEXT | | N | | LLM 요약. **계속 보관** |
 | 15 | model | VARCHAR(50) | | N | | 요약한 모델 (AI 생성 표시용) |
 | 16 | summarized_at | DATETIME | | N | | 요약 시각 |
+| 17 | companies | JSON | | N | | **V7 적용 (PR #22, 2026-11-02)**. LLM 이 뽑은 회사 목록 (이름·주인공 여부·감성·이유). 6단계 종목 매칭의 입력. 백엔드·화면은 조회하지 않음 |
 
 - UK `uk_article_url_key (url_key)`: 같은 기사 두 번 저장 금지
 - IDX `idx_article_status (status)`, `idx_article_published (published_at)`
@@ -72,7 +73,7 @@ erDiagram
 
 - PK `(article_id, stock_code)`, IDX `idx_article_stock_stock (stock_code)`: 종목별 기사 목록
 - CHECK `ck_article_stock_sentiment`: `sentiment IN ('POSITIVE','NEGATIVE','NEUTRAL')`
-- 매칭 점수(`match_setting` 의 종목명·테마·문맥 가중치) 컬럼은 **매칭 방식이 정해지면 추가** (AI 쪽 보류 중)
+- 매칭 점수(`match_setting` 의 종목명·테마·문맥 가중치) 는 V5 의 `article_stock.relevance` 등 [확장] 칸을 23번에서 채움 (match_setting 사용, 2026-10-30)
 
 ### collect_run · 수집 실행 기록
 

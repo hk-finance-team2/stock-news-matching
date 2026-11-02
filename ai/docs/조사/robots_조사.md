@@ -37,4 +37,4 @@
 - `crawl_delay(url)`: 사이트가 정한 요청 간격, 없으면 1초
 - 봇 이름: `hk-llm-news-bot/0.1 (academy student project)` (정체를 숨기지 않음)
 - robots.txt 를 못 받으면(네트워크 오류·5xx) 수집 안 함, 없으면(404) 허용
-- 확인: `python robots.py` → `ok`
+- 확인: `python -m hk_llm.robots` → `ok`
