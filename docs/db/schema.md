@@ -276,7 +276,7 @@ erDiagram
 - 공감 수는 따로 저장하지 않고 `COUNT(*)`로 셈
 - 게시글이 삭제되면 공감도 함께 삭제
 
-### article · 뉴스·SNS 글과 LLM 요약 (V5)
+### article · 뉴스·SNS 글과 LLM 요약 (V5, companies는 V7)
 
 | # | Column Name | Data Type | Key | Not Null | Default | Comments |
 |---|---|---|---|---|---|---|
@@ -301,6 +301,7 @@ erDiagram
 | 19 | collect_mode | VARCHAR(10) | CHECK | Y | 'REALTIME' | [확장] `REALTIME` 실시간, `BACKFILL` 과거 보충 수집 |
 | 20 | keywords | VARCHAR(500) | | N | | [확장] 핵심 키워드 (쉼표 구분) |
 | 21 | sentiment | VARCHAR(10) | CHECK | N | | [확장] 글 전체 감성: `POSITIVE`, `NEGATIVE`, `NEUTRAL` |
+| 22 | companies | JSON | CHECK | N | | LLM이 뽑은 회사 목록 (종목 매칭 입력). AI 내부용, **백엔드·화면은 조회하지 않음** (V7) |
 
 - UK `uk_article_url_key (url_key)`: 같은 기사 두 번 저장 금지. 칸은 `utf8mb4_bin`이라 대소문자가 다르면 다른 주소
 - IDX `idx_article_status (status)`, `idx_article_published (published_at)`
@@ -318,6 +319,9 @@ erDiagram
 
 - 버린 기사(`FAILED`·`SKIPPED`·`NO_STOCK`)도 행은 지우지 않음. 지우면 다시 받아서 다시 요약함 (비용 낭비)
 - **백엔드는 `status = 'DONE'`인 기사만 화면에 보여 주고, `body`는 조회하지 않음**
+- `companies` (V7): AI 요약 단계에서 LLM이 뽑은 "회사 이름 + 회사별 감성·이유". 매칭 단계가 이것을 종목코드로 바꿔 `article_stock`에 저장
+  - 예: `[{"name": "포스코퓨처엠", "is_main": true, "sentiment": "POSITIVE", "reason": "..."}]` (JSON 안의 키 이름은 AI 파트가 정함)
+  - MariaDB의 JSON은 `LONGTEXT` + `CHECK (json_valid(companies))`. 깨진 JSON은 DB가 거부
 
 ### article_stock · 기사-종목 연결 (V5)
 
@@ -381,3 +385,4 @@ erDiagram
 | 2026-10-30 | V4 | users, watchlist, board_post, board_comment, board_like |
 | 2026-10-30 | V5 | article, article_stock, collect_run (AI 제안서 기반 + [확장] 칸), stock_daily_summary |
 | 2026-11-02 | V6 | stock_info 데이터: 코스피·코스닥 2,655개 (KIND). V2 예시 5개는 공식 값으로 덮어씀 |
+| 2026-11-02 | V7 | article.companies (JSON): LLM이 뽑은 회사 목록, 종목 매칭 입력 (AI 파트 요청) |
