@@ -53,9 +53,11 @@ def collect_rss(engine=None):
 
 
 def run():
-    collect_rss()
-    fetch_bodies()
-    purge_old_bodies()
+    try:
+        collect_rss()
+        fetch_bodies()
+    finally:
+        purge_old_bodies()  # 수집이 실패해도 7일 지난 본문은 반드시 지움
 
 
 if __name__ == "__main__":

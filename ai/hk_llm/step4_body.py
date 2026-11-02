@@ -34,6 +34,7 @@ MIN_LEN = 100  # 이보다 짧으면 본문 없는 기사([속보] 등) → SKIP
 MAX_TRIES = 3
 BATCH = 200  # ponytail: 1번 실행에 최대 200건 (사이트당 1초 → 최대 약 3분). 밀리면 다음 실행에서 이어감
 KEEP_DAYS = 7
+MAX_DELAY = 10  # robots.txt Crawl-delay 가 터무니없이 커도 1건당 최대 10초만 기다림
 
 log = get_logger(__name__)
 
@@ -82,12 +83,17 @@ def fetch_bodies(engine=None, limit=BATCH):
     done = {"FETCHED": 0, "SKIPPED": 0, "RETRY": 0, "FAILED": 0}
     last_hit = {}  # 사이트별 마지막 요청 시각
     for r in rows:
+        p = urlsplit(r.url)
+        if p.scheme != "https" or p.netloc not in BODY_XPATH:  # 정한 언론사 4곳 말고는 요청 자체를 안 보냄
+            _update(engine, r.article_id, status="SKIPPED", error="모르는 사이트")
+            done["SKIPPED"] += 1
+            continue
         if not allowed(r.url):
             _update(engine, r.article_id, status="SKIPPED", error="robots.txt 금지")
             done["SKIPPED"] += 1
             continue
         host = urlsplit(r.url).netloc
-        wait = last_hit.get(host, 0) + crawl_delay(r.url) - time.monotonic()
+        wait = last_hit.get(host, 0) + min(crawl_delay(r.url), MAX_DELAY) - time.monotonic()
         if wait > 0:
             time.sleep(wait)
         try:
