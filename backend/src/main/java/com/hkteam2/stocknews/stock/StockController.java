@@ -35,6 +35,18 @@ public class StockController {
         return stockService.getStocks(q, new PageQuery(page, size));
     }
 
+    @Operation(summary = "오늘의 이슈 종목 순위",
+            description = "오늘(한국 시간 0시~지금) 작성된 글에 많이 나온 종목 순. 글 수가 같으면 평균 관련도 높은 순."
+                    + " avgRelevance는 %(관련도가 아직 없으면 null). 페이지 없이 위에서 limit개 (1~50, 기본 10)")
+    @GetMapping("/issues")
+    public ListResponse<StockIssueResponse> getIssues(
+            @Parameter(description = "출처: NEWS 또는 SNS (없으면 둘 다)", example = "NEWS")
+            @RequestParam(required = false) String source,
+            @Parameter(description = "몇 개까지 (1~50)", example = "10")
+            @RequestParam(defaultValue = "10") int limit) {
+        return stockService.getIssues(source, limit);
+    }
+
     @Operation(summary = "종목 상세 조회", description = "종목코드로 종목 한 개를 조회합니다. 없으면 404 STOCK_NOT_FOUND.")
     @GetMapping("/{stockCode}")
     public StockResponse getStock(
