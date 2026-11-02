@@ -1,11 +1,10 @@
-"""NAVER API HUB 뉴스 검색 키 확인용. 실행: python naver_test.py 삼성전자"""
+"""NAVER API HUB 뉴스 검색 키 확인용. 실행: python -m hk_llm.tools.naver_test 삼성전자 (ai 폴더에서)"""
 import os
 import sys
 
 import requests
-from dotenv import load_dotenv
 
-load_dotenv()
+import hk_llm.config  # noqa: F401  레포 최상위 .env 읽기
 
 query = sys.argv[1] if len(sys.argv) > 1 else "삼성전자"
 res = requests.get(

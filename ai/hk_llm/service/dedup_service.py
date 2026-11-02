@@ -1,14 +1,16 @@
 """기사 중복 제거. 16번: 주소 기준 (17번 제목 유사도도 여기에 붙인다)
 
-    from dedup import dedup_by_url
-    articles = dedup_by_url(articles)  # 각 기사에 url_key 가 붙고, 같은 url_key 는 첫 건만 남음
+    from hk_llm.service.dedup_service import dedup_by_url
+    articles = dedup_by_url(articles)  # ArticleDto 마다 url_key 가 채워지고, 같은 url_key 는 첫 건만 남음
 
 이번 실행 안에서의 중복만 거른다. 이미 DB 에 있는 기사는 18번에서
 `article.url_key` UNIQUE 로 걸러진다.
 """
+from dataclasses import replace
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from common import get_logger
+from hk_llm.common.logger import get_logger
+from hk_llm.dto.article_dto import ArticleDto
 
 # 결정사항 4번: 추적용 꼬리만 뗀다. 기사 번호 꼬리(newsId, idxno 등)는 남김
 TRACKING = {"ref", "input"}
@@ -33,14 +35,14 @@ def url_key(url):
 def dedup_by_url(articles):
     seen, out = set(), []
     for a in articles:
-        key = url_key(a["url"])
+        key = url_key(a.url)
         if len(key) > URL_KEY_MAX:
-            log.warning("주소가 너무 길어 건너뜀 (%d자): %s", len(key), a["url"])
+            log.warning("주소가 너무 길어 건너뜀 (%d자): %s", len(key), a.url)
             continue
         if key in seen:
             continue
         seen.add(key)
-        out.append({**a, "url_key": key})
+        out.append(replace(a, url_key=key))
     log.info("주소 중복 제거: %d건 → %d건", len(articles), len(out))
     return out
 
@@ -54,13 +56,18 @@ if __name__ == "__main__":
     assert url_key("https://WWW.Hankyung.com/article/202610306351i/#top") == "https://www.hankyung.com/article/202610306351i"
     assert url_key("https://x.com/News/A") != url_key("https://x.com/news/a")  # 경로 대소문자는 구분
 
-    a = {"url": "https://www.yna.co.kr/view/AKR1", "title": "첫 건"}
-    b = {"url": "https://www.yna.co.kr/view/AKR1?input=1195m", "title": "꼬리만 다름"}
-    out = dedup_by_url([a, b, {"url": "https://www.yna.co.kr/view/AKR2"}])
-    assert [x["title"] for x in out[:1]] == ["첫 건"] and len(out) == 2 and "url_key" in out[0]
+    from datetime import datetime
 
-    from rss import fetch_all
+    def art(url, title):
+        return ArticleDto(url=url, press="연합뉴스", title=title, published_at=datetime(2026, 11, 2))
+
+    out = dedup_by_url([art("https://www.yna.co.kr/view/AKR1", "첫 건"),
+                        art("https://www.yna.co.kr/view/AKR1?input=1195m", "꼬리만 다름"),
+                        art("https://www.yna.co.kr/view/AKR2", "다른 기사")])
+    assert [x.title for x in out] == ["첫 건", "다른 기사"] and out[0].url_key == "https://www.yna.co.kr/view/AKR1"
+
+    from hk_llm.collector.rss_collector import fetch_all
     articles, _ = fetch_all()
     out = dedup_by_url(articles)
-    assert len({x["url_key"] for x in out}) == len(out)
+    assert len({x.url_key for x in out}) == len(out)
     print("ok", len(articles), "→", len(out))

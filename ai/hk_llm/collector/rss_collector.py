@@ -1,20 +1,20 @@
-"""언론사 RSS 8개에서 기사 목록 받기 (15번). 실행: python rss.py → 피드별 건수와 예시 출력
+"""언론사 RSS 8개에서 기사 목록 받기 (15번). 실행: python -m hk_llm.collector.rss_collector (ai 폴더에서) → 피드별 건수와 예시 출력
 
-돌려주는 값: 기사마다 dict. 키는 DB `article` 칸 이름과 같다 (V5)
-    url, press, title, reporter, description, published_at(KST, 시간대 포함)
+돌려주는 값: ArticleDto 목록 (dto/article_dto.py)
 중복 제거(16번)·DB 저장(18번)은 여기서 하지 않는다.
 """
 import re
 import xml.etree.ElementTree as ET
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from email.utils import parsedate_to_datetime
 
 import requests
 
-from common import get_logger, retry
-from robots import USER_AGENT
+from hk_llm.common.logger import get_logger
+from hk_llm.common.retry import retry
+from hk_llm.config import KST, USER_AGENT
+from hk_llm.dto.article_dto import ArticleDto
 
-KST = timezone(timedelta(hours=9), "KST")  # 한국은 서머타임 없음. ZoneInfo 는 Windows 에서 tzdata 패키지가 필요
 FEEDS = {
     "한국경제": ["https://www.hankyung.com/feed/finance", "https://www.hankyung.com/feed/economy"],
     "연합뉴스": ["https://www.yna.co.kr/rss/economy.xml", "https://www.yna.co.kr/rss/market.xml"],
@@ -56,14 +56,14 @@ def parse(xml, press, now=None):
         url, title = _text(it, "link"), _text(it, "title")
         if not url or not title:
             continue
-        items.append({
-            "url": url,
-            "press": press,
-            "title": title,
-            "reporter": _reporter(_text(it, "author") or _text(it, DC + "creator")),
-            "description": _text(it, "description"),
-            "published_at": _published(_text(it, "pubDate"), now),
-        })
+        items.append(ArticleDto(
+            url=url,
+            press=press,
+            title=title,
+            reporter=_reporter(_text(it, "author") or _text(it, DC + "creator")),
+            description=_text(it, "description"),
+            published_at=_published(_text(it, "pubDate"), now),
+        ))
     return items
 
 
@@ -97,10 +97,10 @@ if __name__ == "__main__":
     </channel></rss>"""
     now = datetime(2026, 11, 2, 9, 0, tzinfo=KST)
     a, b = parse(sample, "테스트", now)
-    assert a["reporter"] == "김희선" and a["published_at"].isoformat() == "2026-11-02T07:04:55+09:00"
-    assert b["reporter"] == "최만수" and b["published_at"] == now and b["description"] is None
+    assert a.reporter == "김희선" and a.published_at.isoformat() == "2026-11-02T07:04:55+09:00"
+    assert b.reporter == "최만수" and b.published_at == now and b.description is None
 
     articles, failed = fetch_all()
     assert not failed, f"실패한 피드: {failed}"
-    assert all(x["published_at"].utcoffset().total_seconds() == 9 * 3600 for x in articles)
+    assert all(x.published_at.utcoffset().total_seconds() == 9 * 3600 for x in articles)
     log.info("총 %d건 (중복 포함). 예: %s", len(articles), articles[0])

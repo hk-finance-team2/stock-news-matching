@@ -1,39 +1,16 @@
-"""로깅·예외 처리 공통 모듈. 각 스크립트 맨 위에서 한 번 부른다.
+"""실패하면 다시 해보기 공통 모듈.
 
 사용:
-    from common import get_logger, retry
-    log = get_logger(__name__)
-    log.info("RSS %d건", n)
-
+    from hk_llm.common.retry import retry
     res = retry(lambda: requests.get(url, timeout=10))  # 실패하면 3번까지 다시
 """
-import logging
-import logging.handlers
 import time
-from pathlib import Path
 
 import requests
 
-LOG_DIR = Path(__file__).parent / "logs"  # Git 제외 (.gitignore 의 logs/)
-FORMAT = "%(asctime)s %(levelname)-7s %(name)s | %(message)s"
+from hk_llm.common.logger import get_logger
 
-
-def _setup():
-    LOG_DIR.mkdir(exist_ok=True)
-    # 하루마다 새 파일, 14일치만 남김 (본문 보관 7일보다 길게 → 실패 원인 추적용)
-    file = logging.handlers.TimedRotatingFileHandler(
-        LOG_DIR / "hk_llm.log", when="midnight", backupCount=14, encoding="utf-8"
-    )
-    logging.basicConfig(level=logging.INFO, format=FORMAT, handlers=[logging.StreamHandler(), file])
-    # 라이브러리 잡음 줄이기
-    for name in ("urllib3", "httpx", "openai"):
-        logging.getLogger(name).setLevel(logging.WARNING)
-
-
-def get_logger(name):
-    if not logging.getLogger().handlers:
-        _setup()
-    return logging.getLogger(name)
+log = get_logger(__name__)
 
 
 # 다시 해볼 만한 오류만: 네트워크 끊김·시간 초과, 서버 5xx, 429(너무 많은 요청)
@@ -45,11 +22,10 @@ def _retryable(e):
     return False
 
 
-def retry(fn, tries=3, wait=2.0, log=None):
+def retry(fn, tries=3, wait=2.0):
     """fn() 을 실행. 다시 해볼 만한 오류면 wait, wait*2, ... 초 쉬고 최대 tries 번.
     응답을 돌려주는 함수면 raise_for_status 까지 여기서 해서 5xx 도 재시도한다.
     끝까지 실패하면 마지막 예외를 그대로 던진다 → 호출한 쪽이 FAILED 처리."""
-    log = log or get_logger(__name__)
     for i in range(1, tries + 1):
         try:
             out = fn()
@@ -65,7 +41,6 @@ def retry(fn, tries=3, wait=2.0, log=None):
 
 
 if __name__ == "__main__":
-    log = get_logger("common")
     calls = []
 
     def flaky():  # 두 번 끊겼다가 성공
@@ -88,5 +63,4 @@ if __name__ == "__main__":
         raise AssertionError("404 는 예외가 나야 함")
     except requests.HTTPError:
         assert len(calls) == 1, "404 는 다시 해도 같으니 재시도 안 함"
-
-    log.info("ok → %s", LOG_DIR / "hk_llm.log")
+    print("ok")
