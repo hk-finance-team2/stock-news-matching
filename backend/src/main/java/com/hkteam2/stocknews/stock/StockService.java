@@ -3,7 +3,9 @@ package com.hkteam2.stocknews.stock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import org.springframework.stereotype.Service;
@@ -67,6 +69,22 @@ public class StockService {
                 .mapToObj(i -> StockIssueResponse.of(i + 1, rows.get(i)))
                 .toList();
         return ListResponse.of(items);
+    }
+
+    /**
+     * 종목의 오늘 종합 요약. 두 곳에서 가져와 합침
+     * - 요약 문장: AI가 저장한 stock_daily_summary (없으면 null → 화면은 "요약 준비 중")
+     * - 감성 비율: 오늘 이 종목이 나온 글을 지금 직접 셈 (AI 요약이 없어도, 1시간을 기다리지 않아도 최신)
+     */
+    public StockSummaryResponse getSummary(String stockCode) {
+        StockResponse stock = getStock(stockCode);   // 없는 종목이면 404
+        LocalDate today = LocalDate.now(TimeUtils.KST);
+
+        StockDailySummaryRow summary = stockMapper.findDailySummary(stockCode, today).orElse(null);
+        Map<String, Long> counts = stockMapper.countSentiments(stockCode, today.atStartOfDay()).stream()
+                .collect(Collectors.toMap(SentimentCountRow::sentiment, SentimentCountRow::articleCount));
+
+        return StockSummaryResponse.of(stock, today, summary, SentimentRatioResponse.from(counts));
     }
 
     /** LIKE의 특수 문자(\, %, _)를 글자 그대로 찾도록 앞에 \를 붙임. 예: "10%" -> "10\%" */

@@ -47,6 +47,16 @@ public class StockController {
         return stockService.getIssues(source, limit);
     }
 
+    @Operation(summary = "종목의 오늘 종합 요약·감성 비율",
+            description = "newsSummary·snsSummary는 AI가 1시간마다 만든 오늘 요약 (아직 없으면 null)."
+                    + " sentiment는 오늘(한국 시간 0시~지금) 이 종목이 나온 글을 지금 센 것. %는 합이 100."
+                    + " 없는 종목이면 404 STOCK_NOT_FOUND")
+    @GetMapping("/{stockCode}/summary")
+    public StockSummaryResponse getSummary(
+            @Parameter(description = "종목코드 6자리", example = "005930") @PathVariable String stockCode) {
+        return stockService.getSummary(stockCode);
+    }
+
     @Operation(summary = "종목 상세 조회", description = "종목코드로 종목 한 개를 조회합니다. 없으면 404 STOCK_NOT_FOUND.")
     @GetMapping("/{stockCode}")
     public StockResponse getStock(

@@ -110,4 +110,41 @@
         LIMIT #{limit}
     </select>
 
+    <resultMap id="stockDailySummaryRow" type="com.hkteam2.stocknews.stock.StockDailySummaryRow">
+        <constructor>
+            <arg column="news_summary" javaType="String"/>
+            <arg column="sns_summary" javaType="String"/>
+            <arg column="generated_at" javaType="java.time.LocalDateTime"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="sentimentCountRow" type="com.hkteam2.stocknews.stock.SentimentCountRow">
+        <constructor>
+            <arg column="sentiment" javaType="String"/>
+            <arg column="article_count" javaType="_long"/>
+        </constructor>
+    </resultMap>
+
+    <!-- 종목의 그날 종합 요약 (AI가 1시간마다 만들어 저장). (종목, 날짜)는 한 줄뿐. 아직 없으면 결과 없음 -->
+    <select id="findDailySummary" resultMap="stockDailySummaryRow">
+        SELECT news_summary, sns_summary, generated_at
+        FROM stock_daily_summary
+        WHERE stock_code = #{stockCode} AND summary_date = #{date}
+    </select>
+
+    <!--
+        감성 비율 재료: from(오늘 0시) 이후 이 종목이 나온 글을 감성별로 묶어서(GROUP BY) 셈
+        글 전체 감성(article.sentiment)이 아니라 "이 종목에 대한" 감성(article_stock.sentiment)
+        결과 예: POSITIVE 1, NEUTRAL 1 (0건인 감성은 줄이 안 나옴)
+    -->
+    <select id="countSentiments" resultMap="sentimentCountRow">
+        SELECT s.sentiment, COUNT(*) AS article_count
+        FROM article_stock s
+        JOIN article a ON a.article_id = s.article_id
+        WHERE s.stock_code = #{stockCode}
+          AND a.status = 'DONE'
+          AND a.published_at >= #{from}
+        GROUP BY s.sentiment
+    </select>
+
 </mapper>
