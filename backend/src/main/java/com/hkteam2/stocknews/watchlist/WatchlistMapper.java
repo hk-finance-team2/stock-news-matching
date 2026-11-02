@@ -1,5 +1,6 @@
 package com.hkteam2.stocknews.watchlist;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -10,10 +11,11 @@ import org.apache.ibatis.annotations.Param;
 @Mapper
 public interface WatchlistMapper {
 
-    /** 최근에 추가한 순서 */
-    List<WatchlistRow> findAllByUserId(@Param("userId") Long userId);
+    /** 최근에 추가한 순서. from(오늘 0시) 이후 글 수를 같이 셈 */
+    List<WatchlistRow> findAllByUserId(@Param("userId") Long userId, @Param("from") LocalDateTime from);
 
-    Optional<WatchlistRow> findOne(@Param("userId") Long userId, @Param("stockCode") String stockCode);
+    Optional<WatchlistRow> findOne(@Param("userId") Long userId, @Param("stockCode") String stockCode,
+                                   @Param("from") LocalDateTime from);
 
     boolean exists(@Param("userId") Long userId, @Param("stockCode") String stockCode);
 
