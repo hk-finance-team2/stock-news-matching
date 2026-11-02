@@ -43,6 +43,7 @@ ai/
 │   ├── step5_summary.py 5. LLM 요약·감성·회사 목록 → SUMMARIZED (27~34번)
 │   ├── step6_match.py   6. 회사 이름 → 종목 연결 → DONE / NO_STOCK (23·25번)
 │   ├── step7_group.py   7. 비슷한 기사 묶기 (17번, 아직 저장·실행에 안 붙임)
+│   ├── step8_daily.py   8. 종목별 하루 요약 → stock_daily_summary (32번, 자동 실행은 35번)
 │   ├── robots.py        본문 가져오기 전 robots.txt 허용 확인
 │   ├── models.py        기사 한 건의 모양 (Article, article 테이블 한 줄)
 │   ├── db.py            DB 연결, KST 시각 변환
@@ -75,6 +76,7 @@ pip install -r requirements.txt
 | 요약 검사 규칙 시험 (비용 없음) | `python -m hk_llm.step5_summary` |
 | 매칭 규칙 시험 (DB·비용 없음) | `python -m hk_llm.step6_match` |
 | 공시 수집·시험 (비용 없음, `DART_API_KEY` 필요) | `python -m hk_llm.dart` |
+| 오늘 종목별 요약 (2건 이상인 종목만 비용) | `python -m hk_llm.step8_daily --run` |
 | 1~3단계 시험 | `python -m hk_llm.run --check` |
 | RSS 만 받아 보기 | `python -m hk_llm.step1_rss` |
 | 종목 목록 `data/stocks.csv` 만들기 (지금 코드에서는 안 씀) | `python -m hk_llm.tools.stock_master` |
