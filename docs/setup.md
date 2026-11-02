@@ -208,6 +208,7 @@ curl.exe http://localhost:8080/api/stocks
 | DB를 켤 때 3308 포트 오류 (`port is already allocated`, `ports are not available` 등) | 다른 프로그램이 3308을 씀 | `.env`의 `DB_PORT`를 다른 번호로 바꾸고 백엔드도 같은 값 사용 |
 | `Validate failed: Migrations have failed validation` | 이미 실행된 V 파일 내용이 바뀜 | V 파일을 원래대로 되돌리고 새 V 파일로 추가. 내 PC에서만 실험 중이면 아래 "DB 초기화" |
 | `Access denied for user` | `.env` 비밀번호를 DB를 만든 뒤에 바꿈 | 아래 "DB 초기화" |
+| 터미널 `curl`로 한글 검색어(`?q=삼성`)를 보내면 500, 서버 로그에 `Character decoding failed` | Windows 터미널이 한글을 UTF-8이 아닌 다른 방식(CP949)으로 바꿔 보냄. 코드 문제 아님 | Swagger나 브라우저로 시험 (항상 UTF-8). 터미널이면 미리 인코딩한 주소 사용: `?q=%EC%82%BC%EC%84%B1` |
 
 **DB 초기화** (내 PC의 DB 데이터가 **모두 지워집니다**):
 
