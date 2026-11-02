@@ -32,6 +32,24 @@ class StockApiTest extends ApiTestSupport {
     }
 
     @Test
+    void 별칭이_딱_맞으면_그_종목이_먼저() throws Exception {
+        // "현대차"로 시작하는 현대차증권보다 별칭이 딱 맞는 현대자동차가 앞
+        mvc.perform(get("/api/stocks").param("q", "현대차"))
+                .andExpect(jsonPath("$.items[0].stockCode").value("005380"))
+                .andExpect(jsonPath("$.items[*].stockName", hasItem("현대차증권")));
+        mvc.perform(get("/api/stocks").param("q", "에스오일"))
+                .andExpect(jsonPath("$.items[0].stockName").value("S-Oil"));
+    }
+
+    @Test
+    void 헷갈리는_별칭도_검색에는_나옴() throws Exception {
+        // 포스코(AMBIGUOUS)는 AI 매칭에서만 빼고 검색에서는 씀. 이름에 포스코가 든 종목도 같이 나옴
+        mvc.perform(get("/api/stocks").param("q", "포스코"))
+                .andExpect(jsonPath("$.items[*].stockCode", hasItem("005490")))
+                .andExpect(jsonPath("$.items[*].stockName", hasItem("포스코퓨처엠")));
+    }
+
+    @Test
     void 없는_종목은_404() throws Exception {
         mvc.perform(get("/api/stocks/{code}", "999999"))
                 .andExpect(status().isNotFound())
