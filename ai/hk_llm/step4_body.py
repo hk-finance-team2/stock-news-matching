@@ -153,10 +153,10 @@ if __name__ == "__main__":
     assert got == "SOOP이 3분기 실적 부진에 급락하고 있다.\n2일 오전 9시16분 코스닥시장에서", repr(got)
     assert extract(html, "https://unknown.example/1") is None
 
-    # 실제 사이트 1건씩 (DB 에서 언론사별 최신 기사)
+    # 실제 사이트 1건씩 (본문을 받은 적 있는 언론사별 최신 기사. 새 기사는 [속보]·[표] 처럼 본문이 없을 수 있음)
     with get_engine().connect() as conn:
         urls = conn.execute(text("SELECT url FROM article WHERE article_id IN "
-                                 "(SELECT MAX(article_id) FROM article GROUP BY press)")).scalars().all()
+                                 "(SELECT MAX(article_id) FROM article WHERE channel = 'RSS' AND status = 'FETCHED' GROUP BY press)")).scalars().all()
     for u in urls:
         b = extract(_get(u).content, u)
         assert b and len(b) >= MIN_LEN, u
