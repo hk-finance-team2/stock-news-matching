@@ -331,3 +331,24 @@ AI 파트(지승현)와 이야기해서 정함.
   - 글이 많이 쌓여 느려지면 FULLTEXT 인덱스 검토
   - Windows 터미널 `curl`로 한글을 보내면 CP949로 바뀌어 500이 남 (Swagger·브라우저는 정상). setup.md 7절에 기록
 - **검토한 대안:** 검색용 SQL을 따로 만들기(규칙 두 벌), 종목·글을 SQL 한 번에 UNION(모양이 달라 복잡), 프론트가 두 API를 각각 부르기(가능하지만 검색 화면 한 번 호출이 편함)
+
+## 2026-11-02 · API 자동 테스트 + GitHub Actions (CI)
+
+- **결정:**
+  - **API 테스트**: `@SpringBootTest` + MockMvc로 프론트가 보내는 요청을 똑같이 보내고 응답(상태 코드, JSON 칸, 오류 `code`)이 `docs/api.md` 약속대로인지 확인. 글·종목·검색 API 24개 (단위 테스트 13개와 합쳐 37개)
+  - **테스트 데이터는 "투명 필름" 방식**: 테스트 하나 = 트랜잭션 하나(`@Transactional`) → 끝나면 롤백. 시작할 때 기사 표를 비우고 필요한 기사만 넣음. 종목 사전(V6)은 그대로 씀
+  - **GitHub Actions** (`.github/workflows/backend-ci.yml`): `backend/`가 바뀐 PR과 main merge 때 MariaDB 11.8.9를 띄우고 `./gradlew test`. 실패하면 테스트 보고서를 7일 보관
+  - DB는 `services:`가 아니라 `docker run`으로 띄움: `services:`로는 시작 옵션(한국 시간 `+09:00`, utf8mb4)을 넘길 수 없음. `docker-compose.yml`과 같은 버전·옵션
+  - JVM도 `TZ=Asia/Seoul` (백엔드 Docker 실행과 같음)
+  - `gradlew`에 실행 권한(100755): Windows에서 커밋해 권한이 빠져 있었음. Linux(GitHub)·Mac에서 `Permission denied` 방지
+  - 공식 액션 버전은 추가하는 날 최신 확인: `actions/checkout@v7`, `actions/setup-java@v6`, `gradle/actions/setup-gradle@v6`, `actions/upload-artifact@v7`
+- **이유:**
+  - 지금까지는 기능마다 서버를 켜고 손으로 확인 → 그때 한 번뿐. 다른 기능을 고치다 망가져도 모름 (예: 검색 때 고친 글 목록 코드를 관심 종목 글도 씀)
+  - 4명 + AI 코딩 도구라 누가 무엇을 망가뜨렸는지 사람이 찾기 어려움. 사람이 테스트를 잊어도 GitHub가 PR마다 돌림
+  - PC마다 DB 내용(예시 기사, 진짜 기사)이 달라도 결과가 같아야 해서 테스트가 자기 데이터를 넣고 지움
+  - 빌드 설정(`build.gradle`) 변경 없음: Boot 4 테스트 스타터에 MockMvc·JsonPath·AssertJ가 이미 있음. 로그인 테스트는 실제 로그인 API로 토큰을 받음
+- **확인:**
+  - 일부러 SQL의 `status = 'DONE'` 조건을 지우자 `목록에는_분석이_끝난_글만_최신순으로_나온다`가 실패 → 테스트가 실제로 잡아냄 (되돌림)
+  - 빈 MariaDB를 새로 띄워 GitHub와 같은 조건(Flyway V1~V7부터, 예시 기사 없음)으로 37개 통과
+- **다음:** 로그인·관심 종목·게시판 API 테스트 추가. ❌면 merge를 막는 것(main 브랜치 보호)은 팀 결정 후
+- **검토한 대안:** Testcontainers(테스트마다 새 DB, `build.gradle`에 라이브러리 추가 필요), 테스트 전용 DB(팀원마다 만들어야 함), 손으로만 확인(계속 늘어남)
