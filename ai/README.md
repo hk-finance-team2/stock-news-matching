@@ -3,7 +3,7 @@
 뉴스·공시 수집 및 LLM 요약 서버
 
 - 역할: 뉴스·공시 수집, 정제·중복 제거, 기사-종목 연결, LLM 요약, 매칭 정확도 측정
-- 기술: Python, FastAPI, LangChain
+- 기술: Python, LangChain (FastAPI 는 아직 안 씀: 백엔드와 DB 로만 주고받음, 팀 합의 예정)
 
 ## 팀원이 먼저 볼 것
 
@@ -19,8 +19,9 @@
 - 뉴스: **언론사 RSS 8개** (한경·연합·서경·파이낸셜뉴스, 30분마다 확인, 하루 약 1,000건)
 - 흐름: RSS 목록 → 중복 제거 → 원문 본문 → LLM 요약 → 요약에서 코스피200 종목 연결
 - 단계끼리는 `article.status` 로 넘김: `LISTED` → `FETCHED` → `SUMMARIZED` → `DONE` / `NO_STOCK`
-- 백엔드와는 **DB 로만** 주고받음 (AI 가 쓰고 백엔드가 읽음). 테이블은 백엔드 Flyway V5
+- 백엔드와는 **DB 로만** 주고받음 (AI 가 쓰고 백엔드가 읽음). 테이블은 백엔드 Flyway V5·V7
 - 화면에는 **요약 + 원문 링크만** (본문은 7일 후 삭제, 언론사 AI 정책)
+- 🧪 합의 전: 매칭 범위(코스피200), 점수 공식 ([docs/할일.md](docs/할일.md))
 - 보류: 네이버 API(과거 기록용), SNS
 
 ## 폴더
@@ -67,11 +68,13 @@ pip install -r requirements.txt
 | 하고 싶은 것 | 명령 |
 |---|---|
 | 파이프라인 1번 (RSS → 요약까지, OpenAI 비용) | `python -m hk_llm.run` |
-| 요약 n건 미리보기 (저장 안 함) | `python -m hk_llm.step5_summary 3` |
+| 요약 n건 미리보기 (저장 안 함, 건당 약 $0.0006) | `python -m hk_llm.step5_summary 3` |
+| 요약 검사 규칙 시험 (비용 없음) | `python -m hk_llm.step5_summary` |
+| 매칭 규칙 시험 (DB·비용 없음) | `python -m hk_llm.step6_match` |
 | 1~3단계 시험 | `python -m hk_llm.run --check` |
 | RSS 만 받아 보기 | `python -m hk_llm.step1_rss` |
 | 네이버 API 키 확인 | `python -m hk_llm.tools.naver_test 삼성전자` |
-| 종목 목록 `data/stocks.csv` 만들기 | `python -m hk_llm.tools.stock_master` (먼저 KRX 코스피200 CSV 를 `hk_llm/data/kospi200.csv` 로, [docs/진행기록/1_준비.md](docs/진행기록/1_준비.md) 1-6) |
+| 종목 목록 `data/stocks.csv` 만들기 | `python -m hk_llm.tools.stock_master` **6단계에 꼭 필요** (먼저 KRX 코스피200 CSV 를 `hk_llm/data/kospi200.csv` 로, [docs/진행기록/1_준비.md](docs/진행기록/1_준비.md) 1-6) |
 
 - 각 파일 맨 아래 `if __name__ == "__main__":` 은 자체 시험. 실행해서 `ok` 가 나오면 통과
 - `data/`·`logs/` 는 Git 에 올리지 않는다 (팀 규칙)
