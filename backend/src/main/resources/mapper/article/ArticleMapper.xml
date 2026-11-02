@@ -55,6 +55,8 @@
         - stockCode: 이 종목과 연결된 기사만 (종목 화면)
         - minRelevance: 관련도가 이 값 이상인 종목이 하나라도 있는 기사만 (종목을 골랐으면 그 종목 기준)
         - watchUserId: 이 회원의 관심 종목이 하나라도 연결된 기사만 (관심 종목 글 모아 보기)
+        - likeKeyword: 제목·요약·키워드 중 하나에 검색어가 들어 있는 기사만 (통합 검색 F-13). 본문은 조회하지 않음
+        - from: 이 시각 이후 작성된 기사만 (기간 today/7d/30d)
     -->
     <sql id="listCondition">
         <where>
@@ -76,6 +78,14 @@
                 AND EXISTS (SELECT 1 FROM article_stock x
                             JOIN watchlist w ON w.stock_code = x.stock_code AND w.user_id = #{watchUserId}
                             WHERE x.article_id = a.article_id)
+            </if>
+            <if test="likeKeyword != null">
+                AND (a.title LIKE CONCAT('%', #{likeKeyword}, '%')
+                     OR a.summary LIKE CONCAT('%', #{likeKeyword}, '%')
+                     OR a.keywords LIKE CONCAT('%', #{likeKeyword}, '%'))
+            </if>
+            <if test="from != null">
+                AND a.published_at >= #{from}
             </if>
         </where>
     </sql>

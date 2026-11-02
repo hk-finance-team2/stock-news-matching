@@ -1,6 +1,7 @@
 package com.hkteam2.stocknews.article;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -11,17 +12,24 @@ import org.apache.ibatis.annotations.Param;
 @Mapper
 public interface ArticleMapper {
 
-    /** watchUserId가 있으면 그 회원의 관심 종목이 하나라도 연결된 기사만 */
+    /**
+     * 조건은 모두 선택 (null이면 안 거름). watchUserId: 그 회원의 관심 종목이 하나라도 연결된 기사,
+     * likeKeyword: 제목·요약·키워드 검색어 (LIKE 특수 문자 처리된 값), from: 이 시각 이후 작성
+     */
     long countArticles(@Param("sourceType") String sourceType,
                        @Param("stockCode") String stockCode,
                        @Param("minRelevance") BigDecimal minRelevance,
-                       @Param("watchUserId") Long watchUserId);
+                       @Param("watchUserId") Long watchUserId,
+                       @Param("likeKeyword") String likeKeyword,
+                       @Param("from") LocalDateTime from);
 
     /** sort: latest(최신순) 또는 relevance(관련도순) */
     List<ArticleRow> findArticles(@Param("sourceType") String sourceType,
                                   @Param("stockCode") String stockCode,
                                   @Param("minRelevance") BigDecimal minRelevance,
                                   @Param("watchUserId") Long watchUserId,
+                                  @Param("likeKeyword") String likeKeyword,
+                                  @Param("from") LocalDateTime from,
                                   @Param("sort") String sort,
                                   @Param("limit") int limit,
                                   @Param("offset") int offset);
