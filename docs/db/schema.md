@@ -12,6 +12,8 @@
 | `stock_info` | 종목 기본 정보 (코스피·코스닥 2,655개) | 백엔드 | AI, 백엔드 | V1, 데이터 V6 | ✅ |
 | `stock_alias` | 종목 약칭·별칭 | 백엔드 | AI, 백엔드 | V3 | ✅ |
 | `stock_theme` | 종목 테마 키워드 | 백엔드 | AI, 백엔드 | V3 | ✅ |
+| `stock_group` | 기업집단(그룹) 소속 종목 | 백엔드 | AI, 백엔드 | V9 | ✅ (아직 쓰는 곳 없음) |
+| `stock_alias_context` | 헷갈리는 별칭의 문맥 키워드 | 백엔드 | AI | V9 | ✅ (AI가 쓸 방법을 정함) |
 | `match_setting` | 매칭 가중치·최소 점수 | 백엔드 | AI | V3 | ✅ |
 | `users` | 회원 | 백엔드 | 백엔드 | V4 | ✅ |
 | `watchlist` | 관심 종목 | 백엔드 | 백엔드 | V4 | ✅ |
@@ -43,6 +45,8 @@ GitHub에서는 아래 그림이 자동으로 그려집니다.
 erDiagram
     stock_info ||--o{ stock_alias : "별칭"
     stock_info ||--o{ stock_theme : "테마"
+    stock_info ||--o{ stock_group : "그룹"
+    stock_info ||--o{ stock_alias_context : "문맥 후보"
     stock_info ||--o{ watchlist : "관심 등록"
     stock_info ||--o{ board_post : "종목 게시판"
     users ||--o{ watchlist : "관심 등록"
@@ -67,6 +71,18 @@ erDiagram
         BIGINT alias_id PK
         CHAR(6) stock_code FK
         VARCHAR(100) alias
+        VARCHAR(20) alias_type
+        DATETIME created_at
+    }
+    stock_group {
+        VARCHAR(50) group_name PK
+        CHAR(6) stock_code PK
+        DATETIME created_at
+    }
+    stock_alias_context {
+        VARCHAR(100) alias PK
+        CHAR(6) stock_code PK
+        VARCHAR(50) keyword PK
         DATETIME created_at
     }
     stock_theme {
@@ -183,9 +199,10 @@ erDiagram
 - UK① `uk_stock_alias (stock_code, alias)`: 같은 종목에 같은 별칭은 한 번만. 다른 종목에는 같은 별칭 가능
 - IDX `idx_stock_alias_alias (alias)`: 별칭으로 종목 찾기
 - CHECK `ck_stock_alias_type`: 종류는 위 4개 값만
-- 데이터: `db/migration/R__stock_alias.sql` (반복 지시서, 고치면 다시 실행되어 전부 지우고 다시 넣음). **99개**: SHORT 76, FORMER 8, NICKNAME 8, AMBIGUOUS 7
-  - 출처: 한국투자증권 종목 마스터 파일의 약명 중 KIND 공식명과 다른 것(현대자동차 → 현대차, 케이티 → KT) + 직접 정리(삼전, 엔씨소프트, 에스오일 등)
-  - `AMBIGUOUS`: 포스코·POSCO(포스코 이름 종목 5개), LIG(LIG아큐버), 레인보우(일반 단어), 티웨이(티웨이홀딩스), 아모레(아모레퍼시픽홀딩스), 모비스(같은 이름의 다른 상장사)
+- 데이터: `db/migration/R__stock_alias.sql` (반복 지시서, 고치면 다시 실행되어 전부 지우고 다시 넣음). **301개**: SHORT 197, FORMER 22, NICKNAME 34, AMBIGUOUS 48
+  - 출처: 한국투자증권 종목 마스터 파일의 약명 중 KIND 공식명과 다른 것(현대자동차 → 현대차, 케이티 → KT) + 임호현 정리(영문 이니셜의 한글 표기 씨제이·엘지 등, 별명·예전 이름) + 직접 정리(삼전, 엔씨소프트, 에스오일 등)
+  - `AMBIGUOUS`는 그 이름이 가리킬 수 있는 **후보 종목마다 한 줄**: 한미(4), 디비(4), 포스코(6), 미래에셋(3), 콜마(3) 등 25개 이름. 짧은 줄임말(현건, 두에, 카이 등)도 문맥 없이는 연결하지 않게 여기에
+  - 후보를 고를 문맥 키워드는 `stock_alias_context`
 - 쓰는 곳: 종목 검색은 모든 별칭, **AI 매칭은 `WHERE alias_type <> 'AMBIGUOUS'`**
 - 지켜야 할 것 (자동 테스트 `StockDictionaryTest`가 검사): 헷갈림이 아닌 별칭은 다른 종목의 공식 이름과 같으면 안 되고, 두 종목에 걸치면 안 됨
 
@@ -199,9 +216,36 @@ erDiagram
 | 4 | created_at | DATETIME | | Y | CURRENT_TIMESTAMP | 등록 시각 |
 
 - UK① `uk_stock_theme (stock_code, theme)`, IDX `idx_stock_theme_theme (theme)`: 테마로 종목 찾기
-- 데이터: `db/migration/R__stock_theme.sql` (반복 지시서). **테마 34개, 종목 연결 198개** (종목 187개, 그중 코스피200 162개). 직접 정리
+- 데이터: `db/migration/R__stock_theme.sql` (반복 지시서). **테마 36개, 종목 연결 234개** (종목 221개). 직접 정리 + 임호현 정리(시장 테마)에서 새 연결을 가져와 이름을 맞춤 + 리츠(이름이 '리츠'로 끝나는 종목 전부)
+  - KRX 업종(종목마다 1개)은 테마에 넣지 않음: 넓은 업종명(화학, 유통 등)이 테마에 있으면 AI 가산점이 거의 모든 기사에 붙음
   - 테마 이름은 LLM이 뽑는 기사 키워드처럼 짧은 명사 (반도체, 2차전지, 방산, 정유, 항공 등). AI 매칭은 기사 키워드와 글자 그대로 비교
   - 한 종목이 여러 테마에 들어갈 수 있음 (한화에어로스페이스 → 방산, 우주항공)
+
+### stock_group · 기업집단(그룹) 소속 종목 (V9)
+
+| # | Column Name | Data Type | Key | Not Null | Default | Comments |
+|---|---|---|---|---|---|---|
+| 1 | group_name | VARCHAR(50) | PK | Y | | 그룹 이름 (예: 삼성그룹) |
+| 2 | stock_code | CHAR(6) | PK, FK → stock_info, IDX | Y | | 종목코드 |
+| 3 | created_at | DATETIME | | Y | CURRENT_TIMESTAMP | 등록 시각 |
+
+- 데이터: `db/migration/R__stock_group.sql` (반복 지시서). **그룹 69개, 종목 연결 282개**. 출처: 임호현 정리. 코스피 종목만 (코스닥 계열사는 아직 없음)
+- 별칭에 넣지 않는 이유: '삼성그룹'은 종목 17개를 가리킴 → 별칭으로 두면 AI가 그중 하나에만 잘못 연결
+- 쓰는 곳: 아직 없음 (그룹 기사 묶어 보기, AI의 그룹 기사 처리용으로 미리 채움)
+
+### stock_alias_context · 헷갈리는 별칭의 문맥 키워드 (V9)
+
+| # | Column Name | Data Type | Key | Not Null | Default | Comments |
+|---|---|---|---|---|---|---|
+| 1 | alias | VARCHAR(100) | PK | Y | | 헷갈리는 별칭 (`stock_alias.alias`) |
+| 2 | stock_code | CHAR(6) | PK, FK → stock_info, IDX | Y | | 후보 종목코드 |
+| 3 | keyword | VARCHAR(50) | PK | Y | | 이 말이 기사에 있으면 이 종목일 가능성이 높음 |
+| 4 | created_at | DATETIME | | Y | CURRENT_TIMESTAMP | 등록 시각 |
+
+- 예: '한미' + '반도체' → 한미반도체(042700), '한미' + '신약' → 한미약품(128940)
+- 데이터: `db/migration/R__stock_alias_context.sql` (반복 지시서). **별칭 25개, 후보 46개, 키워드 110개**. 아이디어: 임호현
+- `stock_alias`와 외래키가 없음 (`R__stock_alias.sql`이 별칭을 지우고 다시 넣기 때문). 대신 `StockDictionaryTest`가 (alias, stock_code)가 `AMBIGUOUS` 줄로 있는지 검사
+- 쓰는 방법(문맥이 없거나 여러 후보가 맞을 때)은 AI 파트가 정함. 지금 AI 코드는 읽지 않음
 
 ### match_setting · 매칭 설정값 (V3)
 
@@ -398,3 +442,5 @@ erDiagram
 | 2026-11-02 | V7 | article.companies (JSON): LLM이 뽑은 회사 목록, 종목 매칭 입력 (AI 파트 요청) |
 | 2026-11-02 | V8 | stock_alias.alias_type (별칭 종류) + CHECK |
 | 2026-11-02 | R__stock_alias, R__stock_theme | 별칭 99개, 테마 34개·연결 198개 (반복 지시서: 파일을 고치면 다시 실행) |
+| 2026-11-02 | V9 | stock_group, stock_alias_context (아이디어: 임호현 PR #33) |
+| 2026-11-02 | R__ 4개 | 별칭 301개(헷갈림은 후보마다 한 줄), 테마 36개·연결 234개, 그룹 69개·연결 282개, 문맥 키워드 110개 |
