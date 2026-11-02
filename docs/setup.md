@@ -93,6 +93,18 @@ FLYWAY_LOCATIONS=classpath:db/migration,classpath:db/sample
   `DELETE FROM article WHERE url_key LIKE 'sample://%';` (종목 연결도 같이 지워짐)
 - **발표용 PC에서는 켜지 않습니다.**
 
+**다음 날 "오늘의 이슈 종목"이 비어 있으면: 예시 기사 새로 넣기**
+
+예시 글의 작성 시각은 넣은 순간에 고정되어서, 날짜가 바뀌면 모두 "어제 글"이 됩니다.
+DB 클라이언트에서 아래 한 줄을 실행하고 백엔드를 다시 켜면 **지금 기준으로** 다시 들어갑니다.
+
+```sql
+DELETE FROM flyway_schema_history WHERE script = 'R__sample_articles.sql';
+```
+
+- 이 줄은 "예시를 넣었다"는 Flyway 기록만 지웁니다. 다른 테이블·진짜 기사는 그대로입니다
+- 다시 넣을 때마다 예시 글 번호(`articleId`)가 바뀝니다. 화면 코드에 글 번호를 고정해 두지 마세요
+
 ## 3. DB 켜기
 
 > 4-1(Docker로 백엔드까지 켜기)을 쓸 사람은 이 절을 건너뛰어도 됩니다. 4-1 명령이 DB도 같이 켭니다.

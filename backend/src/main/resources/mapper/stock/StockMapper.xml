@@ -75,4 +75,39 @@
         SELECT EXISTS (SELECT 1 FROM stock_info WHERE stock_code = #{stockCode})
     </select>
 
+    <resultMap id="stockIssueRow" type="com.hkteam2.stocknews.stock.StockIssueRow">
+        <constructor>
+            <arg column="stock_code" javaType="String"/>
+            <arg column="stock_name" javaType="String"/>
+            <arg column="article_count" javaType="_long"/>
+            <arg column="avg_relevance" javaType="java.math.BigDecimal"/>
+            <arg column="last_published_at" javaType="java.time.LocalDateTime"/>
+        </constructor>
+    </resultMap>
+
+    <!--
+        오늘의 이슈 종목 순위 (F-12): 개표처럼
+        ① from(오늘 0시) 이후 분석이 끝난 글만 남기고  ② 종목별로 묶어서(GROUP BY)
+        ③ 몇 개 글에 나왔는지 세고(COUNT)  ④ 많은 순 → 평균 관련도 높은 순 → 이름순  ⑤ 위에서 limit개
+        article_stock은 (글, 종목)이 한 줄뿐이라 COUNT(*) = 그 종목이 나온 글 수
+        AVG는 관련도가 빈(NULL) 줄은 빼고 계산, 전부 비면 NULL → DESC 정렬에서 맨 뒤
+    -->
+    <select id="findIssues" resultMap="stockIssueRow">
+        SELECT s.stock_code, i.stock_name,
+               COUNT(*)            AS article_count,
+               AVG(s.relevance)    AS avg_relevance,
+               MAX(a.published_at) AS last_published_at
+        FROM article_stock s
+        JOIN article a    ON a.article_id = s.article_id
+        JOIN stock_info i ON i.stock_code = s.stock_code
+        WHERE a.status = 'DONE'
+          AND a.published_at >= #{from}
+          <if test="sourceType != null">
+              AND a.source_type = #{sourceType}
+          </if>
+        GROUP BY s.stock_code, i.stock_name
+        ORDER BY article_count DESC, avg_relevance DESC, i.stock_name
+        LIMIT #{limit}
+    </select>
+
 </mapper>
