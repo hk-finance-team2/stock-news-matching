@@ -22,8 +22,8 @@ log = get_logger(__name__)
 
 
 def norm(name):
-    """비교용 이름: (주)·㈜·주식회사·공백 제거, 영문 대문자"""
-    return re.sub(r"\(주\)|㈜|주식회사|\s", "", name).upper()
+    """비교용 이름: (주)·㈜·주식회사·(종목코드)·공백 제거, 영문 대문자"""
+    return re.sub(r"\(주\)|㈜|주식회사|\(\w{6}\)|\s", "", name).upper()
 
 
 def load_dictionary(engine):
@@ -96,7 +96,7 @@ def match_articles(engine=None, statuses=("SUMMARIZED",)):
 if __name__ == "__main__":
     # 점수·매칭 규칙 시험 (DB 없이)
     s = {"name_weight": 0.4, "theme_weight": 0.4, "context_weight": 0.2, "min_score": 0.7}
-    assert norm("(주) LG 씨엔에스") == "LG씨엔에스" and norm("hl만도") == "HL만도"
+    assert norm("(주) LG 씨엔에스") == "LG씨엔에스" and norm("hl만도") == "HL만도" and norm("기아(000270)") == "기아"
     assert score(True, "A", [], {}, s) == 1.0  # 테마 없음: (0.4 + 0.2) / 0.6
     assert score(False, "A", [], {}, s) == 0.83  # 조연: (0.4 + 0.1) / 0.6
     assert score(True, "A", ["HBM"], {"A": {"HBM"}}, s) == 1.0

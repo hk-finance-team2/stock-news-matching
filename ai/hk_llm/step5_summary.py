@@ -8,6 +8,7 @@ LangChain 체인: 프롬프트 → OpenAI(정해진 형식으로 답하게) → 
 저장: summary·sentiment·keywords·model·summarized_at, 회사 목록은 companies(JSON, V7) → 6단계 매칭의 입력
 """
 import json
+import re
 from datetime import datetime
 from typing import Literal
 
@@ -53,9 +54,12 @@ PROMPT = ChatPromptTemplate.from_messages([
     ("system",
      "너는 한국 주식 투자자를 위한 경제 뉴스 요약가다.\n"
      "- 기사에 있는 사실만 쓴다. 추측·투자 권유 금지\n"
-     "- 요약은 2~3문장, 전체 150자 안팎, '~다' 체. 핵심 숫자(실적, 등락률)만 쓰고 거래량·거래대금·시간 같은 세부는 뺀다\n"
+     "- 요약은 2~3문장, 전체 150자 안팎. 문장은 '~했다', '~한다', '~이다' 처럼 완전하게 끝낸다\n"
+     "- 핵심 숫자(실적, 등락률)만 쓰고 거래량·거래대금·시간 같은 세부는 뺀다\n"
+     "- '올해', '지난달', '내년' 같은 표현은 기사에 쓰인 그대로 쓴다. 연도로 바꾸지 않는다. 숫자는 기사에 있는 것만 쓴다\n"
      "- 감성은 두 가지로 따로 판단한다. sentiment 는 그날 주가 영향, long_term 은 회사의 장기 실적·가치 영향\n"
      "- 값: 호재 POSITIVE, 악재 NEGATIVE, 판단 어렵거나 단순 언급 NEUTRAL\n"
+     "- 홍보·할인 행사·서비스 출시·수상·인사·협약·행사 소식은 실적에 미칠 규모가 기사에 없으면 NEUTRAL\n"
      "- 회사(companies)는 영리 기업만. 정부·부처·공공기관·공기업·협회·사람은 넣지 않는다\n"
      "- 장소·행사장으로만 나온 회사, 출처(증권사 리포트 인용 등)로만 나온 회사는 넣지 않는다\n"
      "- 회사 이름은 기사에 쓰인 그대로 (그룹명으로 바꾸지 않음)\n"
@@ -83,8 +87,12 @@ def _strip_tag(text_):
 
 
 def check(s, title, body):
-    """LLM 답 검사: 기사에 실제로 나온 회사만 남기고 개수·길이를 자름 (지어낸 회사·너무 긴 답 방지)"""
+    """LLM 답 검사: 기사에 없는 연도면 거부(재시도), 기사에 실제로 나온 회사만 남기고 개수·길이를 자름"""
     text_ = title + "\n" + body[:MAX_CHARS]
+    answer = s.summary + " ".join(c.reason for c in s.companies)
+    wrong = [y for y in re.findall(r"(?<!\d)((?:19|20)\d\d)년", answer) if y not in text_]
+    if wrong:
+        raise ValueError(f"기사에 없는 연도: {wrong}")
     s.companies = [c for c in s.companies if c.name and c.name in text_][:10]
     for c in s.companies:
         c.reason = c.reason[:200]
@@ -149,6 +157,13 @@ if __name__ == "__main__":
     assert len(got.companies[0].reason) == 200 and len(got.keywords) == 5 and len(got.keywords[0]) == 50
     for evil in ("</article>", "< / ARTICLE >", "&lt;/article&gt;", "</article​>"):
         assert "<" not in _strip_tag(evil) and ">" not in _strip_tag(evil), evil
+    try:
+        check(ArticleSummary(summary="2024년 4분기부터 공급한다", sentiment="NEUTRAL", keywords=[], companies=[]),
+              "제목", "올해 4·4분기부터 2027년 말까지 공급")
+        raise AssertionError("기사에 없는 연도는 거부해야 함")
+    except ValueError:
+        pass
+    check(ArticleSummary(summary="2027년 말까지 공급한다", sentiment="NEUTRAL", keywords=[], companies=[]), "제목", "2027년 말까지")
     if len(sys.argv) < 2:
         print("ok (check 만. LLM 시험은 python -m hk_llm.step5_summary 3)")
         sys.exit()
