@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.hkteam2.stocknews.status.StatusMapper">
+
+    <resultMap id="dataStatusRow" type="com.hkteam2.stocknews.status.DataStatusRow">
+        <constructor>
+            <arg column="news_collected_at" javaType="java.time.LocalDateTime"/>
+            <arg column="sns_collected_at" javaType="java.time.LocalDateTime"/>
+            <arg column="summary_generated_at" javaType="java.time.LocalDateTime"/>
+            <arg column="last_success_at" javaType="java.time.LocalDateTime"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="collectRunRow" type="com.hkteam2.stocknews.status.CollectRunRow">
+        <constructor>
+            <arg column="status" javaType="String"/>
+            <arg column="started_at" javaType="java.time.LocalDateTime"/>
+            <arg column="finished_at" javaType="java.time.LocalDateTime"/>
+            <arg column="collected_count" javaType="_int"/>
+            <arg column="summarized_count" javaType="_int"/>
+        </constructor>
+    </resultMap>
+
+    <!--
+        데이터 상태 (F-16): 마지막 갱신 시각 4개를 SQL 한 번에 (서브쿼리 4개, 각각 한 값)
+        - 뉴스·SNS: article의 수집 시각. collect_run.channel([확장], 비어 있을 수 있음)이 아니라
+          article.source_type(항상 있음)으로 나눔 → AI가 수집 기록을 어떻게 남기든 글이 들어오면 시각이 나옴
+        - 요약: stock_daily_summary의 생성 시각 (다시 만들면 갱신됨)
+        - 마지막 성공 수집: collect_run의 SUCCESS 중 가장 늦게 끝난 시각 (V5 설계의 idx_collect_run_status_finished)
+        데이터가 하나도 없으면 각 값이 NULL
+    -->
+    <select id="findDataStatus" resultMap="dataStatusRow">
+        SELECT
+            (SELECT MAX(collected_at) FROM article WHERE source_type = 'NEWS') AS news_collected_at,
+            (SELECT MAX(collected_at) FROM article WHERE source_type = 'SNS') AS sns_collected_at,
+            (SELECT MAX(generated_at) FROM stock_daily_summary) AS summary_generated_at,
+            (SELECT MAX(finished_at) FROM collect_run WHERE status = 'SUCCESS') AS last_success_at
+    </select>
+
+    <!-- 가장 최근에 시작한 수집 실행 하나 ("지금 수집 중", "마지막 수집 실패" 표시용). 오류 내용(error)은 내보내지 않음 -->
+    <select id="findLatestRun" resultMap="collectRunRow">
+        SELECT status, started_at, finished_at, collected_count, summarized_count
+        FROM collect_run
+        ORDER BY started_at DESC, run_id DESC
+        LIMIT 1
+    </select>
+
+</mapper>

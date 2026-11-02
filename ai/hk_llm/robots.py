@@ -1,7 +1,7 @@
 """본문 수집 전 robots.txt 확인. 사이트(호스트)별로 한 번만 받아서 캐시한다.
 
 사용:
-    from robots import allowed, crawl_delay
+    from hk_llm.robots import allowed, crawl_delay
     if allowed(url):
         time.sleep(crawl_delay(url))
         ...
@@ -12,7 +12,8 @@ from urllib.parse import urlsplit
 
 import requests
 
-USER_AGENT = "hk-llm-news-bot/0.1 (academy student project)"
+from hk_llm.config import USER_AGENT
+
 DEFAULT_DELAY = 1.0  # robots.txt 에 Crawl-delay 가 없을 때 요청 간격(초)
 
 

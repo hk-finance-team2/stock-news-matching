@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.hkteam2.stocknews.article.ArticleMapper">
+
+    <resultMap id="articleRow" type="com.hkteam2.stocknews.article.ArticleRow">
+        <constructor>
+            <arg column="article_id" javaType="Long"/>
+            <arg column="source_type" javaType="String"/>
+            <arg column="channel" javaType="String"/>
+            <arg column="title" javaType="String"/>
+            <arg column="press" javaType="String"/>
+            <arg column="published_at" javaType="java.time.LocalDateTime"/>
+            <arg column="summary" javaType="String"/>
+            <arg column="url" javaType="String"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="articleStockRow" type="com.hkteam2.stocknews.article.ArticleStockRow">
+        <constructor>
+            <arg column="article_id" javaType="Long"/>
+            <arg column="stock_code" javaType="String"/>
+            <arg column="stock_name" javaType="String"/>
+            <arg column="is_main" javaType="_boolean"/>
+            <arg column="sentiment" javaType="String"/>
+            <arg column="match_type" javaType="String"/>
+            <arg column="relevance" javaType="java.math.BigDecimal"/>
+            <arg column="reason" javaType="String"/>
+            <arg column="evidence" javaType="String"/>
+            <arg column="matched_keywords" javaType="String"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="articleDetailRow" type="com.hkteam2.stocknews.article.ArticleDetailRow">
+        <constructor>
+            <arg column="article_id" javaType="Long"/>
+            <arg column="source_type" javaType="String"/>
+            <arg column="channel" javaType="String"/>
+            <arg column="title" javaType="String"/>
+            <arg column="press" javaType="String"/>
+            <arg column="reporter" javaType="String"/>
+            <arg column="published_at" javaType="java.time.LocalDateTime"/>
+            <arg column="summary" javaType="String"/>
+            <arg column="keywords" javaType="String"/>
+            <arg column="sentiment" javaType="String"/>
+            <arg column="url" javaType="String"/>
+            <arg column="model" javaType="String"/>
+            <arg column="summarized_at" javaType="java.time.LocalDateTime"/>
+        </constructor>
+    </resultMap>
+
+    <!--
+        거르기 조건
+        - 화면에는 AI 처리가 끝난(DONE) 기사만
+        - sourceType: NEWS / SNS
+        - stockCode: 이 종목과 연결된 기사만 (종목 화면)
+        - minRelevance: 관련도가 이 값 이상인 종목이 하나라도 있는 기사만 (종목을 골랐으면 그 종목 기준)
+        - watchUserId: 이 회원의 관심 종목이 하나라도 연결된 기사만 (관심 종목 글 모아 보기)
+        - likeKeyword: 제목·요약·키워드 중 하나에 검색어가 들어 있는 기사만 (통합 검색 F-13). 본문은 조회하지 않음
+        - from: 이 시각 이후 작성된 기사만 (기간 today/7d/30d)
+    -->
+    <sql id="listCondition">
+        <where>
+            a.status = 'DONE'
+            <if test="sourceType != null">
+                AND a.source_type = #{sourceType}
+            </if>
+            <if test="stockCode != null">
+                AND EXISTS (SELECT 1 FROM article_stock x
+                            WHERE x.article_id = a.article_id AND x.stock_code = #{stockCode})
+            </if>
+            <if test="minRelevance != null">
+                AND EXISTS (SELECT 1 FROM article_stock x
+                            WHERE x.article_id = a.article_id
+                              <if test="stockCode != null">AND x.stock_code = #{stockCode}</if>
+                              AND x.relevance >= #{minRelevance})
+            </if>
+            <if test="watchUserId != null">
+                AND EXISTS (SELECT 1 FROM article_stock x
+                            JOIN watchlist w ON w.stock_code = x.stock_code AND w.user_id = #{watchUserId}
+                            WHERE x.article_id = a.article_id)
+            </if>
+            <if test="likeKeyword != null">
+                AND (a.title LIKE CONCAT('%', #{likeKeyword}, '%')
+                     OR a.summary LIKE CONCAT('%', #{likeKeyword}, '%')
+                     OR a.keywords LIKE CONCAT('%', #{likeKeyword}, '%'))
+            </if>
+            <if test="from != null">
+                AND a.published_at >= #{from}
+            </if>
+        </where>
+    </sql>
+
+    <select id="countArticles" resultType="long">
+        SELECT COUNT(*)
+        FROM article a
+        <include refid="listCondition"/>
+    </select>
+
+    <!--
+        한 기사 = 한 줄 (관련 종목은 따로 가져와서 페이지가 정확함)
+        관련도순: 기사의 관련 종목 중 가장 높은 관련도 (종목을 골랐으면 그 종목의 관련도).
+                 관련도가 아직 없으면 0으로 보고 뒤로
+    -->
+    <select id="findArticles" resultMap="articleRow">
+        SELECT a.article_id, a.source_type, a.channel, a.title, a.press, a.published_at, a.summary, a.url
+        FROM article a
+        <include refid="listCondition"/>
+        ORDER BY
+        <choose>
+            <when test="sort == 'relevance'">
+                COALESCE((SELECT MAX(x.relevance) FROM article_stock x
+                          WHERE x.article_id = a.article_id
+                            <if test="stockCode != null">AND x.stock_code = #{stockCode}</if>), 0) DESC,
+                a.published_at DESC, a.article_id DESC
+            </when>
+            <otherwise>
+                a.published_at DESC, a.article_id DESC
+            </otherwise>
+        </choose>
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <!-- 기사 여러 개의 관련 종목을 SQL 한 번에 (상세는 기사 1개만 넣어서 씀). 기사 안에서는 관련도 높은 순 (없는 건 뒤로), 대표 종목 먼저 -->
+    <select id="findStocksByArticleIds" resultMap="articleStockRow">
+        SELECT s.article_id, s.stock_code, i.stock_name, s.is_main, s.sentiment, s.match_type, s.relevance,
+               s.reason, s.evidence, s.matched_keywords
+        FROM article_stock s
+        JOIN stock_info i ON i.stock_code = s.stock_code
+        WHERE s.article_id IN
+        <foreach collection="articleIds" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+        ORDER BY s.article_id, s.relevance IS NULL, s.relevance DESC, s.is_main DESC, i.stock_name
+    </select>
+
+    <!-- 기사 상세. 화면에 보여 줄 수 있는(DONE) 글만, 본문(body)은 빼고 -->
+    <select id="findDetail" resultMap="articleDetailRow">
+        SELECT a.article_id, a.source_type, a.channel, a.title, a.press, a.reporter, a.published_at,
+               a.summary, a.keywords, a.sentiment, a.url, a.model, a.summarized_at
+        FROM article a
+        WHERE a.article_id = #{articleId} AND a.status = 'DONE'
+    </select>
+
+    <!--
+        뉴스 상세에 붙일 가까운 SNS (F-11)
+        - 이 뉴스와 같은 종목이 하나라도 연결된 SNS 글
+        - 작성 시각이 앞뒤 #{hours}시간 안, 시각 차이가 작은 순으로 #{limit}개
+    -->
+    <select id="findNearbySns" resultMap="articleRow">
+        SELECT b.article_id, b.source_type, b.channel, b.title, b.press, b.published_at, b.summary, b.url
+        FROM article me
+        JOIN article b ON b.status = 'DONE'
+                      AND b.source_type = 'SNS'
+                      AND b.article_id != me.article_id
+                      AND b.published_at BETWEEN me.published_at - INTERVAL #{hours} HOUR
+                                             AND me.published_at + INTERVAL #{hours} HOUR
+        WHERE me.article_id = #{articleId}
+          AND EXISTS (SELECT 1
+                      FROM article_stock x
+                      JOIN article_stock mine ON mine.stock_code = x.stock_code AND mine.article_id = me.article_id
+                      WHERE x.article_id = b.article_id)
+        ORDER BY ABS(TIMESTAMPDIFF(SECOND, b.published_at, me.published_at)), b.article_id DESC
+        LIMIT #{limit}
+    </select>
+
+</mapper>

@@ -79,6 +79,32 @@ JWT_SECRET=영문과-숫자로-32자-이상-아무-값
 - **주의:** DB 값은 DB를 **처음 켤 때** 한 번만 적용됩니다. 나중에 바꾸려면 7절의 "DB 초기화"를 해야 합니다.
 - `JWT_SECRET`은 로그인 토큰의 서명 키입니다. **32자보다 짧으면 백엔드 서버가 켜지지 않습니다.**
 
+### 예시 기사 켜기 (선택, 화면 개발용)
+
+AI가 진짜 기사를 쌓기 전에도 화면을 만들 수 있게, **예시 기사 10건**(목록에 보이는 것 8건)과 **종목 종합 요약 3건**(삼성전자·한화에어로스페이스·대한항공)을 넣을 수 있습니다.
+
+```
+FLYWAY_LOCATIONS=classpath:db/migration,classpath:db/sample
+```
+
+- `.env`의 이 줄 앞 `#`을 지우고 백엔드를 다시 켜면 들어갑니다. (4-1 Docker 방식도 같음)
+- 예시 글은 제목이 `[예시]`로 시작하고 주소가 `sample://`입니다. 작성 시각은 **넣은 시점 기준** 몇 시간 전
+- 끄려면 다시 `#`을 붙이면 됩니다. 이미 들어간 예시 글은 남아 있으니, 지우려면 DB 클라이언트에서
+  `DELETE FROM article WHERE url_key LIKE 'sample://%';` (종목 연결도 같이 지워짐)
+- **발표용 PC에서는 켜지 않습니다.**
+
+**다음 날 "오늘의 이슈 종목"이 비어 있으면: 예시 기사 새로 넣기**
+
+예시 글의 작성 시각은 넣은 순간에 고정되어서, 날짜가 바뀌면 모두 "어제 글"이 됩니다.
+DB 클라이언트에서 아래 한 줄을 실행하고 백엔드를 다시 켜면 **지금 기준으로** 다시 들어갑니다.
+
+```sql
+DELETE FROM flyway_schema_history WHERE script = 'R__sample_articles.sql';
+```
+
+- 이 줄은 "예시를 넣었다"는 Flyway 기록만 지웁니다. 다른 테이블·진짜 기사는 그대로입니다
+- 다시 넣을 때마다 예시 글 번호(`articleId`)가 바뀝니다. 화면 코드에 글 번호를 고정해 두지 마세요
+
 ## 3. DB 켜기
 
 > 4-1(Docker로 백엔드까지 켜기)을 쓸 사람은 이 절을 건너뛰어도 됩니다. 4-1 명령이 DB도 같이 켭니다.
@@ -182,6 +208,7 @@ curl.exe http://localhost:8080/api/stocks
 | DB를 켤 때 3308 포트 오류 (`port is already allocated`, `ports are not available` 등) | 다른 프로그램이 3308을 씀 | `.env`의 `DB_PORT`를 다른 번호로 바꾸고 백엔드도 같은 값 사용 |
 | `Validate failed: Migrations have failed validation` | 이미 실행된 V 파일 내용이 바뀜 | V 파일을 원래대로 되돌리고 새 V 파일로 추가. 내 PC에서만 실험 중이면 아래 "DB 초기화" |
 | `Access denied for user` | `.env` 비밀번호를 DB를 만든 뒤에 바꿈 | 아래 "DB 초기화" |
+| 터미널 `curl`로 한글 검색어(`?q=삼성`)를 보내면 500, 서버 로그에 `Character decoding failed` | Windows 터미널이 한글을 UTF-8이 아닌 다른 방식(CP949)으로 바꿔 보냄. 코드 문제 아님 | Swagger나 브라우저로 시험 (항상 UTF-8). 터미널이면 미리 인코딩한 주소 사용: `?q=%EC%82%BC%EC%84%B1` |
 
 **DB 초기화** (내 PC의 DB 데이터가 **모두 지워집니다**):
 
@@ -211,7 +238,8 @@ Swagger(http://localhost:8080/swagger-ui.html)에서:
 - 서버 주소는 `http://localhost:8080`. 개발 서버 `http://localhost:5173`에서 부르는 것은 백엔드가 허용해 둠(CORS)
 - 로그인 후 요청 헤더: `Authorization: Bearer {accessToken}`
 - **401을 받으면 토큰을 지우고 로그인 화면으로**
-- 아직 없는 API(뉴스·SNS 글 목록 등)는 예시 데이터로 화면을 먼저 만들고, API가 생기면 교체
+- 뉴스·SNS 글 목록(`GET /api/articles`)은 있음. 글이 없으면 2절의 **예시 기사**를 켜고 붙여 보기
+- 글 상세(`GET /api/articles/{articleId}`)도 있음. 아직 없는 API(종목별 조회 등)는 예시 데이터로 화면을 먼저 만들고, API가 생기면 교체
 
 ### 8-3. AI 파트
 
@@ -273,6 +301,7 @@ AI 파트가 채웁니다. (Python 버전, 가상환경, 패키지 설치, 실�
 
 프론트 파트가 채웁니다. (Node.js 버전, 패키지 설치, 실행 방법)
 
+<<<<<<< HEAD
 ### 11-1. 실행 방법
 
 저장소 최상위 폴더에서:
@@ -290,3 +319,27 @@ npm run dev
 | 3. 실행 | `npm run dev` | 개발 서버 실행 → http://localhost:5173 접속 |
 
 - 끄기: `Ctrl + C`
+=======
+## 12. 백엔드 자동 테스트와 CI
+
+### 내 PC에서 테스트 돌리기 (백엔드 코드를 고친 사람)
+
+DB를 켠 상태(3절)에서 `backend` 폴더에서:
+
+```powershell
+./gradlew test
+```
+
+- `BUILD SUCCESSFUL`이면 통과. 실패하면 `backend/build/reports/tests/test/index.html`을 브라우저로 열면 어느 테스트가 왜 실패했는지 보임
+- 테스트는 기사 표를 비우고 필요한 기사만 넣은 뒤 **끝나면 전부 되돌림(롤백)**. 내 PC의 예시 기사·계정은 그대로 남음
+- 테스트 코드 위치: `backend/src/test/java/` (API 테스트는 `*ApiTest.java`, 공통 바탕은 `support/ApiTestSupport.java`)
+
+### GitHub에서 자동으로 (CI)
+
+`backend/` 폴더를 바꾼 PR을 올리면 GitHub가 자동으로 MariaDB를 띄우고 같은 테스트를 돌림 (`.github/workflows/backend-ci.yml`).
+
+- PR 화면 아래쪽 **Checks**에 ✅(통과) / ❌(실패)가 보임. 2~3분 걸림
+- ❌면 **Details** → 실패한 테스트 이름 확인 → 고쳐서 다시 push하면 다시 돌아감
+- PR 코드만이 아니라 **"PR + 최신 main을 합친 모습"**으로 돌림
+- `ai/`, `frontend/`, `docs/`만 바꾼 PR은 돌리지 않음
+>>>>>>> 8b2f83c69f4d3acb319d3c2d3f9f874dfa85fc8f
