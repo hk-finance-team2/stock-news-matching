@@ -1,6 +1,6 @@
 # LLM 개발 문서
 
-주제 ⑤ 뉴스·SNS 매칭 및 요약 — LLM 담당 문서 모음 (2026-10-30 정리)
+주제 ⑤ 뉴스·SNS 매칭 및 요약 — LLM 담당 문서 모음 (2026-11-02 정리)
 
 | 문서 | 언제 보나 |
 |---|---|
@@ -23,11 +23,6 @@
 | 범위 | 뉴스·공시 수집, 기사-종목 연결, LLM 요약 (시세·거래 변동 감지는 백엔드) |
 | 지금 집중 | **RSS 실시간 뉴스** (네이버 API·SNS 는 보류) |
 
-## 코드 파일
+## 코드
 
-| 파일 | 하는 일 |
-|---|---|
-| `hk_llm/naver_test.py` | 네이버 API HUB 키 확인 (`python naver_test.py 삼성전자`) |
-| `hk_llm/robots.py` | 본문 가져오기 전 robots.txt 허용 여부 판정 |
-| `hk_llm/stock_master.py` | 종목 마스터 `data/stocks.csv` 생성 (코스피200 표시 포함) |
-| `hk_llm/data/kospi200.csv` | KRX 에서 수동으로 받은 코스피200 목록 (CP949 인코딩) |
+폴더 구조와 실행 방법은 [../README.md](../README.md) 에 한 곳으로 모음.

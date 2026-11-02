@@ -20,7 +20,7 @@
 | 구글 뉴스 RSS | - | | `/rss` 미허용 | 팀 판단 |
 
 - 🔴 AI 학습·검색 봇 대부분 차단 / 🟡 일부만 / 없음 = AI 봇 규칙 없음
-- 네이버 API 원문 링크는 이 표 밖의 언론사도 나옴 → `robots.py` 가 자동 판정
+- 네이버 API 원문 링크는 이 표 밖의 언론사도 나옴 → `collector/robots_checker.py` 가 자동 판정
 
 ## 눈여겨볼 점
 
@@ -31,10 +31,10 @@
   - ❌ 금지: AI 학습·데이터셋 제작, **기사 전문 영구 저장**, 원문 대체 수준의 재구성, 유료 기사
 - → 우리 설계: 화면엔 **요약 + 원문 링크만**, 본문은 **7일 후 삭제**
 
-## 코드: `hk_llm/robots.py`
+## 코드: `hk_llm/collector/robots_checker.py`
 
 - `allowed(url)`: 본문 가져오기 전에 호출. 사이트별 robots.txt 를 한 번만 받아 캐시
 - `crawl_delay(url)`: 사이트가 정한 요청 간격, 없으면 1초
 - 봇 이름: `hk-llm-news-bot/0.1 (academy student project)` (정체를 숨기지 않음)
 - robots.txt 를 못 받으면(네트워크 오류·5xx) 수집 안 함, 없으면(404) 허용
-- 확인: `python robots.py` → `ok`
+- 확인: `python -m hk_llm.collector.robots_checker` → `ok`
