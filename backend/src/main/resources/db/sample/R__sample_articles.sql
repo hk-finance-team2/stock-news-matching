@@ -3,6 +3,7 @@
 -- 반복 지시서(R__): 이 파일 내용이 바뀌면 다시 실행됨. 실행할 때마다 예시 기사를 지우고 다시 넣음
 -- 구분: 제목 앞 [예시], 주소 sample://
 -- 지우고 싶으면: DELETE FROM article WHERE url_key LIKE 'sample://%';  (종목 연결도 함께 지워짐)
+--             DELETE FROM stock_daily_summary WHERE news_summary LIKE '[예시]%';
 
 DELETE FROM article WHERE url_key LIKE 'sample://%';
 
@@ -76,3 +77,17 @@ INSERT INTO article_stock (article_id, stock_code, is_main, sentiment, reason, m
     (@a7, '005930', FALSE, 'NEUTRAL',  '반도체 업황 의견 글에서 언급', 'DIRECT', 0.70, '반도체 업황 회복을 기대하는 의견이 많다'),
     (@a7, '000660', FALSE, 'NEUTRAL',  '반도체 업황 의견 글에서 언급', 'DIRECT', 0.68, '메모리 가격 흐름을 지켜보자'),
     (@a8, '003490', TRUE,  'NEGATIVE', '유가 상승은 항공사 비용 부담', 'INDIRECT', 0.66, '유가 상승이 항공사 비용 부담으로 이어진다');
+
+-- 종목 종합 요약 (AI가 1시간마다 만드는 것을 흉내). 오늘 날짜로 3종목만
+-- 삼성전자: 뉴스·SNS 요약 둘 다, 한화에어로스페이스: 뉴스 요약만, 대한항공: 둘 다. 나머지 종목은 요약 없음 (준비 중 화면 시험용)
+-- 구분: 요약이 [예시]로 시작. INSERT IGNORE: AI가 만든 진짜 요약이 이미 있으면 덮어쓰지 않음
+DELETE FROM stock_daily_summary WHERE news_summary LIKE '[예시]%';
+
+INSERT IGNORE INTO stock_daily_summary (stock_code, summary_date, news_summary, sns_summary,
+                                        pos_count, neg_count, neu_count, generated_at) VALUES
+    ('005930', CURDATE(), '[예시] 고대역폭 메모리 공급 계약으로 하반기 반도체 실적 개선 기대가 커졌다.',
+     '[예시] 반도체 업황 회복을 기대하는 글이 많지만 단기 급등을 경계하는 의견도 있다.', 1, 0, 1, NOW()),
+    ('012450', CURDATE(), '[예시] 해외 수출 계약과 중동 긴장으로 방산 수요 기대가 이어졌다.',
+     NULL, 2, 0, 0, NOW()),
+    ('003490', CURDATE(), '[예시] 국제유가 급등으로 항공사 연료비 부담 우려가 커졌다.',
+     '[예시] 유가가 오르면 항공주를 피해야 하냐는 질문이 나왔다.', 0, 2, 0, NOW());

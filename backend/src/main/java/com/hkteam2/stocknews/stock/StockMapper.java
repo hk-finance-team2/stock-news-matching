@@ -1,5 +1,6 @@
 package com.hkteam2.stocknews.stock;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -29,4 +30,13 @@ public interface StockMapper {
     List<StockIssueRow> findIssues(@Param("from") LocalDateTime from,
                                    @Param("sourceType") String sourceType,
                                    @Param("limit") int limit);
+
+    /** 그날 AI 종합 요약. 아직 안 만들었으면 Optional.empty() */
+    Optional<StockDailySummaryRow> findDailySummary(@Param("stockCode") String stockCode,
+                                                    @Param("date") LocalDate date);
+
+    /** from 이후 이 종목이 나온 글의 감성별 개수. sourceType이 null이면 뉴스·SNS 모두. 0건인 감성은 결과에 없음 */
+    List<SentimentCountRow> countSentiments(@Param("stockCode") String stockCode,
+                                            @Param("from") LocalDateTime from,
+                                            @Param("sourceType") String sourceType);
 }
