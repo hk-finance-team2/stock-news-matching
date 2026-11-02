@@ -22,6 +22,7 @@
 - 백엔드와는 **DB 로만** 주고받음 (AI 가 쓰고 백엔드가 읽음). 테이블은 백엔드 Flyway V5·V7
 - 화면에는 **요약 + 원문 링크만** (본문은 7일 후 삭제, 언론사 AI 정책)
 - 🧪 보류: 매칭 점수 공식 ([docs/할일.md](docs/할일.md))
+- 공시: DART 주요 공시를 제목 기준으로 저장 (원문 요약·감성은 아직)
 - 보류: 네이버 API(과거 기록용), SNS
 
 ## 폴더
@@ -37,6 +38,7 @@ ai/
 │   ├── step1_rss.py     1. 언론사 RSS 11개 기사 목록 받기 (15번)
 │   ├── step2_dedup.py   2. 주소 기준 중복 제거 (16번)
 │   ├── step3_save.py    3. article 에 LISTED 로 저장 (18번)
+│   ├── dart.py          공시 수집: 주요 공시만 저장 → 바로 DONE (LLM 안 씀)
 │   ├── step4_body.py    4. 원문 본문 가져와 FETCHED, 7일 지난 본문 삭제 (20~22번)
 │   ├── step5_summary.py 5. LLM 요약·감성·회사 목록 → SUMMARIZED (27~34번)
 │   ├── step6_match.py   6. 회사 이름 → 종목 연결 → DONE / NO_STOCK (23·25번)
@@ -71,6 +73,7 @@ pip install -r requirements.txt
 | 요약 n건 미리보기 (저장 안 함, 건당 약 $0.0006) | `python -m hk_llm.step5_summary 3` |
 | 요약 검사 규칙 시험 (비용 없음) | `python -m hk_llm.step5_summary` |
 | 매칭 규칙 시험 (DB·비용 없음) | `python -m hk_llm.step6_match` |
+| 공시 수집·시험 (비용 없음, `DART_API_KEY` 필요) | `python -m hk_llm.dart` |
 | 1~3단계 시험 | `python -m hk_llm.run --check` |
 | RSS 만 받아 보기 | `python -m hk_llm.step1_rss` |
 | 종목 목록 `data/stocks.csv` 만들기 (지금 코드에서는 안 씀) | `python -m hk_llm.tools.stock_master` |

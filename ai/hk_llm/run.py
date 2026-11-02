@@ -1,4 +1,4 @@
-"""파이프라인 1번 실행: 1 RSS → 2 중복 제거 → 3 DB 저장 → 4 본문 → 5 요약 → 6 종목 매칭, 실행 기록은 collect_run 에
+"""파이프라인 1번 실행: 1 RSS → 2 중복 제거 → 3 DB 저장 + 공시 → 4 본문 → 5 요약 → 6 종목 매칭, 실행 기록은 collect_run 에
 
     python -m hk_llm.run           (ai 폴더에서, DB 켜져 있어야 함. 5단계에서 OpenAI 비용 발생)
     python -m hk_llm.run --check   1~3단계 시험 (두 번 연속 수집해서 새 기사만 들어가는지, 비용 없음)
@@ -10,6 +10,7 @@ from datetime import datetime
 from sqlalchemy import text
 
 from hk_llm.config import KST
+from hk_llm.dart import collect_disclosures
 from hk_llm.db import get_engine, to_db
 from hk_llm.step1_rss import FEEDS, fetch_all
 from hk_llm.step2_dedup import dedup_by_url
@@ -42,6 +43,12 @@ def run(engine=None):
                      summarized_count = :s, error = :err WHERE run_id = :id""")
     try:
         new, failed = collect(engine)
+        errors = ["실패한 피드: " + ", ".join(failed)] if failed else []
+        try:  # 공시가 실패해도 뉴스는 계속
+            new += collect_disclosures(engine)
+        except Exception as e:
+            log.error("공시 수집 실패: %s", e)
+            errors.append(f"공시 실패: {e}")
         fetch_bodies(engine)
         summarized = summarize_articles(engine)
         match_articles(engine)
@@ -55,7 +62,7 @@ def run(engine=None):
         purge_old_bodies(engine)  # 실패해도 7일 지난 본문은 반드시 지움
     with engine.begin() as conn:
         conn.execute(finish, {"t": to_db(datetime.now(KST)), "status": "SUCCESS", "c": new, "s": summarized,
-                              "err": "실패한 피드: " + ", ".join(failed) if failed else None, "id": run_id})
+                              "err": " / ".join(errors) or None, "id": run_id})
 
 
 if __name__ == "__main__":
