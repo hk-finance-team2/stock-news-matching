@@ -11,14 +11,17 @@ import org.apache.ibatis.annotations.Param;
 @Mapper
 public interface ArticleMapper {
 
+    /** watchUserId가 있으면 그 회원의 관심 종목이 하나라도 연결된 기사만 */
     long countArticles(@Param("sourceType") String sourceType,
                        @Param("stockCode") String stockCode,
-                       @Param("minRelevance") BigDecimal minRelevance);
+                       @Param("minRelevance") BigDecimal minRelevance,
+                       @Param("watchUserId") Long watchUserId);
 
     /** sort: latest(최신순) 또는 relevance(관련도순) */
     List<ArticleRow> findArticles(@Param("sourceType") String sourceType,
                                   @Param("stockCode") String stockCode,
                                   @Param("minRelevance") BigDecimal minRelevance,
+                                  @Param("watchUserId") Long watchUserId,
                                   @Param("sort") String sort,
                                   @Param("limit") int limit,
                                   @Param("offset") int offset);

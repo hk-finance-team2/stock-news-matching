@@ -54,6 +54,7 @@
         - sourceType: NEWS / SNS
         - stockCode: 이 종목과 연결된 기사만 (종목 화면)
         - minRelevance: 관련도가 이 값 이상인 종목이 하나라도 있는 기사만 (종목을 골랐으면 그 종목 기준)
+        - watchUserId: 이 회원의 관심 종목이 하나라도 연결된 기사만 (관심 종목 글 모아 보기)
     -->
     <sql id="listCondition">
         <where>
@@ -70,6 +71,11 @@
                             WHERE x.article_id = a.article_id
                               <if test="stockCode != null">AND x.stock_code = #{stockCode}</if>
                               AND x.relevance >= #{minRelevance})
+            </if>
+            <if test="watchUserId != null">
+                AND EXISTS (SELECT 1 FROM article_stock x
+                            JOIN watchlist w ON w.stock_code = x.stock_code AND w.user_id = #{watchUserId}
+                            WHERE x.article_id = a.article_id)
             </if>
         </where>
     </sql>
