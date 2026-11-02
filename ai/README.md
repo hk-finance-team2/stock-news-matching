@@ -15,7 +15,7 @@
 
 ## 지금 상태 (2026-11-02)
 
-- 끝: RSS 목록 받기(15) → 주소 중복 제거(16) → DB 저장 `LISTED`(18) → 본문 `FETCHED`(20~22) → LLM 요약 `SUMMARIZED`(27~34). 다음: 종목 매칭(23) ([docs/개발순서.md](docs/개발순서.md))
+- 끝: RSS 목록 받기(15) → 주소 중복 제거(16) → DB 저장 `LISTED`(18) → 본문 `FETCHED`(20~22) → LLM 요약 `SUMMARIZED`(27~34) → 종목 매칭 `DONE`(23·25). 다음: 오탐 처리(24)·정확도 확인(26) ([docs/개발순서.md](docs/개발순서.md))
 - 뉴스: **언론사 RSS 8개** (한경·연합·서경·파이낸셜뉴스, 30분마다 확인, 하루 약 1,000건)
 - 흐름: RSS 목록 → 중복 제거 → 원문 본문 → LLM 요약 → 요약에서 코스피200 종목 연결
 - 단계끼리는 `article.status` 로 넘김: `LISTED` → `FETCHED` → `SUMMARIZED` → `DONE` / `NO_STOCK`
@@ -32,13 +32,13 @@ ai/
 ├── README.md
 ├── requirements.txt
 ├── hk_llm/
-│   ├── run.py           ★ 파이프라인 1번 실행 (1→5, 실행 기록 collect_run)
+│   ├── run.py           ★ 파이프라인 1번 실행 (1→6, 실행 기록 collect_run)
 │   ├── step1_rss.py     1. 언론사 RSS 8개 기사 목록 받기 (15번)
 │   ├── step2_dedup.py   2. 주소 기준 중복 제거 (16번)
 │   ├── step3_save.py    3. article 에 LISTED 로 저장 (18번)
 │   ├── step4_body.py    4. 원문 본문 가져와 FETCHED, 7일 지난 본문 삭제 (20~22번)
 │   ├── step5_summary.py 5. LLM 요약·감성·회사 목록 → SUMMARIZED (27~34번)
-│   │                    (다음: step6_match.py 종목 매칭)
+│   ├── step6_match.py   6. 회사 이름 → 코스피200 종목 연결 → DONE / NO_STOCK (23·25번)
 │   ├── robots.py        본문 가져오기 전 robots.txt 허용 확인
 │   ├── models.py        기사 한 건의 모양 (Article, article 테이블 한 줄)
 │   ├── db.py            DB 연결, KST 시각 변환

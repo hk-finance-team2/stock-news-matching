@@ -1,9 +1,9 @@
-"""파이프라인 1번 실행: 1 RSS → 2 중복 제거 → 3 DB 저장 → 4 본문 → 5 요약, 실행 기록은 collect_run 에
+"""파이프라인 1번 실행: 1 RSS → 2 중복 제거 → 3 DB 저장 → 4 본문 → 5 요약 → 6 종목 매칭, 실행 기록은 collect_run 에
 
     python -m hk_llm.run           (ai 폴더에서, DB 켜져 있어야 함. 5단계에서 OpenAI 비용 발생)
     python -m hk_llm.run --check   1~3단계 시험 (두 번 연속 수집해서 새 기사만 들어가는지, 비용 없음)
 
-30분마다 이 파일을 돌리는 게 35번 스케줄러. 6단계(종목 매칭)가 생기면 5단계 뒤에 붙인다.
+30분마다 이 파일을 돌리는 게 35번 스케줄러.
 """
 from datetime import datetime
 
@@ -16,6 +16,7 @@ from hk_llm.step2_dedup import dedup_by_url
 from hk_llm.step3_save import save_listed
 from hk_llm.step4_body import fetch_bodies, purge_old_bodies
 from hk_llm.step5_summary import summarize_articles
+from hk_llm.step6_match import match_articles
 from hk_llm.util import get_logger
 
 log = get_logger(__name__)
@@ -43,6 +44,7 @@ def run(engine=None):
         new, failed = collect(engine)
         fetch_bodies(engine)
         summarized = summarize_articles(engine)
+        match_articles(engine)
     except Exception as e:
         log.exception("실행 실패")
         with engine.begin() as conn:
