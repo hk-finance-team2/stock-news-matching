@@ -53,6 +53,7 @@ public abstract class ApiTestSupport {
         // 기사를 지우면 기사-종목 연결(article_stock)은 FK CASCADE로 같이 지워짐
         jdbc.update("DELETE FROM article");
         jdbc.update("DELETE FROM stock_daily_summary");
+        jdbc.update("DELETE FROM collect_run");
     }
 
     /** 오늘 0시 + 초. 0시부터 지금 사이라 항상 "오늘 글" (자정 직후 몇 초만 빼고) */
