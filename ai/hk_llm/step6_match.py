@@ -32,7 +32,7 @@ def load_dictionary(engine):
     """{비교용 이름: 종목코드}, {종목코드: 테마 set}, 설정값 dict, 범위(종목코드 set)"""
     with engine.connect() as conn:
         names = {norm(n): c for c, n in conn.execute(text("SELECT stock_code, stock_name FROM stock_info"))}
-        for c, a in conn.execute(text("SELECT stock_code, alias FROM stock_alias")):
+        for c, a in conn.execute(text("SELECT stock_code, alias FROM stock_alias WHERE alias_type <> 'AMBIGUOUS'")):
             names.setdefault(norm(a), c)  # 정식 종목명이 별칭보다 우선
         themes = {}
         for c, t in conn.execute(text("SELECT stock_code, theme FROM stock_theme")):
