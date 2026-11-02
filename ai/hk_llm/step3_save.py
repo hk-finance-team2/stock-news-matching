@@ -3,7 +3,7 @@
     from hk_llm.step3_save import save_listed
     new = save_listed(articles)  # step2_dedup 을 거친 기사 (url_key 필요). 새로 들어간 건수를 돌려줌
 
-이미 DB 에 있는 기사(url_key 같음)는 건너뛴다 → 30분마다 돌려도 새 기사만 들어감.
+이미 DB 에 있는 기사(url_key 같음)는 건너뛴다 → 5분마다 돌려도 새 기사만 들어감.
 """
 from dataclasses import fields
 

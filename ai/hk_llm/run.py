@@ -3,7 +3,7 @@
     python -m hk_llm.run           (ai 폴더에서, DB 켜져 있어야 함. 5단계에서 OpenAI 비용 발생)
     python -m hk_llm.run --check   1~3단계 시험 (두 번 연속 수집해서 새 기사만 들어가는지, 비용 없음)
 
-30분마다 이 파일을 돌리는 게 35번 스케줄러.
+5분마다 이 파일을 돌리는 게 35번 스케줄러 (앞 실행이 안 끝났으면 건너뜀, 아직 미구현).
 """
 from datetime import datetime
 
