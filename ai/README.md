@@ -42,6 +42,7 @@ ai/
 │   ├── step4_body.py    4. 원문 본문 가져와 FETCHED, 7일 지난 본문 삭제 (20~22번)
 │   ├── step5_summary.py 5. LLM 요약·감성·회사 목록 → SUMMARIZED (27~34번)
 │   ├── step6_match.py   6. 회사 이름 → 종목 연결 → DONE / NO_STOCK (23·25번)
+│   ├── step7_group.py   7. 비슷한 기사 묶기 (17번, 아직 저장·실행에 안 붙임)
 │   ├── robots.py        본문 가져오기 전 robots.txt 허용 확인
 │   ├── models.py        기사 한 건의 모양 (Article, article 테이블 한 줄)
 │   ├── db.py            DB 연결, KST 시각 변환
