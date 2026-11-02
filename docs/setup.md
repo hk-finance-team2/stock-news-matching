@@ -301,6 +301,25 @@ AI 파트가 채웁니다. (Python 버전, 가상환경, 패키지 설치, 실�
 
 프론트 파트가 채웁니다. (Node.js 버전, 패키지 설치, 실행 방법)
 
+<<<<<<< HEAD
+### 11-1. 실행 방법
+
+저장소 최상위 폴더에서:
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+| 순서 | 명령 | 설명 |
+|---|---|---|
+| 1. 폴더 이동 | `cd frontend` | 프론트엔드 폴더로 이동 |
+| 2. 패키지 설치 | `npm install` | 처음 한 번, 그리고 `package.json`이 바뀌었을 때 |
+| 3. 실행 | `npm run dev` | 개발 서버 실행 → http://localhost:5173 접속 |
+
+- 끄기: `Ctrl + C`
+=======
 ## 12. 백엔드 자동 테스트와 CI
 
 ### 내 PC에서 테스트 돌리기 (백엔드 코드를 고친 사람)
@@ -323,3 +342,4 @@ DB를 켠 상태(3절)에서 `backend` 폴더에서:
 - ❌면 **Details** → 실패한 테스트 이름 확인 → 고쳐서 다시 push하면 다시 돌아감
 - PR 코드만이 아니라 **"PR + 최신 main을 합친 모습"**으로 돌림
 - `ai/`, `frontend/`, `docs/`만 바꾼 PR은 돌리지 않음
+>>>>>>> 8b2f83c69f4d3acb319d3c2d3f9f874dfa85fc8f
