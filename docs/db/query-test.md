@@ -81,7 +81,22 @@ SQL을 DB에서 직접 실행해 예상 결과와 실제 결과를 비교한 기
 - QT-39: JOIN으로 붙이면 글이 연결 종목 수만큼 불어나 목록 중복·페이지 틀어짐 → API는 `EXISTS` 사용
 - QT-41: 종목코드로 먼저 좁히고(인덱스) 기사는 기본키로 찾아 데이터가 늘어도 전체를 훑지 않음. 감성 개수의 `Using temporary; Using filesort`는 GROUP BY 정리용이고 대상 줄이 그 종목 것뿐이라 작음
 
+## 2026-11-02 · V8 (별칭 종류)와 별칭·테마 데이터
+
+환경: MariaDB 11.8.9 (Docker), 종목 2,655개(V6), 별칭 99개·테마 연결 198개(R__), 실행 시각 17:10
+
+| 쿼리 ID | 테이블 | 테스트 쿼리 | 설명 | 예상 결과 | 실제 결과 | 검증 |
+|---|---|---|---|---|---|---|
+| QT-42 | stock_alias | `INSERT ... alias_type = 'SHROT'` | 종류 오타 | 실패 (CHECK) | `ERROR 4025 CONSTRAINT ck_stock_alias_type failed` | ✅ |
+| QT-43 | stock_alias | `SELECT ... WHERE alias_type <> 'AMBIGUOUS'` | AI가 읽을 별칭 | 99개 중 헷갈림 7개 뺀 92개 | 92 | ✅ |
+| QT-44 | stock_info, stock_alias | `현대차` 검색, `ORDER BY CASE(이름 일치 0 → 별칭 일치 1 → 이름 시작 2 → …)` | 별칭이 딱 맞는 종목이 먼저 | 현대자동차 → 현대차증권 | 현대자동차, 현대차증권 | ✅ |
+| QT-45 | stock_alias, stock_info | `JOIN stock_info ON REPLACE(stock_name, ' ', '') = REPLACE(alias, ' ', '') WHERE 코드가 다름` | 별칭이 다른 종목의 공식 이름과 같은 경우 | 헷갈림으로 표시한 모비스만 | `모비스 AMBIGUOUS 012330 / 250060 모비스` | ✅ |
+| QT-46 | stock_theme, stock_info | `WHERE theme = '방산'` | 테마로 종목 찾기 | 6개 | LIG디펜스앤에어로스페이스, 풍산, 한국항공우주, 한화시스템, 한화에어로스페이스, 현대로템 | ✅ |
+| QT-47 | stock_alias | `EXPLAIN ... WHERE alias = '현대차'` | 별칭 찾기 인덱스 | `idx_stock_alias_alias` | `ref idx_stock_alias_alias rows 1` | ✅ |
+
+- QT-45: AI 매칭은 공식 이름을 별칭보다 먼저 씀. 그래서 이런 별칭은 그대로 두면 조용히 무시됨 → 자동 테스트(`StockDictionaryTest`)가 헷갈림이 아닌 별칭에서 이런 경우가 생기면 실패하게 함
+
 ## 다음에 추가할 항목
 
-- `EXPLAIN`으로 게시판 최신순 목록, 별칭·테마 검색 확인
+- `EXPLAIN`으로 게시판 최신순 목록 확인
 - 기사가 많이 쌓인 뒤 이슈 순위·검색(`LIKE '%q%'`) 실행 시간 측정
