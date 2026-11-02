@@ -5,18 +5,16 @@
     match_articles(statuses=("SUMMARIZED", "DONE", "NO_STOCK"))  # 규칙을 바꾼 뒤 전부 다시 매칭 (LLM 안 부름, 비용 0)
 
 - 종목 사전: stock_info(종목명) + stock_alias(별칭) + stock_theme(테마), 백엔드가 채움
-- 범위: 코스피200 (결정사항 2번, data/stocks.csv 의 코스피200 = Y)
+- 범위: stock_info 전체 (코스피+코스닥, 결정사항 2번)
 - 점수 (match_setting): 종목명 0.4 · 테마 0.4 · 문맥 0.2, 최소 0.7
   🧪 시험 가정: 그 종목에 등록된 테마가 없으면 테마를 빼고 나머지 가중치끼리 비율로 계산
 - 결과: article_stock 에 기사 1 : 종목 N. 다시 매칭하면 그 기사의 연결을 지우고 새로 넣음
 """
-import csv
 import json
 import re
 
 from sqlalchemy import bindparam, text
 
-from hk_llm.config import DATA_DIR
 from hk_llm.db import get_engine
 from hk_llm.util import get_logger
 
@@ -29,7 +27,7 @@ def norm(name):
 
 
 def load_dictionary(engine):
-    """{비교용 이름: 종목코드}, {종목코드: 테마 set}, 설정값 dict, 범위(종목코드 set)"""
+    """{비교용 이름: 종목코드}, {종목코드: 테마 set}, 설정값 dict"""
     with engine.connect() as conn:
         names = {norm(n): c for c, n in conn.execute(text("SELECT stock_code, stock_name FROM stock_info"))}
         for c, a in conn.execute(text("SELECT stock_code, alias FROM stock_alias")):
@@ -38,9 +36,7 @@ def load_dictionary(engine):
         for c, t in conn.execute(text("SELECT stock_code, theme FROM stock_theme")):
             themes.setdefault(c, set()).add(t)
         settings = {k: float(v) for k, v in conn.execute(text("SELECT setting_key, setting_value FROM match_setting"))}
-    with open(DATA_DIR / "stocks.csv", encoding="utf-8-sig") as f:
-        scope = {r["종목코드"] for r in csv.DictReader(f) if r["코스피200"] == "Y"}
-    return names, themes, settings, scope
+    return names, themes, settings
 
 
 def score(is_main, code, keywords, themes, s):
@@ -53,12 +49,12 @@ def score(is_main, code, keywords, themes, s):
 
 
 def match_one(companies, keywords, dictionary):
-    """[(종목코드, 회사 dict, 점수, 일치한 이름)] — 범위 안, 최소 점수 이상, 종목당 1개 (점수 높은 쪽)"""
-    names, themes, s, scope = dictionary
+    """[(종목코드, 회사 dict, 점수, 일치한 이름)] — 최소 점수 이상, 종목당 1개 (점수 높은 쪽)"""
+    names, themes, s = dictionary
     best = {}
     for c in companies:
         code = names.get(norm(c["name"]))
-        if not code or code not in scope:
+        if not code:
             continue
         sc = score(c["is_main"], code, keywords, themes, s)
         if sc >= s["min_score"] and (code not in best or sc > best[code][2]):
@@ -99,9 +95,9 @@ if __name__ == "__main__":
     assert score(False, "A", [], {}, s) == 0.83  # 조연: (0.4 + 0.1) / 0.6
     assert score(True, "A", ["HBM"], {"A": {"HBM"}}, s) == 1.0
     assert score(False, "A", ["금리"], {"A": {"HBM"}}, s) == 0.5  # 테마 불일치 조연: 0.4 + 0 + 0.1 → 탈락
-    d = ({"HL만도": "204320", "샘표": "007540"}, {}, s, {"204320"})
+    d = ({"HL만도": "204320", "샘표": "007540"}, {}, s)
     got = match_one([{"name": "HL만도", "is_main": True, "sentiment": "NEGATIVE", "reason": "r"},
-                     {"name": "샘표", "is_main": True, "sentiment": "POSITIVE", "reason": "r"},  # 코스피200 아님
+                     {"name": "샘표", "is_main": True, "sentiment": "POSITIVE", "reason": "r"},
                      {"name": "바이낸스", "is_main": False, "sentiment": "NEUTRAL", "reason": "r"}], [], d)
-    assert [g[0] for g in got] == ["204320"], got
+    assert [g[0] for g in got] == ["204320", "007540"], got  # 사전에 없는 바이낸스는 빠짐
     print("ok")
