@@ -191,10 +191,30 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 | 🔒 | DELETE | `/api/comments/{commentId}` | 댓글 삭제 (본인만) |
 | 🔒 | POST | `/api/posts/{postId}/like` | 공감 토글 → `{ liked, likeCount }` (누르면 공감, 다시 누르면 취소) |
 
-### 아직 없는 API (차례로 추가)
+### 데이터 상태
 
-데이터 상태, 종합 요약 다시 생성.
-그동안은 프론트에서 예시 데이터로 화면을 만들어 두면 됩니다.
+| | 방식 | 주소 | 설명 |
+|---|---|---|---|
+| 🔓 | GET | `/api/status` | **마지막 갱신 시각** (F-16). "뉴스 3분 전 · SNS 10분 전 · 요약 40분 전" 표시용 |
+
+```json
+{
+  "newsCollectedAt": "2026-11-02T14:00:12+09:00",
+  "snsCollectedAt": "2026-11-02T13:55:40+09:00",
+  "summaryGeneratedAt": "2026-11-02T13:30:00+09:00",
+  "lastSuccessAt": "2026-11-02T14:00:30+09:00",
+  "lastRun": { "status": "SUCCESS", "startedAt": "...", "finishedAt": "...", "collectedCount": 12, "summarizedCount": 10 }
+}
+```
+
+- `newsCollectedAt`·`snsCollectedAt`: 마지막으로 받은 뉴스·SNS 글의 **수집 시각** (분석 중인 글 포함)
+- `summaryGeneratedAt`: 마지막 종목 종합 요약 생성 시각, `lastSuccessAt`: AI 수집이 마지막으로 **성공**한 시각
+- `lastRun`: 가장 최근 수집 실행. `status`가 `RUNNING`이면 수집 중(`finishedAt`은 `null`), `FAILED`면 마지막 수집 실패
+- 아직 데이터가 없으면 각각 `null` → 화면은 "아직 없음"
+
+### 아직 없는 API
+
+종합 요약 다시 생성 (AI 서버 API 형식이 정해지면 추가).
 
 ## 4. 오류 코드
 
