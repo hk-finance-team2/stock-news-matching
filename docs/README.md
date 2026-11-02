@@ -8,6 +8,7 @@
 |---|---|
 | Git 처음 쓰기 (레포 받기, 브랜치, PR) | [git-guide.md](git-guide.md) |
 | 내 PC에서 DB·백엔드 켜기, 내 파트에서 쓰는 법 | [setup.md](setup.md) |
+| Docker가 어떻게 돌아가는지 쉽게, 자주 쓰는 명령 모음 | [docker-guide.md](docker-guide.md) |
 | 백엔드 API 목록, 로그인 방식, 오류 코드 | [api.md](api.md) |
 | DB 테이블 구조 (테이블 정의서·ERD) | [db/schema.md](db/schema.md) |
 | DB 제약 조건 시험 기록 | [db/query-test.md](db/query-test.md) |
