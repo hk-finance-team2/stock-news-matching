@@ -1,7 +1,7 @@
 """article 테이블 읽기·쓰기"""
 from dataclasses import fields
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 
 from hk_llm.dao.db import from_db, get_engine, to_db
 from hk_llm.dto.article_dto import ArticleDto
@@ -22,7 +22,9 @@ class ArticleDao:
 
     def insert_listed(self, articles):
         """새 기사를 LISTED 로 저장. url_key 가 이미 있으면 건너뜀. 새로 들어간 건수를 돌려준다."""
-        # 중복이면 아무것도 안 바꿈 → rowcount 0
+        # rowcount 로는 못 셈: SQLAlchemy 가 PyMySQL 에 FOUND_ROWS 를 켜서 중복도 1 로 나옴
+        # → 이미 있는 키를 먼저 한 번에 조회. ON DUPLICATE 는 동시 실행 대비 안전장치로 남김
+        exists = text("SELECT url_key FROM article WHERE url_key IN :keys").bindparams(bindparam("keys", expanding=True))
         sql = text("""
             INSERT INTO article (url_key, url, press, title, reporter, description, published_at,
                                  status, source_type, channel, collect_mode)
@@ -30,14 +32,17 @@ class ArticleDao:
                     'LISTED', :source_type, :channel, :collect_mode)
             ON DUPLICATE KEY UPDATE article_id = article_id
         """)
-        new = 0
+        assert all(a.url_key for a in articles), "url_key 없음: service/dedup_service.py 를 먼저 거쳐야 함"
+        if not articles:
+            return 0
         with self.engine.begin() as conn:
-            for a in articles:
-                assert a.url_key, "url_key 없음: service/dedup_service.py 를 먼저 거쳐야 함"
+            have = set(conn.execute(exists, {"keys": [a.url_key for a in articles]}).scalars())
+            new = [a for a in articles if a.url_key not in have]
+            for a in new:
                 params = {f.name: getattr(a, f.name) for f in fields(a)}
                 params["published_at"] = to_db(a.published_at)
-                new += conn.execute(sql, params).rowcount
-        return new
+                conn.execute(sql, params)
+        return len(new)
 
     def find_by_status(self, status, limit=100):
         sql = text("SELECT * FROM article WHERE status = :status ORDER BY published_at LIMIT :limit")

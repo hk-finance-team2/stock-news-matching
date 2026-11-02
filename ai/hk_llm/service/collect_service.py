@@ -37,10 +37,17 @@ def collect_rss(article_dao=None, run_dao=None):
 if __name__ == "__main__":
     from sqlalchemy import text
 
+    engine = ArticleDao().engine
+
+    def count():
+        with engine.connect() as conn:
+            return conn.execute(text("SELECT COUNT(*) FROM article")).scalar()
+
     first = collect_rss()
-    again = collect_rss()
-    assert again <= first, "두 번째 실행은 새 기사만 들어가야 함"
-    with ArticleDao().engine.connect() as conn:
+    before = count()
+    again = collect_rss()  # 바로 다시: 그 몇 초 사이 새 기사만 들어가야 함
+    assert count() - before == again, "돌려준 건수 = 실제로 늘어난 줄 수"
+    with engine.connect() as conn:
         dup = conn.execute(text("SELECT COUNT(*) - COUNT(DISTINCT url_key) FROM article")).scalar()
         last = conn.execute(text("SELECT status, collected_count FROM collect_run ORDER BY run_id DESC LIMIT 1")).first()
     assert dup == 0 and last.status == "SUCCESS" and last.collected_count == again
