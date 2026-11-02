@@ -148,7 +148,7 @@ cd backend
 | 주소 | 무엇이 보이나 |
 |---|---|
 | http://localhost:8080/swagger-ui.html | API 목록 화면. `GET /api/stocks` → **Try it out** → **Execute** |
-| http://localhost:8080/api/stocks | 예시 종목 5개 JSON |
+| http://localhost:8080/api/stocks | 종목 목록 JSON (코스피·코스닥 2,655개) |
 
 터미널에서 확인하려면 (PowerShell에서는 `curl`이 아니라 `curl.exe`):
 
@@ -231,13 +231,13 @@ Swagger(http://localhost:8080/swagger-ui.html)에서:
   - 시세 테이블은 1차 제외
 - **AI 파트가 쓰는 테이블 (V5):** `article`, `article_stock`, `collect_run`, `stock_daily_summary`
   - AI 제안서 칸 그대로이고, `[확장]` 표시 칸은 비워 둬도 저장됨
-  - `article_stock`의 종목은 `stock_info`에 있어야 저장됨 (종목 사전은 백엔드가 채우는 중)
+  - `article_stock`의 종목은 `stock_info`에 있어야 저장됨. 종목 사전에는 **코스피·코스닥 2,655개**가 있음 (V6, AI의 `stock_master.py`와 같은 KIND 목록). 코넥스·우선주·ETF는 없음
   - 화면에는 `article.status = 'DONE'`인 기사만 나감
 - **읽기만 하는 테이블 (백엔드가 채움):**
 
 | 테이블 | 쓰는 곳 |
 |---|---|
-| `stock_info` | 종목코드·종목명·시장·업종 (지금은 예시 5개) |
+| `stock_info` | 종목코드·종목명·시장·업종 (코스피·코스닥 2,655개, 이름은 KIND 공식 회사명: 현대자동차, 케이티앤지 등) |
 | `stock_alias` | 별칭 → 종목 (예: 삼전 → 005930) |
 | `stock_theme` | 테마 → 종목 (예: 방산 → 012450) |
 | `match_setting` | 매칭 가중치. `name_weight` 0.40, `theme_weight` 0.40, `context_weight` 0.20, `min_score` 0.70 |
