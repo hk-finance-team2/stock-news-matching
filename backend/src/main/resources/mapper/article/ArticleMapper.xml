@@ -24,6 +24,27 @@
             <arg column="sentiment" javaType="String"/>
             <arg column="match_type" javaType="String"/>
             <arg column="relevance" javaType="java.math.BigDecimal"/>
+            <arg column="reason" javaType="String"/>
+            <arg column="evidence" javaType="String"/>
+            <arg column="matched_keywords" javaType="String"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="articleDetailRow" type="com.hkteam2.stocknews.article.ArticleDetailRow">
+        <constructor>
+            <arg column="article_id" javaType="Long"/>
+            <arg column="source_type" javaType="String"/>
+            <arg column="channel" javaType="String"/>
+            <arg column="title" javaType="String"/>
+            <arg column="press" javaType="String"/>
+            <arg column="reporter" javaType="String"/>
+            <arg column="published_at" javaType="java.time.LocalDateTime"/>
+            <arg column="summary" javaType="String"/>
+            <arg column="keywords" javaType="String"/>
+            <arg column="sentiment" javaType="String"/>
+            <arg column="url" javaType="String"/>
+            <arg column="model" javaType="String"/>
+            <arg column="summarized_at" javaType="java.time.LocalDateTime"/>
         </constructor>
     </resultMap>
 
@@ -83,9 +104,10 @@
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
-    <!-- 기사 여러 개의 관련 종목을 SQL 한 번에. 기사 안에서는 관련도 높은 순 (없는 건 뒤로), 대표 종목 먼저 -->
+    <!-- 기사 여러 개의 관련 종목을 SQL 한 번에 (상세는 기사 1개만 넣어서 씀). 기사 안에서는 관련도 높은 순 (없는 건 뒤로), 대표 종목 먼저 -->
     <select id="findStocksByArticleIds" resultMap="articleStockRow">
-        SELECT s.article_id, s.stock_code, i.stock_name, s.is_main, s.sentiment, s.match_type, s.relevance
+        SELECT s.article_id, s.stock_code, i.stock_name, s.is_main, s.sentiment, s.match_type, s.relevance,
+               s.reason, s.evidence, s.matched_keywords
         FROM article_stock s
         JOIN stock_info i ON i.stock_code = s.stock_code
         WHERE s.article_id IN
@@ -93,6 +115,36 @@
             #{id}
         </foreach>
         ORDER BY s.article_id, s.relevance IS NULL, s.relevance DESC, s.is_main DESC, i.stock_name
+    </select>
+
+    <!-- 기사 상세. 화면에 보여 줄 수 있는(DONE) 글만, 본문(body)은 빼고 -->
+    <select id="findDetail" resultMap="articleDetailRow">
+        SELECT a.article_id, a.source_type, a.channel, a.title, a.press, a.reporter, a.published_at,
+               a.summary, a.keywords, a.sentiment, a.url, a.model, a.summarized_at
+        FROM article a
+        WHERE a.article_id = #{articleId} AND a.status = 'DONE'
+    </select>
+
+    <!--
+        뉴스 상세에 붙일 가까운 SNS (F-11)
+        - 이 뉴스와 같은 종목이 하나라도 연결된 SNS 글
+        - 작성 시각이 앞뒤 #{hours}시간 안, 시각 차이가 작은 순으로 #{limit}개
+    -->
+    <select id="findNearbySns" resultMap="articleRow">
+        SELECT b.article_id, b.source_type, b.channel, b.title, b.press, b.published_at, b.summary, b.url
+        FROM article me
+        JOIN article b ON b.status = 'DONE'
+                      AND b.source_type = 'SNS'
+                      AND b.article_id != me.article_id
+                      AND b.published_at BETWEEN me.published_at - INTERVAL #{hours} HOUR
+                                             AND me.published_at + INTERVAL #{hours} HOUR
+        WHERE me.article_id = #{articleId}
+          AND EXISTS (SELECT 1
+                      FROM article_stock x
+                      JOIN article_stock mine ON mine.stock_code = x.stock_code AND mine.article_id = me.article_id
+                      WHERE x.article_id = b.article_id)
+        ORDER BY ABS(TIMESTAMPDIFF(SECOND, b.published_at, me.published_at)), b.article_id DESC
+        LIMIT #{limit}
     </select>
 
 </mapper>

@@ -1,6 +1,7 @@
 package com.hkteam2.stocknews.article;
 
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -40,5 +41,15 @@ public class ArticleController {
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "" + PageQuery.DEFAULT_SIZE) int size) {
         return articleService.getArticles(source, sort, minRelevance, stockCode, new PageQuery(page, size));
+    }
+
+    @Operation(summary = "글 상세",
+            description = "요약·키워드·감성·원문 링크와 관련 종목별 연결 이유(reason)·근거 문장(evidence)."
+                    + " 뉴스면 같은 종목이 나온 앞뒤 24시간 안의 SNS를 가까운 순으로 최대 5개(relatedSns)."
+                    + " 없는 글이거나 분석이 덜 끝난 글이면 404 ARTICLE_NOT_FOUND")
+    @GetMapping("/{articleId}")
+    public ArticleDetailResponse getArticle(
+            @Parameter(description = "글 번호 (목록의 articleId)") @PathVariable Long articleId) {
+        return articleService.getArticle(articleId);
     }
 }

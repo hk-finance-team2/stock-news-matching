@@ -17,8 +17,8 @@ public record ArticleStockResponse(
                 toPercent(row.relevance()), row.sentiment(), row.main());
     }
 
-    /** 0.87 -> 87 */
-    private static Integer toPercent(BigDecimal relevance) {
+    /** 0.87 -> 87 (상세도 같이 씀) */
+    static Integer toPercent(BigDecimal relevance) {
         return relevance == null ? null : relevance.movePointRight(2).intValue();
     }
 }
