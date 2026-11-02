@@ -72,7 +72,7 @@ erDiagram
 
 - PK `(article_id, stock_code)`, IDX `idx_article_stock_stock (stock_code)`: 종목별 기사 목록
 - CHECK `ck_article_stock_sentiment`: `sentiment IN ('POSITIVE','NEGATIVE','NEUTRAL')`
-- 매칭 점수(`match_setting` 의 종목명·테마·문맥 가중치) 컬럼은 **매칭 방식이 정해지면 추가** (AI 쪽 보류 중)
+- 매칭 점수(`match_setting` 의 종목명·테마·문맥 가중치) 는 V5 의 `article_stock.relevance` 등 [확장] 칸을 23번에서 채움 (match_setting 사용, 2026-10-30)
 
 ### collect_run · 수집 실행 기록
 
