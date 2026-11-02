@@ -226,7 +226,7 @@ Swagger(http://localhost:8080/swagger-ui.html)에서:
 - 로그인 후 요청 헤더: `Authorization: Bearer {accessToken}`
 - **401을 받으면 토큰을 지우고 로그인 화면으로**
 - 뉴스·SNS 글 목록(`GET /api/articles`)은 있음. 글이 없으면 2절의 **예시 기사**를 켜고 붙여 보기
-- 아직 없는 API(글 상세, 종목별 조회 등)는 예시 데이터로 화면을 먼저 만들고, API가 생기면 교체
+- 글 상세(`GET /api/articles/{articleId}`)도 있음. 아직 없는 API(종목별 조회 등)는 예시 데이터로 화면을 먼저 만들고, API가 생기면 교체
 
 ### 8-3. AI 파트
 

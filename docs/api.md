@@ -56,6 +56,7 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 | | 방식 | 주소 | 설명 |
 |---|---|---|---|
 | 🔓 | GET | `/api/articles` | **글 목록**. AI 분석이 끝난 글만, 기본은 최신순. 아래 조건을 골라 붙임 |
+| 🔓 | GET | `/api/articles/{articleId}` | **글 상세**. 아래 "글 상세" 참고. 없거나 분석이 덜 끝난 글은 404 `ARTICLE_NOT_FOUND` |
 
 | 조건 | 값 | 쓰는 곳 |
 |---|---|---|
@@ -87,6 +88,19 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 - 기사 본문은 내보내지 않습니다. 요약과 원문 링크(`url`)만
 - 개발 중에 글이 없으면 [setup.md](setup.md) 2절의 **예시 기사**를 켜세요
 
+#### 글 상세 `GET /api/articles/{articleId}`
+
+목록 한 건의 칸에 아래가 더 붙습니다.
+
+| 칸 | 내용 |
+|---|---|
+| `reporter` | 기자명 (없으면 `null`) |
+| `keywords` | 핵심 키워드 목록 `["HBM", "반도체"]` (없으면 `[]`) |
+| `sentiment` | 글 전체 감성 `POSITIVE` / `NEGATIVE` / `NEUTRAL` (없으면 `null`) |
+| `model`, `summarizedAt` | 요약을 만든 AI 모델과 시각 → "AI가 만든 요약" 안내용 (N-05) |
+| `stocks[]` | 목록 칩 칸 + **`reason`**(연결 이유, 항상 있음), **`evidence`**(근거 문장, 없으면 `null`), `matchedKeywords`(목록, 없으면 `[]`) |
+| `relatedSns[]` | **뉴스일 때만.** 같은 종목이 나온 SNS 중 작성 시각 앞뒤 24시간 안, 가까운 순 최대 5개 `{ articleId, channel, title, press, publishedAt, summary, url }`. SNS 글이면 `[]` |
+
 ### 관심 종목
 
 | | 방식 | 주소 | 설명 |
@@ -110,7 +124,7 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 
 ### 아직 없는 API (차례로 추가)
 
-글 상세, 종목별 조회(이슈 순위·종합 요약·감성 비율·언급량), 통합 검색, 데이터 상태, 관심 종목의 오늘 매칭 글 수.
+종목별 조회(이슈 순위·종합 요약·감성 비율·언급량), 통합 검색, 데이터 상태, 관심 종목의 오늘 매칭 글 수.
 그동안은 프론트에서 예시 데이터로 화면을 만들어 두면 됩니다.
 
 ## 4. 오류 코드
@@ -124,7 +138,7 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 | 403 | `FORBIDDEN` | 권한 없음 |
 | 403 | `NOT_POST_OWNER` / `NOT_COMMENT_OWNER` | 남의 글·댓글 삭제 |
 | 404 | `NOT_FOUND` | 없는 주소 |
-| 404 | `STOCK_NOT_FOUND` / `POST_NOT_FOUND` / `COMMENT_NOT_FOUND` / `WATCHLIST_NOT_FOUND` | 없는 종목·글·댓글·관심 종목 |
+| 404 | `STOCK_NOT_FOUND` / `ARTICLE_NOT_FOUND` / `POST_NOT_FOUND` / `COMMENT_NOT_FOUND` / `WATCHLIST_NOT_FOUND` | 없는 종목·글·댓글·관심 종목 |
 | 409 | `DUPLICATE_LOGIN_ID` | 이미 있는 아이디로 가입 |
 | 409 | `ALREADY_IN_WATCHLIST` | 이미 관심 종목에 있음 |
 | 500 | `INTERNAL_ERROR` | 서버 오류 (백엔드에 알려 주세요) |
