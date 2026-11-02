@@ -272,3 +272,21 @@ AI 파트가 채웁니다. (Python 버전, 가상환경, 패키지 설치, 실�
 ## 11. 프론트엔드 개발 환경 (React · Vite)
 
 프론트 파트가 채웁니다. (Node.js 버전, 패키지 설치, 실행 방법)
+
+### 11-1. 실행 방법
+
+저장소 최상위 폴더에서:
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+| 순서 | 명령 | 설명 |
+|---|---|---|
+| 1. 폴더 이동 | `cd frontend` | 프론트엔드 폴더로 이동 |
+| 2. 패키지 설치 | `npm install` | 처음 한 번, 그리고 `package.json`이 바뀌었을 때 |
+| 3. 실행 | `npm run dev` | 개발 서버 실행 → http://localhost:5173 접속 |
+
+- 끄기: `Ctrl + C`
