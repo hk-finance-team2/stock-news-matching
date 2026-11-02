@@ -19,6 +19,9 @@ public enum ErrorCode {
     // 종목
     STOCK_NOT_FOUND(HttpStatus.NOT_FOUND, "종목을 찾을 수 없습니다."),
 
+    // 기사
+    ARTICLE_NOT_FOUND(HttpStatus.NOT_FOUND, "글을 찾을 수 없습니다."),
+
     // 회원
     DUPLICATE_LOGIN_ID(HttpStatus.CONFLICT, "이미 사용 중인 아이디입니다."),
     // 아이디가 틀렸는지 비밀번호가 틀렸는지 알려 주지 않음 (아이디 존재 여부를 숨김)

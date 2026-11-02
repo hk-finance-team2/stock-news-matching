@@ -2,6 +2,7 @@ package com.hkteam2.stocknews.article;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Optional;
 
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -24,4 +25,12 @@ public interface ArticleMapper {
 
     /** 여러 기사의 관련 종목을 한 번에 (N+1 방지) */
     List<ArticleStockRow> findStocksByArticleIds(@Param("articleIds") List<Long> articleIds);
+
+    /** 화면에 보여 줄 수 있는(DONE) 글만 */
+    Optional<ArticleDetailRow> findDetail(@Param("articleId") Long articleId);
+
+    /** 같은 종목이 연결된 SNS 중 작성 시각이 앞뒤 hours시간 안, 가까운 순 limit개 */
+    List<ArticleRow> findNearbySns(@Param("articleId") Long articleId,
+                                   @Param("hours") int hours,
+                                   @Param("limit") int limit);
 }

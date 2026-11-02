@@ -20,6 +20,9 @@ public class ArticleService {
 
     private static final Set<String> SOURCE_TYPES = Set.of("NEWS", "SNS");
     private static final Set<String> SORTS = Set.of("latest", "relevance");
+    /** 뉴스 상세에 붙일 SNS: 작성 시각 앞뒤 24시간 안에서 최대 5개 (F-11) */
+    private static final int NEARBY_SNS_HOURS = 24;
+    private static final int NEARBY_SNS_LIMIT = 5;
 
     private final ArticleMapper articleMapper;
     private final StockMapper stockMapper;
@@ -70,5 +73,27 @@ public class ArticleService {
                 .map(row -> ArticleResponse.from(row, stocksByArticle.getOrDefault(row.articleId(), List.of())))
                 .toList();
         return new ListResponse<>(items, totalCount);
+    }
+
+    /**
+     * 기사 상세. SQL 3번: ① 글 ② 관련 종목(목록과 같은 SQL에 글 1개만) ③ 가까운 SNS(뉴스일 때만)
+     * 없는 글이거나 아직 분석 중인 글은 404
+     */
+    @Transactional(readOnly = true)
+    public ArticleDetailResponse getArticle(Long articleId) {
+        ArticleDetailRow row = articleMapper.findDetail(articleId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.ARTICLE_NOT_FOUND));
+
+        List<ArticleStockDetailResponse> stocks = articleMapper.findStocksByArticleIds(List.of(articleId)).stream()
+                .map(ArticleStockDetailResponse::from)
+                .toList();
+
+        List<RelatedSnsResponse> relatedSns = "NEWS".equals(row.sourceType())
+                ? articleMapper.findNearbySns(articleId, NEARBY_SNS_HOURS, NEARBY_SNS_LIMIT).stream()
+                        .map(RelatedSnsResponse::from)
+                        .toList()
+                : List.of();
+
+        return ArticleDetailResponse.from(row, stocks, relatedSns);
     }
 }
