@@ -54,4 +54,10 @@ public interface QuoteMapper {
     long countTicks(@Param("tradeDate") LocalDate tradeDate);
 
     long countQuarantine();
+
+    // ----- 급등·급락 이력 (F-17) -----
+
+    /** days(작성일)에 이 종목과 연결된 DONE 글. 날짜 순, 같은 날은 관련도 높은 순(없으면 뒤) → 최신 순 */
+    List<BigMoveArticleRow> findArticlesOnDays(@Param("stockCode") String stockCode,
+                                               @Param("days") List<LocalDate> days);
 }

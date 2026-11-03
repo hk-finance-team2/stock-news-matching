@@ -23,6 +23,7 @@ import com.hkteam2.stocknews.common.TimeUtils;
  * | 현재가 | 5초 | 1번 |
  * | 오늘 분봉 | 60초 | 최대 4번 (30분씩 거꾸로, 약 2시간) |
  * | 일봉 | 10분 | 1번 (최근 약 100거래일) |
+ * | 일봉 1년 (급등·급락 이력) | 10분 | 3번 (140일씩 나눠서) |
  * | 최근 체결 | 5초 | 1번 (30건) |
  * KIS_ENABLED=true 일 때만 만들어짐. 꺼져 있으면 QuoteController가 503 QUOTE_DISABLED
  */
@@ -37,6 +38,10 @@ public class QuoteService {
     private static final int MINUTE_PAGES = 4;
     private static final int PAGE_SIZE = 30;
     private static final LocalTime MARKET_OPEN = LocalTime.of(9, 0);
+    /** KIS 일봉은 한 번에 100개까지 → 달력 140일씩 (거래일 약 96일) */
+    private static final int DAILY_CHUNK_DAYS = 140;
+    /** 1년 + 앞쪽 여유 (첫날 등락률을 내려면 그 전 거래일 종가가 필요, 연휴 대비 2주) */
+    private static final int YEAR_DAYS = 366 + 14;
 
     /** 실시간 현재가가 이만큼 안에 갱신됐으면 KIS에 묻지 않고 그 값을 씀 */
     static final Duration LIVE_FRESH = Duration.ofSeconds(15);
@@ -106,6 +111,27 @@ public class QuoteService {
             List<KisCandle> rows = new ArrayList<>(kis.inquireDailyCandles(stockCode, today.minusDays(150), today));
             rows.sort(Comparator.comparing(KisCandle::time));
             return new ChartResponse(stockCode, "DAY", toCandles(rows));
+        });
+    }
+
+    /**
+     * 일봉 약 1년 치 (급등·급락 이력용), 오래된 것부터
+     * 오늘부터 거꾸로 140일씩 나눠 KIS에 물음 (3번). 경계에서 겹치는 날은 하나로
+     */
+    public List<KisCandle> yearDailyCandles(String stockCode) {
+        return cache.get("year:" + stockCode, DAY_TTL, () -> {
+            LocalDate today = LocalDate.now(clock);
+            LocalDate start = today.minusDays(YEAR_DAYS);
+            Map<LocalDateTime, KisCandle> byDate = new TreeMap<>();
+            for (LocalDate end = today; !end.isBefore(start); ) {
+                LocalDate from = end.minusDays(DAILY_CHUNK_DAYS - 1);
+                if (from.isBefore(start)) {
+                    from = start;
+                }
+                kis.inquireDailyCandles(stockCode, from, end).forEach(c -> byDate.put(c.time(), c));
+                end = from.minusDays(1);
+            }
+            return List.copyOf(byDate.values());
         });
     }
 

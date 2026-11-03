@@ -46,13 +46,15 @@ public class QuoteController {
     private final ObjectProvider<QuoteService> quoteService;
     private final ObjectProvider<QuoteStreamHub> streamHub;
     private final QuoteHistoryService history;
+    private final BigMoveService bigMoveService;
     private final StockMapper stockMapper;
 
     public QuoteController(ObjectProvider<QuoteService> quoteService, ObjectProvider<QuoteStreamHub> streamHub,
-                           QuoteHistoryService history, StockMapper stockMapper) {
+                           QuoteHistoryService history, BigMoveService bigMoveService, StockMapper stockMapper) {
         this.quoteService = quoteService;
         this.streamHub = streamHub;
         this.history = history;
+        this.bigMoveService = bigMoveService;
         this.stockMapper = stockMapper;
     }
 
@@ -147,6 +149,20 @@ public class QuoteController {
             case "day" -> service.dayChart(code);
             default -> throw new BusinessException(ErrorCode.INVALID_REQUEST);
         };
+    }
+
+    @Operation(summary = "과거 급등·급락 이력 (F-17)",
+            description = "일봉으로 하루 등락률이 ±threshold% 이상인 날(최신부터)과 그날 이 종목에 연결된 글(관련도 높은 순 3개, 전체 수)."
+                    + " period 3m·6m·1y(기본), threshold 3~30(기본 5). 일봉은 KIS에서 받아 10분 캐시. 글은 작성일 기준, DONE만")
+    @GetMapping("/{stockCode}/big-moves")
+    public BigMoveResponse getBigMoves(@PathVariable String stockCode,
+                                       @RequestParam(defaultValue = "1y") String period,
+                                       @RequestParam(defaultValue = "5") int threshold) {
+        BigMovePeriod p = BigMovePeriod.of(period).orElseThrow(() -> new BusinessException(ErrorCode.INVALID_REQUEST));
+        if (threshold < 3 || threshold > 30) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+        return bigMoveService.bigMoves(checkStock(stockCode), p, threshold);
     }
 
     @Operation(summary = "최근 체결 30건", description = "최신이 앞. 5초 캐시. strength: 체결 강도")
