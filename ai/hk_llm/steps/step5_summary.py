@@ -9,7 +9,7 @@ LangChain 체인: 프롬프트 → OpenAI(정해진 형식으로 답하게) → 
 """
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Literal
 
 import openai
@@ -113,9 +113,11 @@ def check(s, title, body):
 
 def summarize_articles(engine=None, limit=BATCH, model=MODEL):
     engine = engine or get_engine()
+    since = datetime.now(KST).date() - timedelta(days=1)  # 어제 이후 기사만. 쌓인 옛 기사에 비용을 쓰지 않음 (2026-11-02 결정)
     with engine.connect() as conn:
         rows = conn.execute(text("""SELECT article_id, title, body, retry_count FROM article
-                                    WHERE status = 'FETCHED' ORDER BY article_id LIMIT :n"""), {"n": limit}).all()
+                                    WHERE status = 'FETCHED' AND published_at >= :since
+                                    ORDER BY article_id DESC LIMIT :n"""), {"since": since, "n": limit}).all()
     done = failed = 0
     for r in rows:
         try:

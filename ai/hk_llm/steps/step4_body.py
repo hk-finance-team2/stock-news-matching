@@ -1,7 +1,7 @@
 """4단계 (20~22번): LISTED 기사의 원문 페이지에서 본문을 가져와 FETCHED 로 저장
 
     from hk_llm.steps.step4_body import fetch_bodies, purge_old_bodies
-    fetch_bodies()      # LISTED 를 오래된 것부터 처리. 결과 건수를 dict 로 돌려줌
+    fetch_bodies()      # 어제 이후 LISTED 를 새 기사부터 처리. 결과 건수를 dict 로 돌려줌
     purge_old_bodies()  # 7일 지난 본문 지우기 (요약은 남음)
 
 - robots.txt 가 막은 주소, 유료 기사 → SKIPPED (다시 안 함)
@@ -10,13 +10,14 @@
 """
 import re
 import time
+from datetime import datetime, timedelta
 from urllib.parse import urlsplit
 
 import lxml.html
 import requests
 from sqlalchemy import text
 
-from hk_llm.core.config import USER_AGENT
+from hk_llm.core.config import KST, USER_AGENT
 from hk_llm.core.db import get_engine
 from hk_llm.steps.robots import allowed, crawl_delay
 from hk_llm.core.util import get_logger, retry
@@ -79,10 +80,12 @@ def _get(url):
 
 
 def fetch_bodies(engine=None, limit=BATCH):
+    since = datetime.now(KST).date() - timedelta(days=1)  # 어제 이후만. 요약 대상이 아닌 옛 기사는 언론사에 요청하지 않음
     engine = engine or get_engine()
     with engine.connect() as conn:
         rows = conn.execute(text("""SELECT article_id, url, retry_count FROM article
-                                    WHERE status = 'LISTED' ORDER BY article_id LIMIT :n"""), {"n": limit}).all()
+                                    WHERE status = 'LISTED' AND published_at >= :since
+                                    ORDER BY article_id DESC LIMIT :n"""), {"since": since, "n": limit}).all()
     done = {"FETCHED": 0, "SKIPPED": 0, "RETRY": 0, "FAILED": 0}
     last_hit = {}  # 사이트별 마지막 요청 시각
     for r in rows:

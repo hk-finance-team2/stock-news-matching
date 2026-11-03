@@ -1,17 +1,27 @@
-"""7단계 (17번): 같은 사건을 다룬 비슷한 기사 묶기. 아직 저장하지 않음 (DB 칸 필요, 백엔드 요청 전)
+"""7단계 (17번): 같은 사건을 다룬 비슷한 기사 묶기 → article_stock.group_article_id
 
-    from hk_llm.steps.step7_group import group_articles
+    from hk_llm.steps.step7_group import group_articles, save_groups
     groups = group_articles(rows)   # rows: article_id, stock_code, stock_name, title, published_at
+    save_groups()                   # 최근 기사를 묶어 저장. 칸이 아직 없으면 아무것도 안 함 (팀공유 6번)
 
 묶는 조건: 같은 종목 + 비슷한 제목 + 가까운 시각. 기사를 버리지 않는다.
 제목 유사도: 괄호·기호·공백과 종목명을 뺀 뒤 글자 2개씩 자른 조각의 겹침 비율 (Jaccard)
 🧪 SIMILAR·WINDOW 는 임시값. 실제 기사가 쌓이면 다시 본다
 """
 import re
-from datetime import timedelta
+from datetime import datetime, timedelta
+
+from sqlalchemy import bindparam, text
+
+from hk_llm.core.config import KST
+from hk_llm.core.db import get_engine, to_db
+from hk_llm.core.util import get_logger
+
+log = get_logger(__name__)
 
 SIMILAR = 0.10  # 실제 기사 실험으로 정함: 0.10 에서 틀린 합침 없음, 0.10 아래로는 다른 소식이 섞임. 틀려도 기사는 안 지워짐
 WINDOW = timedelta(hours=24)
+RECENT = timedelta(hours=72)  # ponytail: 최근 72시간만 다시 묶음. 더 오래된 묶음은 그대로 둠, 사슬이 3일을 넘는 사건은 나뉠 수 있음
 
 
 def _bigrams(title, stock_name=""):
@@ -53,19 +63,45 @@ def group_articles(rows, similar=SIMILAR, window=WINDOW):
     return groups
 
 
-def load_rows(engine):
-    from sqlalchemy import text
+def load_rows(engine, since=None):
     sql = text("""SELECT a.article_id, s.stock_code, i.stock_name, a.title, a.published_at
                   FROM article a JOIN article_stock s USING (article_id) JOIN stock_info i USING (stock_code)
-                  WHERE a.status = 'DONE' AND a.channel = 'RSS'""")
+                  WHERE a.status = 'DONE' AND a.channel = 'RSS' AND (:since IS NULL OR a.published_at >= :since)""")
     with engine.connect() as conn:
-        return [dict(r._mapping) for r in conn.execute(sql)]
+        return [dict(r._mapping) for r in conn.execute(sql, {"since": since})]
+
+
+def has_column(engine):
+    sql = text("""SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE()
+                  AND table_name = 'article_stock' AND column_name = 'group_article_id'""")
+    with engine.connect() as conn:
+        return bool(conn.execute(sql).scalar())
+
+
+def save_groups(engine=None):
+    """저장한 묶음 수. 대표 기사 = 묶음에서 가장 먼저 저장된 기사. 칸이 없으면 0"""
+    engine = engine or get_engine()
+    if not has_column(engine):
+        log.info("group_article_id 칸이 아직 없어 기사 묶음 저장을 건너뜀")
+        return 0
+    rows = load_rows(engine, to_db(datetime.now(KST) - RECENT))
+    if not rows:
+        return 0
+    groups = group_articles(rows)
+    clear = text("UPDATE article_stock SET group_article_id = NULL WHERE article_id IN :ids"
+                 ).bindparams(bindparam("ids", expanding=True))
+    put = text("UPDATE article_stock SET group_article_id = :rep WHERE stock_code = :code AND article_id IN :ids"
+               ).bindparams(bindparam("ids", expanding=True))
+    with engine.begin() as conn:  # 지우고 넣기를 한 번에 → 화면이 빈 묶음을 보지 않음
+        conn.execute(clear, {"ids": sorted({r["article_id"] for r in rows})})
+        for g in groups:
+            conn.execute(put, {"rep": g["article_ids"][0], "code": g["stock_code"], "ids": g["article_ids"]})
+    log.info("기사 묶음 저장: %d개", len(groups))
+    return len(groups)
 
 
 if __name__ == "__main__":
     # 실제 샘플 (읽기만, DB 켜져 있어야 함)
-    from hk_llm.core.db import get_engine
-
     rows = load_rows(get_engine())
     title = {r["article_id"]: r["title"] for r in rows}
     found = group_articles(rows)
