@@ -7,6 +7,8 @@
 | `hk_llm_평평한구조/` | 폴더 없이 한곳에 있던 코드 11개 | `ai/hk_llm/*.py` | `cddbff1` (main) | `hk_llm/core/`, `hk_llm/steps/` | 2026-11-03 폴더 나눔 |
 | `tools/stock_master.py` | KIND 상장법인목록 → `stocks.csv` | `ai/hk_llm/tools/` | `cddbff1` (main) | 백엔드 `stock_info` (V6) | 사전을 DB 에서 읽음. 팀 문서가 이 이름을 언급 |
 | `tools/naver_test.py` | 네이버 뉴스 검색 키 확인 | `ai/hk_llm/tools/` | `cb9f65c^` | 없음 | 네이버 API 보류. 다시 쓸 때 복구 |
+| `eval/` | 평가 지표 측정 코드 4개 | `ai/eval/` | `7a8b182` | 없음 | 2026-11-03 품질 작업 마감 |
+| `data/` (Git 제외) | 평가 표본·라벨·검토 파일, 샘플 40건 목록 | `ai/hk_llm/data/` | 내 PC 에만 | 없음 | 같은 이유. 코드는 옛 경로 `hk_llm/data/eval` 을 봄 |
 | `docs/개발순서_원본.txt` | 처음 받은 개발 순서 | `ai/docs/` | `cb9f65c^` | [../docs/개발순서.md](../docs/개발순서.md) | 번호의 기준이라 원본 보존 |
 
 - 옮기기 전 위치와 변경 내역: `git log --follow -- <지금 경로>`
