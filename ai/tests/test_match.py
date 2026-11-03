@@ -32,6 +32,8 @@ def test_step6_match():
     tail = "다른 내용 " * 60 + "두산 소식"
     assert on_topic("삼성전자 실적", tail, [main, side], names) == [main], "뒷부분에만 나온 조연은 빠짐"
     assert on_topic("실적 기사", "두산이 수주했다", [side], names) == [side], "앞부분에 있으면 조연도 유지"
+    twice = "다른 내용 " * 60 + "두산이 수주했다. 두산은 내년에도"
+    assert on_topic("삼성전자 실적", twice, [main, side], names) == [main, side], "뒷부분이라도 2번 나오면 당사자로 보고 유지"
     assert on_topic("삼전 강세", tail, [main], names) == [main], "별칭으로도 찾음"
     assert on_topic("[주간 증시 전망] 삼성전자", "삼성전자", [main], names) == [], "유형 기사"
     assert on_topic("[부고] 삼성전자 전무 부친상", "삼성전자", [main], names) == [], "부고 말머리"

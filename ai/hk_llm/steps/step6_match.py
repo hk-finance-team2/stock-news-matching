@@ -8,7 +8,7 @@
 - 범위: stock_info 전체 (코스피+코스닥, 결정사항 2번)
 - 점수 (match_setting 가중치 사용): 이름이 맞으면 기본 통과, 테마가 맞으면 점수만 올림 🧪 (2026-11-02)
   키워드가 테마와 안 맞아도 깎지 않음: 삼성전자 '3분기 실적' 기사가 테마 때문에 탈락하면 안 되므로
-- 주제 확인 (on_topic) 🧪 (2026-11-03): 시황·전망·지표 기사와 명단 기사는 연결 안 함, 그 밖에는 제목이나 본문 앞부분에 이름이 있어야 연결
+- 주제 확인 (on_topic) 🧪 (2026-11-03): 시황·전망·지표 기사와 명단 기사는 연결 안 함, 그 밖에는 제목이나 본문 앞부분에 이름이 있거나 본문에 2번 이상 나와야 연결 (2번 조건 2026-11-03 추가)
 - 결과: article_stock 에 기사 1 : 종목 N. 다시 매칭하면 그 기사의 연결을 지우고 새로 넣음
 """
 import json
@@ -27,6 +27,9 @@ TYPE_WORDS = ("시황", "주간전망", "증시 전망", "증시전망", "산업
 LEAD_CHARS = 200  # 본문 앞부분
 LIST_MAX = 5  # 본문에 나온 종목이 이보다 많으면 명단 기사 🧪
 LIST_TITLED_MAX = 9  # 제목에 주인공이 있어도 이보다 많으면 명단·시황 🧪 본문 716건 중 제목에 회사가 있고 10개 이상인 기사는 저PBR 명단 2건·시황 1건뿐
+MIN_MENTIONS = 2  # 제목·앞부분에 없어도 본문에 이만큼 나오면 연결 🧪 (2026-11-03 태경)
+# 근거: 정답지 밖 기사에서 위치 조건으로 버려진 연결 40개를 읽음. 1번만 나온 것은 대부분 나열(연사·참가사·참석자),
+#      2번 이상은 16개 중 14개가 실제 당사자 (4대 금융 NPL 비교, 공급사, 실적 기여 자회사 등)
 
 
 def norm(name):
@@ -92,7 +95,13 @@ def on_topic(title, body, found, names):
     stocks = len({c for n, c in names.items() if len(n) >= 3 and n in whole})
     if stocks > LIST_TITLED_MAX or (stocks > LIST_MAX and not any(f[1]["is_main"] and seen(head, f[0], f[3]) for f in found)):
         return []
-    return [f for f in found if seen(head, f[0], f[3]) or seen(lead, f[0], f[3])]
+    return [f for f in found if seen(head, f[0], f[3]) or seen(lead, f[0], f[3]) or mentions(whole, f[0], f[3], names) >= MIN_MENTIONS]
+
+
+def mentions(text_, code, name, names):
+    """본문에 그 종목이 나온 횟수: LLM 이 쓴 이름과 사전 이름(3글자 이상) 중 가장 많이 나온 것 (겹쳐 세지 않게 최댓값)"""
+    words = {norm(name)} | {n for n, c in names.items() if c == code and len(n) >= 3}
+    return max(text_.count(w) for w in words if w)
 
 
 def match_articles(engine=None, statuses=("SUMMARIZED",)):
