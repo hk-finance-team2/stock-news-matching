@@ -89,6 +89,33 @@ public class KisTokenManager {
         return cached.value();
     }
 
+    /** POST /oauth2/Approval 응답 */
+    record ApprovalResponse(@JsonProperty("approval_key") String approvalKey) {
+    }
+
+    /**
+     * 웹소켓 접속키 (REST 접근토큰과 다른 것). 웹소켓에 접속할 때마다 새로 받음
+     * 요청 칸 이름이 appsecret이 아니라 secretkey (KIS 공식 예제 kis_auth.py auth_ws)
+     */
+    public String approvalKey() {
+        try {
+            ApprovalResponse res = restClient.post()
+                    .uri(props.baseUrl() + "/oauth2/Approval")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(Map.of("grant_type", "client_credentials",
+                            "appkey", props.appKey(),
+                            "secretkey", props.appSecret()))
+                    .retrieve()
+                    .body(ApprovalResponse.class);
+            if (res == null || res.approvalKey() == null) {
+                throw new KisApiException("NO_APPROVAL_KEY", "웹소켓 접속키 응답이 비어 있음");
+            }
+            return res.approvalKey();
+        } catch (RestClientResponseException e) {
+            throw new KisApiException("HTTP_" + e.getStatusCode().value(), "웹소켓 접속키 발급 실패");
+        }
+    }
+
     private boolean usable(Token t) {
         return t != null && Instant.now().isBefore(t.expiresAt().minus(REFRESH_BEFORE));
     }
