@@ -9,6 +9,7 @@
 - 점수 (match_setting 가중치 사용): 이름이 맞으면 기본 통과, 테마가 맞으면 점수만 올림 🧪 (2026-11-02)
   키워드가 테마와 안 맞아도 깎지 않음: 삼성전자 '3분기 실적' 기사가 테마 때문에 탈락하면 안 되므로
 - 주제 확인 (on_topic) 🧪 (2026-11-03): 시황·전망·지표 기사와 명단 기사는 연결 안 함, 그 밖에는 제목이나 본문 앞부분에 이름이 있거나 본문에 2번 이상 나와야 연결 (2번 조건 2026-11-03 추가)
+- 관련도 (relevance) 🧪 (2026-11-03): 제목 0.40 / 첫 부분 0.20 + 주인공 0.25 + 언급 횟수 최대 0.25 + 테마 0.10. 연결 여부와 별개로 화면 순서용
 - 결과: article_stock 에 기사 1 : 종목 N. 다시 매칭하면 그 기사의 연결을 지우고 새로 넣음
 """
 import json
@@ -30,6 +31,16 @@ LIST_TITLED_MAX = 9  # 제목에 주인공이 있어도 이보다 많으면 명�
 MIN_MENTIONS = 2  # 제목·앞부분에 없어도 본문에 이만큼 나오면 연결 🧪 (2026-11-03 태경)
 # 근거: 정답지 밖 기사에서 위치 조건으로 버려진 연결 40개를 읽음. 1번만 나온 것은 대부분 나열(연사·참가사·참석자),
 #      2번 이상은 16개 중 14개가 실제 당사자 (4대 금융 NPL 비교, 공급사, 실적 기여 자회사 등)
+
+# 관련도 (화면 % · 관련도순 정렬용) 🧪 (2026-11-03 태경). 연결 여부는 score·on_topic 이 정하고, 이 값은 "기사 안에서 얼마나 중심인가"
+# 예전: 주인공 1.00 / 조연 0.83 두 값뿐이라 연결의 77% 가 1.00 → 같은 종목 기사끼리 순서를 못 가림
+REL_TITLE = 0.40  # 제목에 나옴
+REL_LEAD = 0.20  # 제목엔 없고 본문 앞부분에 나옴
+REL_MAIN = 0.25  # LLM 이 주인공이라 함
+REL_MENTION = 0.25  # 본문에 나온 횟수 (REL_MENTION_FULL 번 이상이면 만점)
+REL_MENTION_FULL = 4
+REL_THEME = 0.10  # 기사 키워드가 그 종목 테마와 맞음
+REL_MIN = 0.10  # 연결된 이상 최소값
 
 
 def norm(name):
@@ -88,7 +99,7 @@ def on_topic(title, body, found, names):
         return found
 
     def seen(text_, code, name):
-        return norm(name) in text_ or any(n in text_ for n, c in names.items() if c == code and len(n) >= 2)
+        return _seen(text_, code, name, names)
 
     head, lead, whole = norm(title), norm(body[:LEAD_CHARS]), norm(body)
     # ponytail: 부분 문자열 비교라 '이닉스' 가 SK하이닉스에도 걸림. 명단 판단에만 쓰므로 둠, 오판이 나오면 최장 일치로
@@ -96,6 +107,26 @@ def on_topic(title, body, found, names):
     if stocks > LIST_TITLED_MAX or (stocks > LIST_MAX and not any(f[1]["is_main"] and seen(head, f[0], f[3]) for f in found)):
         return []
     return [f for f in found if seen(head, f[0], f[3]) or seen(lead, f[0], f[3]) or mentions(whole, f[0], f[3], names) >= MIN_MENTIONS]
+
+
+def _seen(text_, code, name, names):
+    """비교용 글(norm 한 것)에 그 종목 이름이 있나: LLM 이 쓴 이름 또는 사전 이름·별칭(2글자 이상)"""
+    return norm(name) in text_ or any(n in text_ for n, c in names.items() if c == code and len(n) >= 2)
+
+
+def relevance(title, body, found_item, keywords, dictionary):
+    """기사 안에서 그 종목이 얼마나 중심인가 0.10~1.00: 제목·첫 부분·주인공·언급 횟수·테마 (위 REL_* 참고)
+    본문이 지워진 옛 기사는 위치를 볼 수 없어 예전 점수(score)를 그대로 씀"""
+    code, c, sc, name = found_item
+    names, themes, _ = dictionary
+    if not body:
+        return sc
+    head, lead, whole = norm(title), norm(body[:LEAD_CHARS]), norm(body)
+    r = REL_TITLE if _seen(head, code, name, names) else REL_LEAD if _seen(lead, code, name, names) else 0.0
+    r += REL_MAIN if c["is_main"] else 0.0
+    r += REL_MENTION * min(mentions(whole, code, name, names), REL_MENTION_FULL) / REL_MENTION_FULL
+    r += REL_THEME if any(t in k for t in themes.get(code, ()) for k in keywords) else 0.0
+    return round(min(1.0, max(REL_MIN, r)), 2)
 
 
 def mentions(text_, code, name, names):
@@ -114,16 +145,19 @@ def match_articles(engine=None, statuses=("SUMMARIZED",)):
     done = no_stock = 0
     missing = Counter()  # 사전에 없는 회사 이름 → 별칭 추가 후보
     for r in rows:
-        found = match_one(json.loads(r.companies), (r.keywords or "").split(","), dictionary, missing)
+        keywords = (r.keywords or "").split(",")
+        found = match_one(json.loads(r.companies), keywords, dictionary, missing)
         found = on_topic(r.title, r.body, found, dictionary[0])
         with engine.begin() as conn:  # 한 기사의 연결 지우기·넣기·상태 바꾸기를 한 번에
             conn.execute(text("DELETE FROM article_stock WHERE article_id = :id"), {"id": r.article_id})
-            for code, c, sc, name in found:
+            for item in found:
+                code, c, sc, name = item
                 conn.execute(text("""INSERT INTO article_stock (article_id, stock_code, is_main, sentiment, reason,
                                          match_type, relevance, matched_keywords)
                                      VALUES (:id, :code, :main, :sent, :reason, 'DIRECT', :rel, :kw)"""),
                              {"id": r.article_id, "code": code, "main": c["is_main"], "sent": c["sentiment"],
-                              "reason": reason_text(c)[:500], "rel": sc, "kw": name[:300]})
+                              "reason": reason_text(c)[:500], "rel": relevance(r.title, r.body, item, keywords, dictionary),
+                              "kw": name[:300]})
             conn.execute(text("UPDATE article SET status = :st WHERE article_id = :id"),
                          {"st": "DONE" if found else "NO_STOCK", "id": r.article_id})
         done, no_stock = done + bool(found), no_stock + (not found)
