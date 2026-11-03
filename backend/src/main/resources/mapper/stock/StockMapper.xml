@@ -41,8 +41,10 @@
         1) 순위: 이름이 딱 맞음 → 별칭이 딱 맞음 → 이름이 검색어로 시작 → 코드가 검색어로 시작 → 나머지
            (별칭 순위가 없으면 "현대차" 검색에서 이름이 "현대차"로 시작하는 현대차증권이 현대자동차보다 앞에 옴)
         2) 코드로 찾은 것끼리는 코드 순서
-        3) 같은 순위 안에서는 이름이 짧은 것부터 (삼성전자가 삼성바이오로직스·삼성스팩10호보다 앞), 그다음 이름순
-        나중에 기사가 쌓이면 "최근 많이 언급된 종목" 순서를 더할 예정
+        3) 같은 순위 안에서는 최근 7일(mentionFrom 이후) 분석이 끝난 글에 많이 나온 종목부터
+           ("삼성" 검색에서 이름 길이가 같은 삼성공조·삼성물산보다 뉴스에 자주 나오는 삼성전자가 앞)
+        4) 그다음 이름이 짧은 것부터 (삼성전자가 삼성바이오로직스·삼성스팩10호보다 앞), 그다음 이름순
+        글이 없으면 3)은 모두 0이라 예전과 같은 순서
     -->
     <select id="search" resultMap="stockResponse">
         SELECT s.stock_code, s.stock_name, s.market, s.sector
@@ -62,6 +64,12 @@
                 WHEN s.stock_name LIKE CONCAT(#{likeKeyword}, '%') THEN NULL
                 WHEN s.stock_code LIKE CONCAT(#{likeKeyword}, '%') THEN s.stock_code
             END,
+            (SELECT COUNT(*)
+             FROM article_stock m
+             JOIN article ma ON ma.article_id = m.article_id
+             WHERE m.stock_code = s.stock_code
+               AND ma.status = 'DONE'
+               AND ma.published_at >= #{mentionFrom}) DESC,
             CHAR_LENGTH(s.stock_name),
         </if>
             s.stock_name, s.stock_code

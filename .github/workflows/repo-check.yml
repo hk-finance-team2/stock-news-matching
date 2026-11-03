@@ -1,0 +1,29 @@
+# 모든 PR 공통 검사: merge 충돌을 풀다 남은 표시(<<<<<<< / >>>>>>>)가 있으면 ❌
+# 충돌을 풀 때 표시 줄을 지우지 않고 커밋하면 코드는 깨지고 문서는 내용이 섞여 보임
+# docs/git-guide.md 는 충돌을 설명하려고 일부러 넣은 예시라 뺌
+
+name: repo-check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  conflict-markers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 코드 받기
+        uses: actions/checkout@v7
+
+      - name: 충돌 표시 남았는지 검사
+        run: |
+          if git grep -n -E '^(<<<<<<<|>>>>>>>)( |$)' -- . ':!docs/git-guide.md'; then
+            echo "::error::merge 충돌 표시가 남아 있습니다. 위 파일에서 <<<<<<< / ======= / >>>>>>> 줄을 정리하세요 (docs/git-guide.md 충돌 풀기)"
+            exit 1
+          fi
+          echo "충돌 표시 없음"

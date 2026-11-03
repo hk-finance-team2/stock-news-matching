@@ -1,0 +1,51 @@
+# 프론트엔드 자동 검사 (CI)
+# frontend/ 를 바꾼 PR을 열거나 push가 더 생기면, 그리고 main에 merge되면
+# GitHub가 빈 컴퓨터를 빌려 npm ci → 코드 검사(lint) → 빌드를 돌린다. 결과는 PR 화면에 ✅/❌
+# 빌드가 되면 화면이 최소한 열린다는 뜻 (API 연결이 맞는지는 브라우저로 눌러 봐야 함: frontend/src/api/README.md)
+
+name: frontend-ci
+
+on:
+  pull_request:
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend-ci.yml"
+
+# 코드를 읽기만 함 (레포에 쓰기 권한 없음)
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: 코드 받기
+        uses: actions/checkout@v7
+
+      # Node 24 LTS (2026-11-03 백엔드1 PC에서 lint·build 확인한 버전). 내려받은 패키지를 저장해 다음엔 빨라짐
+      - name: Node 설치
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # package-lock.json 그대로 설치 (팀원 PC와 같은 버전)
+      - name: 패키지 설치
+        run: npm ci
+
+      - name: 코드 검사
+        run: npm run lint
+
+      - name: 빌드
+        run: npm run build

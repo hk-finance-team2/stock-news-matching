@@ -15,9 +15,10 @@ public interface StockMapper {
     /** keyword가 null이면 전체 개수 */
     long countSearch(@Param("keyword") String keyword, @Param("likeKeyword") String likeKeyword);
 
-    /** keyword가 null이면 전체를 이름순으로 한 페이지 */
+    /** keyword가 null이면 전체를 이름순으로 한 페이지. mentionFrom 이후 글에 많이 나온 종목을 같은 순위 안에서 먼저 */
     List<StockResponse> search(@Param("keyword") String keyword,
                                @Param("likeKeyword") String likeKeyword,
+                               @Param("mentionFrom") LocalDateTime mentionFrom,
                                @Param("limit") int limit,
                                @Param("offset") int offset);
 
