@@ -6,6 +6,7 @@ LLM 비용이 나가는 API 라 토큰이 안 맞으면 거부, 같은 종목은
 """
 import os
 import secrets
+import threading
 from datetime import datetime, timedelta
 from typing import Annotated
 
@@ -21,6 +22,18 @@ from hk_llm.steps.step8_daily import regenerate
 COOLDOWN = timedelta(minutes=10)
 
 app = FastAPI(title="hk_llm")
+
+# ponytail: 프로세스 안에서만 기억. uvicorn 1개 기준, 여러 개로 늘리면 DB 잠금(GET_LOCK)으로
+_tries, _tries_lock = {}, threading.Lock()
+
+
+def claim(code, now):
+    """이 종목의 LLM 호출 차례를 잡음. 동시 호출과 실패 뒤 재호출도 10분에 1번만"""
+    with _tries_lock:
+        if code in _tries and now - _tries[code] < COOLDOWN:
+            return False
+        _tries[code] = now
+        return True
 
 
 def stored(engine, code, day):
@@ -51,7 +64,7 @@ def regenerate_summary(stock_code: Annotated[str, Path(pattern=r"^[0-9A-Z]{6}$")
     engine, now = get_engine(), datetime.now(KST)
     day = now.date()
     row = stored(engine, stock_code, day)
-    if row and now - row[1] < COOLDOWN:
+    if (row and now - row[1] < COOLDOWN) or not claim(stock_code, now):
         return body(stock_code, day, row, False)
     try:
         made = regenerate(engine, stock_code, day)

@@ -70,6 +70,7 @@ def test_api_rules():
     from hk_llm import api
     from hk_llm.core.config import KST
 
+    api._tries.clear()
     client = TestClient(api.app)
     head = {"X-Internal-Token": "secret"}
     url = "/summaries/005930"
@@ -89,6 +90,13 @@ def test_api_rules():
         stored.side_effect = [("옛 요약", now - timedelta(minutes=11)), ("새 요약", now)]
         got = client.post(url, headers=head).json()
         assert got["regenerated"] is True and got["newsSummary"] == "새 요약" and got["generatedAt"].endswith("+09:00")
+
+        # 방금 호출했으면 저장 시각이 오래돼도, 앞 호출이 실패했어도 LLM 안 부름
+        make.reset_mock()
+        stored.side_effect = None
+        stored.return_value = ("옛 요약", now - timedelta(minutes=11))
+        assert client.post(url, headers=head).json()["regenerated"] is False
+        make.assert_not_called()
     with mock.patch.dict(os.environ, {"AI_INTERNAL_TOKEN": ""}), mock.patch.object(api, "regenerate") as make:
         assert client.post(url).status_code == 401, "서버에 토큰이 없으면 전부 거부"
         make.assert_not_called()
