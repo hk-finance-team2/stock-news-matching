@@ -21,8 +21,8 @@ import com.hkteam2.stocknews.common.TimeUtils;
  *
  * | 무엇 | 캐시 | KIS 호출 |
  * | 현재가 | 5초 | 1번 |
- * | 오늘 분봉 | 60초 | 최대 4번 (30분씩 거꾸로, 약 2시간) |
- * | 일봉 | 10분 | 1번 (최근 약 100거래일) |
+ * | 분봉 1·5·10·30분 (그날 하루) | 오늘 60초, 지난 날 1시간 | 4번 (120분씩 거꾸로) → 서버가 n분씩 묶음 |
+ * | 일·주·월·년봉 | 10분 | 1번 (최근 100개) |
  * | 일봉 1년 (급등·급락 이력) | 10분 | 3번 (140일씩 나눠서) |
  * | 최근 체결 | 5초 | 1번 (30건) |
  * KIS_ENABLED=true 일 때만 만들어짐. 꺼져 있으면 QuoteController가 503 QUOTE_DISABLED
@@ -35,9 +35,14 @@ public class QuoteService {
     static final Duration MINUTE_TTL = Duration.ofSeconds(60);
     static final Duration DAY_TTL = Duration.ofMinutes(10);
     static final Duration TICK_TTL = Duration.ofSeconds(5);
-    private static final int MINUTE_PAGES = 4;
-    private static final int PAGE_SIZE = 30;
-    private static final LocalTime MARKET_OPEN = LocalTime.of(9, 0);
+    /** 지난 날 분봉은 바뀌지 않으므로 길게 */
+    static final Duration PAST_MINUTE_TTL = Duration.ofHours(1);
+    /** 09:00~15:30 = 391분, KIS는 한 번에 120분 → 4번 (+ 여유 1번) */
+    private static final int MINUTE_PAGES = 5;
+    private static final LocalTime MARKET_OPEN = CandleAggregator.MARKET_OPEN;
+    private static final LocalTime MARKET_CLOSE = LocalTime.of(15, 30);
+    /** KIS 분봉 보관 기간 (공식 예제 주석: 최대 1년) */
+    static final int MINUTE_HISTORY_DAYS = 365;
     /** KIS 일봉은 한 번에 100개까지 → 달력 140일씩 (거래일 약 96일) */
     private static final int DAILY_CHUNK_DAYS = 140;
     /** 1년 + 앞쪽 여유 (첫날 등락률을 내려면 그 전 거래일 종가가 필요, 연휴 대비 2주) */
@@ -86,31 +91,66 @@ public class QuoteService {
         });
     }
 
-    /** 오늘 1분봉. 30분씩 거꾸로 최대 4쪽 → 오래된 것부터 정렬 */
-    public ChartResponse minuteChart(String stockCode) {
-        return cache.get("minute:" + stockCode, MINUTE_TTL, () -> {
+    /** 오늘 날짜 (한국 시간). 분봉 날짜를 고를 때 기준 */
+    public LocalDate today() {
+        return LocalDate.now(clock);
+    }
+
+    /**
+     * 분봉 차트: date 하루(09:00~15:30)의 1분봉을 받아 unit 분씩 묶음. 오래된 것부터
+     * 1분봉 원본은 날짜마다 캐시해서 5·10·30분봉으로 바꿔 봐도 KIS를 다시 부르지 않음
+     */
+    public ChartResponse minuteChart(String stockCode, ChartUnit unit, LocalDate date) {
+        List<KisCandle> oneMinute = oneMinuteCandles(stockCode, date);
+        return new ChartResponse(stockCode, unit.code(), date,
+                toCandles(CandleAggregator.aggregate(oneMinute, unit.minutes())));
+    }
+
+    /** 그날 1분봉 전부. 15:30(오늘이면 지금)부터 120분씩 거꾸로, 그날·장 시간 것만 남김 */
+    List<KisCandle> oneMinuteCandles(String stockCode, LocalDate date) {
+        boolean isToday = date.equals(today());
+        return cache.get("m1:" + stockCode + ":" + date, isToday ? MINUTE_TTL : PAST_MINUTE_TTL, () -> {
             Map<LocalDateTime, KisCandle> byTime = new TreeMap<>();   // 시각 순 + 겹치는 분 하나로
-            LocalTime until = LocalTime.now(clock);
-            for (int page = 0; page < MINUTE_PAGES; page++) {
-                List<KisCandle> rows = kis.inquireMinuteCandles(stockCode, until);
-                rows.forEach(c -> byTime.put(c.time(), c));
-                LocalDateTime earliest = rows.stream().map(KisCandle::time).min(Comparator.naturalOrder()).orElse(null);
-                if (rows.size() < PAGE_SIZE || earliest == null || !earliest.toLocalTime().isAfter(MARKET_OPEN)) {
-                    break;   // 장 시작(09:00)까지 다 받았거나 더 없음
+            LocalTime now = LocalTime.now(clock).withNano(0);
+            LocalTime until = isToday && now.isBefore(MARKET_CLOSE) ? now : MARKET_CLOSE;
+            for (int page = 0; page < MINUTE_PAGES && !until.isBefore(MARKET_OPEN); page++) {
+                List<KisCandle> rows = kis.inquireMinuteCandles(stockCode, date, until);
+                LocalDateTime earliest = null;
+                for (KisCandle c : rows) {
+                    if (earliest == null || c.time().isBefore(earliest)) {
+                        earliest = c.time();
+                    }
+                    LocalTime t = c.time().toLocalTime();
+                    // 장 시작 앞으로 넘어가면 전날 시간외 봉이 섞여 옴 → 그날 09:00~15:30만
+                    if (c.time().toLocalDate().equals(date) && !t.isBefore(MARKET_OPEN) && !t.isAfter(MARKET_CLOSE)) {
+                        byTime.put(c.time(), c);
+                    }
+                }
+                if (earliest == null || !earliest.toLocalDate().equals(date) || !earliest.toLocalTime().isAfter(MARKET_OPEN)) {
+                    break;   // 더 없음, 또는 장 시작(09:00)까지 다 받음
                 }
                 until = earliest.toLocalTime().minusMinutes(1);
             }
-            return new ChartResponse(stockCode, "MINUTE", toCandles(byTime.values()));
+            return List.copyOf(byTime.values());
         });
     }
 
-    /** 최근 약 100거래일 일봉 (달력으로 150일 전부터, KIS는 한 번에 100개까지) → 오래된 것부터 */
-    public ChartResponse dayChart(String stockCode) {
-        return cache.get("day:" + stockCode, DAY_TTL, () -> {
-            LocalDate today = LocalDate.now(clock);
-            List<KisCandle> rows = new ArrayList<>(kis.inquireDailyCandles(stockCode, today.minusDays(150), today));
+    /**
+     * 일·주·월·년봉: KIS가 묶어 준 것 최근 100개 (년봉은 상장 이후 전체). 오래된 것부터
+     * 범위는 100개를 넘지 않게: 일봉 150일, 주봉 95주, 월봉 95개월, 년봉 99년
+     */
+    public ChartResponse periodChart(String stockCode, ChartUnit unit) {
+        return cache.get(unit.code() + ":" + stockCode, DAY_TTL, () -> {
+            LocalDate today = today();
+            LocalDate from = switch (unit) {
+                case WEEK -> today.minusWeeks(95);
+                case MONTH -> today.minusMonths(95);
+                case YEAR -> today.minusYears(99);
+                default -> today.minusDays(150);
+            };
+            List<KisCandle> rows = new ArrayList<>(kis.inquirePeriodCandles(stockCode, from, today, unit.periodCode()));
             rows.sort(Comparator.comparing(KisCandle::time));
-            return new ChartResponse(stockCode, "DAY", toCandles(rows));
+            return new ChartResponse(stockCode, unit.code(), null, toCandles(rows));
         });
     }
 

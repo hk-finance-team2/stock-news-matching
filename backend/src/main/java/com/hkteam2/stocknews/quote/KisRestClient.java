@@ -25,8 +25,8 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * 주소·tr_id·입력 칸: KIS 공식 예제 domestic_stock_functions.py, 응답 칸 이름: 2026-11-03 실제 응답으로 확인
  * | 조회 | 주소 | tr_id | 한 번에 |
  * | 현재가 | /quotations/inquire-price | FHKST01010100 | 1 |
- * | 당일 분봉 | /quotations/inquire-time-itemchartprice | FHKST03010200 | 30분 (전일자 분봉은 KIS가 주지 않음) |
- * | 일·주·월봉 | /quotations/inquire-daily-itemchartprice | FHKST03010100 | 100개 |
+ * | 일별 분봉 | /quotations/inquire-time-dailychartprice | FHKST03010230 | 120분 (실전 전용, 지난 날도 됨, 최대 1년 보관) |
+ * | 일·주·월·년봉 | /quotations/inquire-daily-itemchartprice | FHKST03010100 | 100개 |
  * | 최근 체결 | /quotations/inquire-ccnl | FHKST01010300 | 30건 |
  * 모든 응답: rt_cd "0"이면 성공, 아니면 msg_cd·msg1 에 이유. 숫자도 문자열로 옴
  * 모든 호출은 KisRateLimiter 줄을 서고, EGW00201(초당 초과)이면 1초 쉬고 2번까지 다시 시도
@@ -110,15 +110,17 @@ public class KisRestClient {
     }
 
     /**
-     * 당일 분봉 한 쪽 (until 시각부터 거꾸로 최대 30분). 최신이 앞에 옴
-     * until에 미래 시각을 넣으면 지금까지의 최신 분봉 (공식 예제 주석)
+     * 그날 분봉 한 쪽 (date의 until 시각부터 거꾸로 최대 120분). 최신이 앞에 옴
+     * 응답 칸은 당일 분봉(FHKST03010200)과 같음 (2026-11-03 실제 응답으로 확인)
+     * 주의: 장 시작 앞으로 넘어가면 전날 시간외 봉(예: 18:10)까지 섞여 옴 → 부르는 쪽에서 날짜·장 시간으로 거름
      */
-    public List<KisCandle> inquireMinuteCandles(String stockCode, LocalTime until) {
+    public List<KisCandle> inquireMinuteCandles(String stockCode, LocalDate date, LocalTime until) {
         Map<String, String> params = stockParams(stockCode);
-        params.put("FID_ETC_CLS_CODE", "");
         params.put("FID_INPUT_HOUR_1", until.format(HMS));
-        params.put("FID_PW_DATA_INCU_YN", "N");
-        MinuteResponse res = get("/inquire-time-itemchartprice", "FHKST03010200", params, MinuteResponse.class);
+        params.put("FID_INPUT_DATE_1", date.format(YMD));
+        params.put("FID_PW_DATA_INCU_YN", "Y");   // 과거 데이터 포함
+        params.put("FID_FAKE_TICK_INCU_YN", "");   // 허봉(거래 없는 분) 포함 여부: 기본값
+        MinuteResponse res = get("/inquire-time-dailychartprice", "FHKST03010230", params, MinuteResponse.class);
         check(res == null ? null : res.rtCd(), res == null ? null : res.msgCd(), res == null ? null : res.msg1());
         List<KisCandle> out = new ArrayList<>();
         for (MinuteRow r : nullToEmpty(res.rows())) {
@@ -133,10 +135,15 @@ public class KisRestClient {
 
     /** 일봉 (from~to, 최대 100개). 수정주가(액면분할 등을 반영한 가격). 최신이 앞에 옴 */
     public List<KisCandle> inquireDailyCandles(String stockCode, LocalDate from, LocalDate to) {
+        return inquirePeriodCandles(stockCode, from, to, "D");
+    }
+
+    /** 기간별 봉 (from~to, 최대 100개). periodCode D 일봉, W 주봉, M 월봉, Y 년봉. 수정주가. 최신이 앞에 옴 */
+    public List<KisCandle> inquirePeriodCandles(String stockCode, LocalDate from, LocalDate to, String periodCode) {
         Map<String, String> params = stockParams(stockCode);
         params.put("FID_INPUT_DATE_1", from.format(YMD));
         params.put("FID_INPUT_DATE_2", to.format(YMD));
-        params.put("FID_PERIOD_DIV_CODE", "D");
+        params.put("FID_PERIOD_DIV_CODE", periodCode);
         params.put("FID_ORG_ADJ_PRC", "0");   // 0 수정주가, 1 원주가
         DailyResponse res = get("/inquire-daily-itemchartprice", "FHKST03010100", params, DailyResponse.class);
         check(res == null ? null : res.rtCd(), res == null ? null : res.msgCd(), res == null ? null : res.msg1());
