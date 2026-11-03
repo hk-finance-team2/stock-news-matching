@@ -227,6 +227,7 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 | 🔓 | GET | `/api/quotes/{stockCode}/recordings` | 다시 볼 수 있는 날 (녹화된 날짜·체결 수) |
 | 🔓 | GET (SSE) | `/api/quotes/{stockCode}/replay?date=2026-11-03&from=09:00&speed=10` | **다시 보기**. 이벤트 `start` → `replay`(체결마다) → `end`. 배속 1·5·10·30·60 |
 | 🔓 | GET | `/api/quotes/check?date=` | 수집 점검: 종목별 저장 체결량 ÷ 실제 거래량(누적 거래량 차이) = `coverageRate`, 지연 ms |
+| 🔓 | GET | `/api/quotes/{stockCode}/big-moves?period=1y&threshold=5` | **과거 급등·급락 이력 (F-17)**. 하루 등락률이 ±`threshold`% 이상인 날(최신부터) + 그날 이 종목에 연결된 글. `period` `3m`·`6m`·`1y`(기본), `threshold` 3~30(기본 5) |
 
 현재가 한 건:
 
@@ -240,6 +241,16 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 - `live`: `true`면 웹소켓 실시간 값(`fetchedAt` = 마지막 체결 시각), `false`면 몇 초마다 조회한 값
 - 방송(SSE)은 브라우저 `EventSource`로 듣기: `new EventSource('/api/quotes/stream?codes=005930')` → `addEventListener('quote', e => JSON.parse(e.data))`. 끊기면 브라우저가 알아서 다시 연결. 화면을 떠나면 `close()`
 - 생중계 자리: 보는 사람이 있는 종목에 KIS 구독을 돌려씀 (공식 41건, 신규 키는 처음 3일 동안 3건). 자리가 없으면 그 종목은 5초마다 조회값으로 방송
+- 급등·급락 이력 한 날:
+
+  ```json
+  { "date": "2026-10-29", "close": 61200, "changeAmount": 4300, "changeRate": 7.56, "direction": "UP", "volume": 31200000,
+    "articleCount": 4,
+    "articles": [ { "articleId": 579, "title": "...", "sourceType": "NEWS", "press": "...",
+                    "publishedAt": "2026-10-29T10:00:00+09:00", "relevance": 92 } ] }
+  ```
+
+  응답 전체는 `{ stockCode, period, threshold, from, to, items: [위 모양] }`. 등락률은 KIS 일봉(수정주가) 종가로 `(그날 종가 − 전날 종가) ÷ 전날 종가`. 글은 **그날 0시~24시 작성**, `DONE`만, 관련도 높은 순 3개(`relevance`는 %, 없으면 `null`이고 뒤로)와 전체 수 `articleCount`. AI가 기사를 모으기 전 날짜는 글이 없는 게 정상. 일봉은 KIS 3번 조회 + 10분 캐시
 - 오류: `503 QUOTE_DISABLED`(시세 꺼짐), `429 QUOTE_BUSY`(KIS 초당 호출 초과), `429 REPLAY_BUSY`(다시 보기 동시 5개 초과), `502 QUOTE_UPSTREAM_ERROR`·`QUOTE_UNREACHABLE`(KIS 오류·연결 실패)
 - 개발 중 확인: `http://localhost:8080/demo.html` 종목 화면의 "시세" 칸
 
