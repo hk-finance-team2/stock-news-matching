@@ -1,0 +1,1021 @@
+<!DOCTYPE html>
+<!--
+  백엔드 확인용 테스트 화면 (진짜 프론트엔드가 아님)
+  - 팀 통합 목업(팀장안 + 왼쪽 메뉴, 2026-10-29)의 디자인에 실제 백엔드 API를 붙인 것
+  - 서버를 켜고 http://localhost:8080/demo.html 로 열기. 같은 주소(8080)라 CORS 설정이 필요 없음
+  - 진짜 서비스 화면은 frontend/ (React). 이 파일은 API가 잘 도는지 직접 눌러 보는 용도
+  - 설치·빌드 없음: HTML + 순수 자바스크립트 한 파일. 화면 이동은 주소의 # 뒤로 구분 (#/, #/search?q=…)
+-->
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>뉴스×종목 (백엔드 확인용)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #F6F7F9; --card: #FFFFFF; --line: #E4E7EC; --line-soft: #F2F4F7; --input: #D0D5DD;
+  --text: #101828; --text-2: #344054; --text-3: #475467; --muted: #5D6679;
+  --accent: #0E7490; --accent-soft: #ECFEFF; --nav: #0F1E3D; --nav-hover: #243A66; --nav-on: #1F4FD8;
+  --news-bg: #E0F2FE; --news: #075985; --sns-bg: #FEF3C7; --sns: #92400E;
+  --pos: #027A48; --neg: #B42318;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font-family: 'Noto Sans KR', system-ui, sans-serif; font-variant-numeric: tabular-nums; }
+a { color: var(--text); text-decoration: none; }
+a:hover { color: var(--accent); }
+button, input, select { font-family: inherit; }
+button { cursor: pointer; }
+
+.demo-bar { background: #FFF7ED; color: #9A3412; font-size: 13px; padding: 6px 16px; border-bottom: 1px solid #FED7AA; }
+.demo-bar code { background: #FFEDD5; padding: 1px 5px; border-radius: 4px; }
+.layout { min-height: 100vh; display: flex; flex-wrap: wrap; align-items: stretch; }
+
+/* 왼쪽 메뉴 (접기·펴기) */
+.side { flex: 0 0 200px; max-width: 100%; background: var(--nav); color: #FFFFFF; padding: 20px 12px; }
+.side.collapsed { flex-basis: 64px; padding: 20px 10px; }
+.side-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 0 12px 12px; }
+.side-head b { font-size: 17px; white-space: nowrap; }
+.side.collapsed .side-head { padding: 0; }
+.side.collapsed .side-head b, .side.collapsed .side-link { display: none; }
+.icon-btn { width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; border: none; border-radius: 8px; background: transparent; color: #FFFFFF; }
+.icon-btn:hover { background: var(--nav-hover); }
+.side-link { display: flex; align-items: center; min-height: 44px; padding: 0 12px; color: #FFFFFF; border-radius: 8px; margin-bottom: 2px; }
+.side-link:hover { background: var(--nav-hover); color: #FFFFFF; }
+.side-link.on { background: var(--nav-on); font-weight: 700; }
+.side-link.login { margin-top: 40px; }
+
+.page { flex: 999 1 640px; min-width: 0; }
+header.top { background: var(--card); border-bottom: 1px solid var(--line); }
+.top-in { max-width: 1280px; margin: 0 auto; padding: 14px 24px; display: flex; flex-wrap: wrap; align-items: center; gap: 16px 28px; }
+.logo { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; }
+.logo span { color: var(--accent); }
+.top-nav { display: flex; gap: 4px; flex-wrap: wrap; }
+.top-nav a { padding: 10px 14px; border-radius: 8px; font-size: 15px; font-weight: 500; color: var(--text-2); }
+.top-nav a.on { font-weight: 700; background: var(--accent-soft); color: var(--accent); }
+form.search { flex: 1 1 280px; display: flex; gap: 8px; align-items: center; }
+form.search input { flex: 1 1 auto; min-width: 0; height: 44px; padding: 0 14px; border: 1px solid var(--input); border-radius: 10px; font-size: 15px; background: #F9FAFB; color: var(--text); }
+select { height: 44px; padding: 0 10px; border: 1px solid var(--input); border-radius: 10px; font-size: 14px; background: #FFFFFF; color: var(--text-2); }
+.btn-line { height: 44px; display: inline-flex; align-items: center; padding: 0 16px; border: 1px solid var(--input); border-radius: 10px; font-size: 14px; font-weight: 500; color: var(--text-2); background: #FFFFFF; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+.wrap { max-width: 1280px; margin: 0 auto; padding: 20px 24px 48px; }
+.title-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 18px; }
+.title-row h1 { margin: 0; font-size: 26px; letter-spacing: -0.02em; }
+.status { margin: 0; font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: #12B76A; display: inline-block; }
+.dot.off { background: #98A2B3; } .dot.bad { background: #F04438; }
+.cols { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
+main.list { flex: 999 1 600px; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+aside.side-panel { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.seg { display: flex; gap: 4px; }
+.seg button { height: 40px; padding: 0 14px; border-radius: 8px; border: 1px solid transparent; background: transparent; color: var(--text-3); font-size: 14px; font-weight: 500; }
+.seg button[aria-pressed="true"] { border-color: var(--text); background: var(--text); color: #FFFFFF; font-weight: 700; }
+.tool-right { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.tool-right label { font-size: 13px; color: var(--text-3); }
+.tool-right select { height: 40px; border-radius: 8px; padding: 0 8px; }
+
+article.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; }
+.meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.badge { padding: 2px 8px; border-radius: 6px; font-weight: 700; font-size: 12px; }
+.badge.news { background: var(--news-bg); color: var(--news); }
+.badge.sns { background: var(--sns-bg); color: var(--sns); }
+.unverified { font-size: 12px; color: var(--sns); }
+article.card h2 { margin: 0; font-size: 18px; line-height: 1.45; letter-spacing: -0.01em; }
+article.card p { margin: 0; font-size: 14px; line-height: 1.6; color: var(--text-3); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; font-size: 13px; }
+.chip.direct { border: 1px solid var(--text); color: var(--text); }
+.chip.direct b { font-weight: 700; }
+.chip.indirect { border: 1px dashed #98A2B3; color: var(--text-2); }
+.chip.indirect b { font-weight: 500; }
+.chip.plain { border: 1px solid var(--line); color: var(--text-2); }
+.chip small { color: var(--text-3); font-size: 13px; }
+.none { font-size: 13px; color: var(--muted); padding: 4px 0; }
+.more { height: 48px; border: 1px solid var(--input); border-radius: 12px; background: #FFFFFF; font-size: 15px; font-weight: 500; color: var(--text-2); }
+.more:disabled { color: #98A2B3; cursor: default; }
+.empty, .error { background: var(--card); border: 1px dashed var(--input); border-radius: 12px; padding: 28px 20px; text-align: center; color: var(--muted); font-size: 14px; line-height: 1.7; }
+.error { border-color: #FDA29B; color: var(--neg); }
+
+section.box { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; }
+.box-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; }
+.box-head h2 { margin: 0; font-size: 17px; }
+.box-head span, .box-head a { font-size: 12px; color: var(--muted); }
+.box-head a { font-size: 13px; color: var(--accent); }
+ol.ranks { list-style: none; margin: 0; padding: 0; }
+ol.ranks li { border-top: 1px solid var(--line-soft); }
+ol.ranks a { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 12px 0; }
+.rank-no { font-weight: 700; color: var(--accent); font-size: 15px; }
+.rank-name { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rank-name b { font-size: 15px; }
+.rank-name small { font-size: 12px; color: var(--muted); }
+.rank-cnt { font-size: 15px; font-weight: 700; color: var(--text-2); }
+.box p { margin: 0 0 14px; font-size: 14px; line-height: 1.6; color: var(--text-3); }
+.btn-main { display: flex; align-items: center; justify-content: center; height: 44px; border-radius: 10px; background: var(--accent); color: #FFFFFF; font-size: 15px; font-weight: 700; border: none; width: 100%; }
+.btn-main:hover { color: #FFFFFF; }
+.notice { margin: 0; font-size: 12px; line-height: 1.6; color: var(--muted); }
+.result-stocks { display: flex; flex-wrap: wrap; gap: 8px; }
+h3.sec { margin: 8px 0 0; font-size: 16px; }
+
+div.list { display: flex; flex-direction: column; gap: 10px; }
+
+/* 2단계: 글 상세 */
+.back { display: inline-block; margin-bottom: 12px; font-size: 14px; color: var(--accent); }
+.detail h1 { margin: 6px 0 10px; font-size: 24px; line-height: 1.4; letter-spacing: -0.02em; }
+.ai-sum { background: #F0F9FF; border: 1px solid #BAE6FD; border-radius: 10px; padding: 14px 16px; font-size: 15px; line-height: 1.7; color: var(--text-2); white-space: pre-line; }
+.ai-sum b { display: block; font-size: 13px; color: var(--news); margin-bottom: 4px; }
+.kw { display: inline-block; padding: 3px 9px; border-radius: 999px; background: var(--line-soft); color: var(--text-2); font-size: 13px; margin: 0 4px 4px 0; }
+.senti { font-size: 13px; font-weight: 700; }
+.senti.POSITIVE { color: var(--pos); } .senti.NEGATIVE { color: var(--neg); } .senti.NEUTRAL { color: var(--text-3); }
+.stock-row { border-top: 1px solid var(--line-soft); padding: 14px 0; display: flex; flex-direction: column; gap: 8px; }
+.stock-row:first-of-type { border-top: none; }
+.stock-row-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.stock-row-head a { font-size: 16px; font-weight: 700; }
+.bar { height: 8px; background: var(--line-soft); border-radius: 999px; overflow: hidden; flex: 1 1 120px; max-width: 220px; }
+.bar i { display: block; height: 100%; background: var(--accent); }
+.reason { font-size: 14px; line-height: 1.6; color: var(--text-2); margin: 0; }
+blockquote.evidence { margin: 0; padding: 8px 12px; border-left: 3px solid var(--accent); background: #F9FAFB; font-size: 13px; line-height: 1.6; color: var(--text-3); }
+.tag { font-size: 12px; padding: 2px 7px; border-radius: 6px; background: var(--line-soft); color: var(--text-3); }
+.sns-mini { border-top: 1px solid var(--line-soft); padding: 10px 0; font-size: 14px; }
+.sns-mini:first-child { border-top: none; }
+.sns-mini small { color: var(--muted); }
+
+/* 3단계: 종목별 조회 */
+.stock-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-bottom: 18px; }
+.stock-head h1 { margin: 0; font-size: 26px; }
+.stock-head .code { font-size: 14px; color: var(--muted); }
+.btn-sm { height: 36px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--input); background: #FFFFFF; font-size: 14px; color: var(--text-2); }
+.btn-sm.primary { background: var(--accent); border-color: var(--accent); color: #FFFFFF; font-weight: 700; }
+.btn-sm.danger { color: var(--neg); border-color: #FDA29B; }
+.senti-bar { display: flex; height: 14px; border-radius: 999px; overflow: hidden; background: var(--line-soft); margin: 8px 0; }
+.senti-bar i { display: block; height: 100%; }
+.senti-bar .p { background: #12B76A; } .senti-bar .n { background: #F04438; } .senti-bar .u { background: #98A2B3; }
+.legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 13px; color: var(--text-3); }
+.chart { display: flex; align-items: flex-end; gap: 3px; height: 160px; padding-top: 8px; border-bottom: 1px solid var(--line); }
+.chart .col { flex: 1 1 0; display: flex; flex-direction: column-reverse; min-width: 0; height: 100%; }
+.chart .col i { display: block; width: 100%; }
+.chart .col .news { background: #0E7490; } .chart .col .sns { background: #F59E0B; }
+.chart-x { display: flex; gap: 3px; font-size: 10px; color: var(--muted); margin-top: 4px; }
+.chart-x span { flex: 1 1 0; text-align: center; min-width: 0; overflow: hidden; white-space: nowrap; }
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+.pick { display: flex; gap: 8px; margin-bottom: 8px; }
+.pick input { flex: 1 1 auto; min-width: 0; height: 40px; padding: 0 12px; border: 1px solid var(--input); border-radius: 8px; font-size: 14px; }
+
+/* 종목 토론 */
+.post { border-top: 1px solid var(--line-soft); padding: 12px 0; }
+.post:first-child { border-top: none; }
+.post-title { background: none; border: none; padding: 0; font-size: 15px; font-weight: 700; color: var(--text); text-align: left; }
+.post-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.post-body { margin-top: 10px; padding: 12px; background: #F9FAFB; border-radius: 8px; font-size: 14px; line-height: 1.7; white-space: pre-wrap; }
+.comment { font-size: 14px; padding: 8px 0; border-top: 1px dashed var(--line); display: flex; justify-content: space-between; gap: 8px; }
+.comment small { color: var(--muted); }
+textarea, .form input { width: 100%; padding: 10px 12px; border: 1px solid var(--input); border-radius: 8px; font-size: 14px; font-family: inherit; }
+textarea { min-height: 70px; resize: vertical; }
+.form { display: flex; flex-direction: column; gap: 8px; }
+.row-gap { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.msg { font-size: 13px; color: var(--neg); min-height: 18px; }
+.msg.ok { color: var(--pos); }
+
+/* 4단계: 로그인·관심 종목 */
+.auth-box { max-width: 420px; margin: 24px auto; }
+table.watch { width: 100%; border-collapse: collapse; font-size: 14px; }
+table.watch th, table.watch td { text-align: left; padding: 10px 8px; border-top: 1px solid var(--line-soft); }
+table.watch th { color: var(--muted); font-weight: 500; font-size: 13px; border-top: none; }
+.suggest { border: 1px solid var(--line); border-radius: 8px; background: #FFFFFF; max-height: 220px; overflow: auto; }
+.suggest button { display: block; width: 100%; text-align: left; padding: 8px 12px; border: none; background: none; font-size: 14px; }
+.suggest button:hover { background: var(--accent-soft); }
+</style>
+</head>
+<body>
+<div class="demo-bar">백엔드 확인용 테스트 화면입니다. 진짜 서비스 화면은 <code>frontend/</code>(React)이고, 이 화면은 API가 잘 도는지 직접 눌러 보는 용도예요.</div>
+<div class="layout">
+  <nav class="side" id="side" aria-label="주 메뉴">
+    <div class="side-head">
+      <b>Stock Insight</b>
+      <button type="button" class="icon-btn" id="sideToggle" aria-label="메뉴 접기" aria-expanded="true" title="메뉴 접기">
+        <svg aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3.5 5.5h13M3.5 10h13M3.5 14.5h13"/></svg>
+      </button>
+    </div>
+    <a class="side-link" data-nav="main" href="#/">뉴스·SNS</a>
+    <a class="side-link" data-nav="stock" href="#/stock">종목</a>
+    <a class="side-link" data-nav="watch" href="#/watchlist">관심 종목</a>
+    <a class="side-link login" id="sideAuth" href="#/login">로그인</a>
+  </nav>
+  <div class="page">
+    <header class="top">
+      <div class="top-in">
+        <a class="logo" href="#/">뉴스<span>×</span>종목</a>
+        <nav class="top-nav" aria-label="주 메뉴">
+          <a data-nav="main" href="#/">뉴스·SNS</a>
+          <a data-nav="stock" href="#/stock">종목</a>
+          <a data-nav="watch" href="#/watchlist">관심 종목</a>
+        </nav>
+        <form class="search" role="search" id="searchForm">
+          <label for="q" class="sr-only">통합 검색</label>
+          <input id="q" type="search" maxlength="50" placeholder="종목명·코드·별칭, 기사 키워드 검색">
+          <select id="qPeriod" aria-label="검색 기간">
+            <option value="today">오늘</option><option value="7d">7일</option><option value="30d">30일</option>
+          </select>
+        </form>
+        <a class="btn-line" id="authBtn" href="#/login">로그인</a>
+      </div>
+    </header>
+    <div class="wrap" id="view"></div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ===== 공통 도구 =====
+
+/** 브라우저 저장소. 시크릿 창 등에서 막혀도 화면이 깨지지 않게 try로 감쌈 */
+var store = {
+  get: function (k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } },
+  set: function (k, v) { try { window.localStorage.setItem(k, v); } catch (e) { /* 무시 */ } },
+  del: function (k) { try { window.localStorage.removeItem(k); } catch (e) { /* 무시 */ } }
+};
+var TOKEN_KEY = 'demo-access-token';
+
+/**
+ * API 부르기. 실패하면 백엔드 공통 오류 { code, message }를 담아 throw
+ * 로그인 토큰이 있으면 Authorization: Bearer 를 붙임 (docs/api.md 2절)
+ */
+async function api(path, options) {
+  options = options || {};
+  var headers = { 'Accept': 'application/json' };
+  var token = store.get(TOKEN_KEY);
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  if (options.body !== undefined) headers['Content-Type'] = 'application/json';
+  var res = await fetch(path, {
+    method: options.method || 'GET',
+    headers: headers,
+    body: options.body === undefined ? undefined : JSON.stringify(options.body)
+  });
+  if (res.status === 401 && token) { store.del(TOKEN_KEY); store.del('demo-login-id'); updateAuthUi(); }   // 만료된 토큰은 지움 (api.md 2절 4번)
+  var text = await res.text();
+  var data = text ? JSON.parse(text) : null;
+  if (!res.ok) {
+    var err = new Error((data && data.message) || ('HTTP ' + res.status));
+    err.code = data && data.code; err.status = res.status;
+    throw err;
+  }
+  return data;
+}
+
+/** 주소 뒤 조건 만들기. 빈 값은 뺌 */
+function qs(params) {
+  var parts = [];
+  Object.keys(params).forEach(function (k) {
+    var v = params[k];
+    if (v !== undefined && v !== null && v !== '') parts.push(encodeURIComponent(k) + '=' + encodeURIComponent(v));
+  });
+  return parts.length ? '?' + parts.join('&') : '';
+}
+
+/**
+ * 글자를 HTML에 넣기 전에 특수 문자를 바꿈. 기사 제목·요약은 바깥에서 온 글이라
+ * 그대로 넣으면 제목 속 <script> 같은 글자가 코드로 실행될 수 있음 (XSS)
+ */
+function esc(s) {
+  return String(s === null || s === undefined ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function pad(n) { return n < 10 ? '0' + n : '' + n; }
+
+/** 2026-11-02T09:04:19+09:00 → 오늘이면 09:04, 아니면 11/02 09:04 */
+function fmtTime(iso) {
+  if (!iso) return '';
+  var d = new Date(iso), now = new Date();
+  var hm = pad(d.getHours()) + ':' + pad(d.getMinutes());
+  return d.toDateString() === now.toDateString() ? hm : (pad(d.getMonth() + 1) + '/' + pad(d.getDate()) + ' ' + hm);
+}
+
+/** 몇 분 전 / 몇 시간 전 / 날짜 */
+function ago(iso) {
+  if (!iso) return null;
+  var min = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  if (min < 1) return '방금';
+  if (min < 60) return min + '분 전';
+  if (min < 60 * 24) return Math.floor(min / 60) + '시간 전';
+  return fmtTime(iso);
+}
+
+var view = document.getElementById('view');
+
+function showError(target, e) {
+  // e.status가 있으면 서버가 오류로 답한 것(404 등), 없으면 서버에 닿지 못한 것
+  target.innerHTML = '<div class="error">불러오지 못했어요: ' + esc(e.message)
+    + (e.code ? ' (' + esc(e.code) + ')' : '')
+    + (e.status ? '' : '<br>서버가 켜져 있는지 확인하세요 (<code>./gradlew bootRun</code> 또는 <code>docker compose up -d</code>)')
+    + '</div>';
+}
+
+// ===== 글 카드 (목록·검색에서 같이 씀) =====
+
+function chipHtml(s) {
+  var rel = s.relevance === null || s.relevance === undefined ? '' : s.relevance + '%';
+  var href = '#/stock/' + encodeURIComponent(s.stockCode);
+  if (s.matchType === 'DIRECT') {
+    return '<a class="chip direct" href="' + href + '"><b>' + esc(s.stockName) + '</b><small>직접 ' + rel + '</small></a>';
+  }
+  if (s.matchType === 'INDIRECT') {
+    return '<a class="chip indirect" href="' + href + '"><b>' + esc(s.stockName) + '</b><small>간접 ' + rel + '</small></a>';
+  }
+  // AI가 직접/간접·관련도를 아직 안 채운 경우 (api.md: null이면 칩 모양·% 생략)
+  return '<a class="chip plain" href="' + href + '"><b>' + esc(s.stockName) + '</b>' + (rel ? '<small>' + rel + '</small>' : '') + '</a>';
+}
+
+function cardHtml(a) {
+  var isSns = a.sourceType === 'SNS';
+  var badge = isSns
+    ? '<span class="badge sns">SNS</span><span class="unverified">확인되지 않은 정보</span>'
+    : '<span class="badge news">뉴스</span>';
+  var stocks = a.stocks && a.stocks.length
+    ? a.stocks.map(chipHtml).join('')
+    : '<span class="none">관련 종목 없음</span>';
+  return '<article class="card">'
+    + '<div class="meta">' + badge + '<span>' + esc(a.press || a.channel) + '</span><span aria-hidden="true">·</span>'
+    + '<span>' + esc(fmtTime(a.publishedAt)) + '</span></div>'
+    + '<h2><a href="#/article/' + encodeURIComponent(a.articleId) + '">' + esc(a.title) + '</a></h2>'
+    + '<p>' + esc(a.summary) + '</p>'
+    + '<div class="chips">' + stocks + '</div>'
+    + '</article>';
+}
+
+// ===== 홈: 뉴스·SNS 목록 (F-10) + 오늘의 이슈 종목 (F-12) + 관심 종목 + 데이터 상태 (F-16) =====
+
+var home = { source: '', sort: 'latest', minRelevance: '', page: 1, size: 10, items: [], total: 0 };
+
+function renderHome() {
+  view.innerHTML =
+    '<div class="title-row"><h1>오늘의 뉴스·SNS</h1><p class="status" id="status"><span class="dot off"></span>갱신 시각 불러오는 중…</p></div>'
+    + '<div class="cols">'
+    + '<main class="list">'
+    + '<div class="toolbar">'
+    + '<div class="seg" role="group" aria-label="출처" id="srcTabs">'
+    + segBtn('source', '', '전체') + segBtn('source', 'NEWS', '뉴스') + segBtn('source', 'SNS', 'SNS')
+    + '</div>'
+    + '<div class="tool-right"><label for="rel">관련도</label>'
+    + '<select id="rel"><option value="">전체</option><option value="50">50% 이상</option><option value="80">80% 이상</option></select>'
+    + '<div class="seg" role="group" aria-label="정렬" id="sortTabs" style="margin-left:4px">'
+    + segBtn('sort', 'latest', '최신순') + segBtn('sort', 'relevance', '관련도순')
+    + '</div></div></div>'
+    + '<div id="articles"></div>'
+    + '<button type="button" class="more" id="more" hidden>더 보기</button>'
+    + '</main>'
+    + '<aside class="side-panel">'
+    + '<section class="box" aria-labelledby="rank-h"><div class="box-head"><h2 id="rank-h">오늘의 이슈 종목</h2><span>매칭 기사 수</span></div><ol class="ranks" id="ranks"></ol></section>'
+    + '<section class="box" aria-labelledby="watch-h"><div class="box-head"><h2 id="watch-h">관심 종목</h2><a href="#/watchlist">전체 보기</a></div><div id="watch"></div></section>'
+    + '<p class="notice">요약·연결 이유는 AI가 생성해 틀릴 수 있어요. 원문은 언론사 링크로 확인하세요. SNS 글은 참고용입니다.</p>'
+    + '</aside></div>';
+
+  document.getElementById('rel').value = home.minRelevance;
+  view.querySelectorAll('.seg button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      home[b.dataset.key] = b.dataset.val;
+      syncSeg();
+      loadArticles(true);
+    });
+  });
+  document.getElementById('rel').addEventListener('change', function (e) {
+    home.minRelevance = e.target.value;
+    loadArticles(true);
+  });
+  document.getElementById('more').addEventListener('click', function () { loadArticles(false); });
+  syncSeg();
+  loadArticles(true);
+  loadIssues();
+  loadStatus();
+  loadWatchBox();
+}
+
+function segBtn(key, val, label) {
+  return '<button type="button" data-key="' + key + '" data-val="' + val + '">' + label + '</button>';
+}
+
+function syncSeg() {
+  view.querySelectorAll('.seg button').forEach(function (b) {
+    b.setAttribute('aria-pressed', home[b.dataset.key] === b.dataset.val ? 'true' : 'false');
+  });
+}
+
+/** 글 목록. reset이면 1쪽부터 다시, 아니면 다음 쪽을 아래에 붙임 (더 보기) */
+async function loadArticles(reset) {
+  var box = document.getElementById('articles'), more = document.getElementById('more');
+  if (reset) { home.page = 1; home.items = []; box.innerHTML = '<div class="empty">불러오는 중…</div>'; }
+  more.disabled = true;
+  try {
+    var data = await api('/api/articles' + qs({
+      source: home.source, sort: home.sort, minRelevance: home.minRelevance, page: home.page, size: home.size
+    }));
+    home.items = home.items.concat(data.items);
+    home.total = data.totalCount;
+    home.page += 1;
+    box.innerHTML = home.items.length
+      ? home.items.map(cardHtml).join('')
+      : '<div class="empty">조건에 맞는 글이 없어요.<br>개발 PC라면 예시 기사를 켜 보세요 (docs/setup.md 2절)</div>';
+    more.hidden = home.items.length >= home.total;
+    more.disabled = false;
+    more.textContent = '더 보기 (' + home.items.length + ' / ' + home.total + ')';
+  } catch (e) {
+    showError(box, e);
+    more.hidden = true;
+  }
+}
+
+async function loadIssues() {
+  var ol = document.getElementById('ranks');
+  try {
+    var data = await api('/api/stocks/issues' + qs({ limit: 5 }));
+    if (!data.items.length) { ol.innerHTML = '<li class="none" style="padding:12px 0">오늘 연결된 글이 아직 없어요</li>'; return; }
+    ol.innerHTML = data.items.map(function (r) {
+      var sub = r.avgRelevance === null ? '최근 ' + fmtTime(r.lastPublishedAt) : '평균 관련도 ' + r.avgRelevance + '% · 최근 ' + fmtTime(r.lastPublishedAt);
+      return '<li><a href="#/stock/' + encodeURIComponent(r.stockCode) + '">'
+        + '<span class="rank-no">' + r.rank + '</span>'
+        + '<span class="rank-name"><b>' + esc(r.stockName) + '</b><small>' + esc(sub) + '</small></span>'
+        + '<span class="rank-cnt">' + r.articleCount + '건</span></a></li>';
+    }).join('');
+  } catch (e) {
+    ol.innerHTML = '<li class="none" style="padding:12px 0">불러오지 못했어요: ' + esc(e.message) + '</li>';
+  }
+}
+
+async function loadStatus() {
+  var el = document.getElementById('status');
+  try {
+    var s = await api('/api/status');
+    var parts = [];
+    if (s.newsCollectedAt) parts.push('뉴스 ' + ago(s.newsCollectedAt));
+    if (s.snsCollectedAt) parts.push('SNS ' + ago(s.snsCollectedAt));
+    if (s.summaryGeneratedAt) parts.push('요약 ' + ago(s.summaryGeneratedAt));
+    var dot = 'dot', extra = '';
+    if (s.lastRun && s.lastRun.status === 'RUNNING') extra = ' · 수집 중';
+    if (s.lastRun && s.lastRun.status === 'FAILED') { dot = 'dot bad'; extra = ' · 마지막 수집 실패'; }
+    if (!parts.length) { dot = 'dot off'; parts.push('아직 수집 기록이 없어요'); }
+    el.innerHTML = '<span class="' + dot + '"></span>' + esc(parts.join(' · ') + extra);
+  } catch (e) {
+    el.innerHTML = '<span class="dot bad"></span>갱신 시각을 불러오지 못했어요';
+  }
+}
+
+/** 관심 종목 칸: 로그인했으면 내 관심 종목, 아니면 로그인 안내 */
+async function loadWatchBox() {
+  var box = document.getElementById('watch');
+  if (!store.get(TOKEN_KEY)) {
+    box.innerHTML = '<p>로그인하면 관심 종목의 새 기사를 여기서 바로 볼 수 있어요.</p><a class="btn-main" href="#/login">로그인</a>';
+    return;
+  }
+  try {
+    var data = await api('/api/watchlist');
+    var items = data.items || data;
+    if (!items.length) { box.innerHTML = '<p>아직 관심 종목이 없어요. 종목 화면에서 추가할 수 있어요.</p>'; return; }
+    box.innerHTML = '<ol class="ranks">' + items.slice(0, 5).map(function (w) {
+      return '<li><a href="#/stock/' + encodeURIComponent(w.stockCode) + '"><span class="rank-no">·</span>'
+        + '<span class="rank-name"><b>' + esc(w.stockName) + '</b><small>최근 매칭 ' + esc(w.lastMatchedAt ? fmtTime(w.lastMatchedAt) : '없음') + '</small></span>'
+        + '<span class="rank-cnt">오늘 ' + w.todayArticleCount + '건</span></a></li>';
+    }).join('') + '</ol>';
+  } catch (e) {
+    box.innerHTML = '<p>로그인이 만료됐어요. 다시 로그인해 주세요.</p><a class="btn-main" href="#/login">로그인</a>';
+  }
+}
+
+// ===== 통합 검색 (F-13) =====
+
+var search = { q: '', period: 'today', page: 1, size: 10, items: [], total: 0 };
+
+function renderSearch(params) {
+  search.q = params.get('q') || '';
+  search.period = params.get('period') || 'today';
+  document.getElementById('q').value = search.q;
+  document.getElementById('qPeriod').value = search.period;
+  var label = { today: '오늘', '7d': '7일', '30d': '30일' }[search.period] || search.period;
+  view.innerHTML = '<div class="title-row"><h1>“' + esc(search.q) + '” 검색 결과</h1><p class="status">기간: ' + esc(label) + '</p></div>'
+    + '<main class="list" style="max-width:900px">'
+    + '<h3 class="sec">종목</h3><div id="sStocks" class="result-stocks"></div>'
+    + '<h3 class="sec">글</h3><div id="sArticles"></div>'
+    + '<button type="button" class="more" id="sMore" hidden>더 보기</button></main>';
+  document.getElementById('sMore').addEventListener('click', function () { loadSearch(false); });
+  loadSearch(true);
+}
+
+async function loadSearch(reset) {
+  var sBox = document.getElementById('sStocks'), aBox = document.getElementById('sArticles'), more = document.getElementById('sMore');
+  if (reset) { search.page = 1; search.items = []; aBox.innerHTML = '<div class="empty">찾는 중…</div>'; }
+  try {
+    var data = await api('/api/search' + qs({ q: search.q, period: search.period, page: search.page, size: search.size }));
+    if (reset) {
+      sBox.innerHTML = data.stocks.items.length
+        ? data.stocks.items.map(function (s) {
+            return '<a class="chip direct" href="#/stock/' + encodeURIComponent(s.stockCode) + '"><b>' + esc(s.stockName) + '</b><small>' + esc(s.stockCode) + ' · ' + esc(s.market) + '</small></a>';
+          }).join('') + (data.stocks.totalCount > data.stocks.items.length ? '<span class="none">외 ' + (data.stocks.totalCount - data.stocks.items.length) + '개</span>' : '')
+        : '<span class="none">맞는 종목이 없어요</span>';
+    }
+    search.items = search.items.concat(data.articles.items);
+    search.total = data.articles.totalCount;
+    search.page += 1;
+    aBox.innerHTML = search.items.length
+      ? search.items.map(cardHtml).join('')
+      : '<div class="empty">이 기간에 제목·요약·키워드에 “' + esc(search.q) + '”가 들어간 글이 없어요.<br>기간을 7일·30일로 늘려 보세요.</div>';
+    more.hidden = search.items.length >= search.total;
+    more.textContent = '더 보기 (' + search.items.length + ' / ' + search.total + ')';
+  } catch (e) {
+    showError(aBox, e);
+    sBox.innerHTML = '';
+  }
+}
+
+// ===== 공통: 로그인 상태, 버튼 묶음, 종목 고르기 =====
+
+var LOGIN_ID_KEY = 'demo-login-id';
+function loggedIn() { return !!store.get(TOKEN_KEY); }
+function myLoginId() { return store.get(LOGIN_ID_KEY); }
+
+/** 위쪽·왼쪽 로그인 버튼을 로그인 상태에 맞게 바꿈 */
+function updateAuthUi() {
+  var btn = document.getElementById('authBtn'), side = document.getElementById('sideAuth');
+  if (loggedIn()) {
+    btn.textContent = (myLoginId() || '내 계정') + ' · 로그아웃'; btn.href = '#/logout';
+    side.textContent = '로그아웃'; side.href = '#/logout';
+  } else {
+    btn.textContent = '로그인'; btn.href = '#/login';
+    side.textContent = '로그인'; side.href = '#/login';
+  }
+}
+
+function loginLink() { return '#/login' + qs({ next: location.hash }); }
+
+function needLoginHtml(sentence) {
+  return '<div class="empty">' + esc(sentence) + '<br><br>'
+    + '<a class="btn-main" style="max-width:240px;margin:0 auto" href="' + esc(loginLink()) + '">로그인</a></div>';
+}
+
+/** 버튼 묶음 (탭·정렬). 고른 값은 aria-pressed="true" */
+function segHtml(group, options, current) {
+  return '<div class="seg" role="group" data-group="' + group + '">' + options.map(function (o) {
+    return '<button type="button" data-val="' + o[0] + '" aria-pressed="' + (o[0] === current) + '">' + o[1] + '</button>';
+  }).join('') + '</div>';
+}
+
+/** 버튼 묶음을 누르면 onPick(값). 누른 버튼만 켜짐 */
+function bindSeg(group, onPick) {
+  var el = view.querySelector('[data-group="' + group + '"]');
+  el.addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-val]');
+    if (!b) return;
+    el.querySelectorAll('button').forEach(function (x) { x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
+    onPick(b.dataset.val);
+  });
+}
+
+/** 종목 이름을 치면 GET /api/stocks?q= 로 후보를 보여 주고, 고르면 onPick(코드, 이름) */
+function attachSuggest(input, list, onPick) {
+  var timer;
+  input.addEventListener('input', function () {
+    clearTimeout(timer);
+    var q = input.value.trim();
+    if (!q) { list.hidden = true; list.innerHTML = ''; return; }
+    timer = setTimeout(async function () {
+      try {
+        var d = await api('/api/stocks' + qs({ q: q, size: 8 }));
+        list.hidden = false;
+        list.innerHTML = d.items.length
+          ? d.items.map(function (s) {
+              return '<button type="button" data-code="' + esc(s.stockCode) + '" data-name="' + esc(s.stockName) + '">'
+                + esc(s.stockName) + ' <small style="color:var(--muted)">' + esc(s.stockCode) + ' · ' + esc(s.market) + '</small></button>';
+            }).join('')
+          : '<div class="none" style="padding:8px 12px">맞는 종목이 없어요</div>';
+      } catch (e) {
+        list.hidden = false;
+        list.innerHTML = '<div class="msg" style="padding:8px 12px">' + esc(e.message) + '</div>';
+      }
+    }, 250);
+  });
+  list.addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-code]');
+    if (!b) return;
+    list.hidden = true; input.value = '';
+    onPick(b.dataset.code, b.dataset.name);
+  });
+}
+
+var SENTI = { POSITIVE: '긍정', NEGATIVE: '부정', NEUTRAL: '중립' };
+function sentiHtml(s) { return s ? '<span class="senti ' + esc(s) + '">' + esc(SENTI[s] || s) + '</span>' : ''; }
+function matchLabel(t) { return t === 'DIRECT' ? '직접' : (t === 'INDIRECT' ? '간접' : ''); }
+
+/** 글 목록 상자 (종목 화면·관심 종목 화면에서 같이 씀). path는 /api/articles?stockCode=… 같은 주소 */
+function articleList(boxId, moreId, basePath, baseParams) {
+  var st = { page: 1, items: [], total: 0, size: 5, sort: 'latest', source: '' };
+  async function load(reset) {
+    var box = document.getElementById(boxId), more = document.getElementById(moreId);
+    if (!box) return;
+    if (reset) { st.page = 1; st.items = []; box.innerHTML = '<div class="empty">불러오는 중…</div>'; }
+    try {
+      var params = Object.assign({}, baseParams, { sort: st.sort, source: st.source, page: st.page, size: st.size });
+      var data = await api(basePath + qs(params));
+      st.items = st.items.concat(data.items); st.total = data.totalCount; st.page += 1;
+      box.innerHTML = st.items.length ? st.items.map(cardHtml).join('') : '<div class="empty">연결된 글이 없어요</div>';
+      more.hidden = st.items.length >= st.total;
+      more.textContent = '더 보기 (' + st.items.length + ' / ' + st.total + ')';
+    } catch (e) { showError(box, e); more.hidden = true; }
+  }
+  document.getElementById(moreId).addEventListener('click', function () { load(false); });
+  return { state: st, load: load };
+}
+
+// ===== 2단계: 글 상세 (F-11) =====
+
+async function renderArticle(id) {
+  view.innerHTML = '<a class="back" href="javascript:history.back()">← 뒤로</a><div id="detail"><div class="empty">불러오는 중…</div></div>';
+  var box = document.getElementById('detail');
+  var a;
+  try { a = await api('/api/articles/' + encodeURIComponent(id)); } catch (e) { showError(box, e); return; }
+
+  var isSns = a.sourceType === 'SNS';
+  var badge = isSns ? '<span class="badge sns">SNS</span><span class="unverified">참고용 · 확인되지 않은 정보</span>' : '<span class="badge news">뉴스</span>';
+  var original = /^https?:\/\//.test(a.url || '')
+    ? '<a class="btn-sm" style="display:inline-flex;align-items:center" href="' + esc(a.url) + '" target="_blank" rel="noopener noreferrer">원문 보기 ↗</a>'
+    : '<span class="tag">원문 링크 없음 (예시 기사)</span>';
+  var keywords = (a.keywords || []).map(function (k) { return '<span class="kw">' + esc(k) + '</span>'; }).join('');
+
+  var stocks = (a.stocks || []).map(function (s) {
+    var rel = s.relevance === null || s.relevance === undefined ? null : Number(s.relevance);
+    return '<div class="stock-row"><div class="stock-row-head">'
+      + '<a href="#/stock/' + encodeURIComponent(s.stockCode) + '">' + esc(s.stockName) + '</a>'
+      + (matchLabel(s.matchType) ? '<span class="tag">' + matchLabel(s.matchType) + '</span>' : '')
+      + (s.isMain ? '<span class="tag">주인공</span>' : '')
+      + sentiHtml(s.sentiment)
+      + (rel === null ? '' : '<span class="bar" aria-hidden="true"><i style="width:' + rel + '%"></i></span><b>' + rel + '%</b>')
+      + '</div>'
+      + '<p class="reason">' + esc(s.reason) + '</p>'
+      + (s.evidence ? '<blockquote class="evidence">“' + esc(s.evidence) + '”</blockquote>' : '')
+      + ((s.matchedKeywords || []).length ? '<div>' + s.matchedKeywords.map(function (k) { return '<span class="kw">' + esc(k) + '</span>'; }).join('') + '</div>' : '')
+      + '</div>';
+  }).join('') || '<p class="none">관련 종목 없음</p>';
+
+  var sns = isSns ? '' : '<section class="box"><div class="box-head"><h2>같은 종목 SNS 반응</h2><span>앞뒤 24시간 · 최대 5개</span></div>'
+    + ((a.relatedSns || []).length ? a.relatedSns.map(function (r) {
+        return '<div class="sns-mini"><a href="#/article/' + encodeURIComponent(r.articleId) + '"><b>' + esc(r.title) + '</b></a><br>'
+          + '<small>' + esc(r.press || r.channel) + ' · ' + esc(fmtTime(r.publishedAt)) + ' · 확인되지 않은 정보</small></div>';
+      }).join('') : '<p class="none">가까운 시각의 SNS 글이 없어요</p>')
+    + '</section>';
+
+  box.innerHTML = '<div class="cols">'
+    + '<main class="list detail"><article class="card">'
+    + '<div class="meta">' + badge + '<span>' + esc(a.press || a.channel) + '</span>'
+    + (a.reporter ? '<span>' + esc(a.reporter) + '</span>' : '')
+    + '<span aria-hidden="true">·</span><span>' + esc(fmtTime(a.publishedAt)) + '</span>'
+    + '<span style="margin-left:auto">' + sentiHtml(a.sentiment) + '</span></div>'
+    + '<h1>' + esc(a.title) + '</h1>'
+    + '<div class="ai-sum"><b>AI 3줄 요약</b>' + esc(a.summary) + '</div>'
+    + (keywords ? '<div>' + keywords + '</div>' : '')
+    + '<div class="row-gap">' + original + '</div>'
+    + '<p class="notice">AI(' + esc(a.model || '-') + ')가 ' + esc(fmtTime(a.summarizedAt)) + '에 만든 요약이에요. 틀릴 수 있으니 원문으로 확인하세요. 기사 본문은 보여 주지 않아요.</p>'
+    + '</article></main>'
+    + '<aside class="side-panel"><section class="box"><div class="box-head"><h2>관련 종목</h2><span>관련도 높은 순</span></div>' + stocks + '</section>'
+    + sns + '</aside></div>';
+}
+
+// ===== 3단계: 종목별 조회 (F-12, F-08 읽기, F-14) + 종목 토론 (F-20) =====
+
+/** 종목을 안 고르고 들어왔을 때: 종목 찾기 + 오늘의 이슈 종목 */
+function renderStockPicker() {
+  view.innerHTML = '<div class="title-row"><h1>종목별 조회</h1></div><div class="cols">'
+    + '<main class="list"><section class="box"><div class="box-head"><h2>종목 찾기</h2><span>이름·코드·별칭 (예: 현대차, 삼전, 005930)</span></div>'
+    + '<div class="pick"><input id="pickQ" type="search" placeholder="종목 이름을 입력하세요" aria-label="종목 찾기"></div>'
+    + '<div class="suggest" id="pickList" hidden></div></section></main>'
+    + '<aside class="side-panel"><section class="box"><div class="box-head"><h2>오늘의 이슈 종목</h2><span>매칭 기사 수</span></div><ol class="ranks" id="ranks"></ol></section></aside></div>';
+  attachSuggest(document.getElementById('pickQ'), document.getElementById('pickList'), function (code) { location.hash = '#/stock/' + code; });
+  document.getElementById('pickQ').focus();
+  loadIssues();
+}
+
+async function renderStock(code) {
+  view.innerHTML = '<a class="back" href="javascript:history.back()">← 뒤로</a>'
+    + '<div class="stock-head" id="sHead"><h1>불러오는 중…</h1></div>'
+    + '<div class="cols"><main class="list">'
+    + '<section class="box"><div class="box-head"><h2>오늘의 종합 요약</h2><span id="sumAt"></span></div><div id="sSum"></div>'
+    + '<h3 class="sec" style="margin-top:16px">감성 비율 <small id="sentiCnt" style="font-weight:400;color:var(--muted)"></small></h3>'
+    + segHtml('sentiSrc', [['', '전체'], ['NEWS', '뉴스'], ['SNS', 'SNS']], '') + '<div id="sSenti"></div>'
+    + '<p class="notice" style="margin-top:10px">요약 "다시 생성"(F-08)은 AI 서버 API 형식이 정해지면 붙어요. 지금은 AI가 저장한 요약을 읽기만 해요.</p></section>'
+    + '<section class="box"><div class="box-head"><h2>언급량 추이</h2>' + segHtml('period', [['today', '오늘'], ['7d', '7일'], ['30d', '30일']], 'today') + '</div><div id="sMent"></div></section>'
+    + '<section class="box"><div class="box-head"><h2>연결된 뉴스·SNS</h2></div>'
+    + '<div class="row-gap" style="margin-bottom:10px">' + segHtml('artSrc', [['', '전체'], ['NEWS', '뉴스'], ['SNS', 'SNS']], '')
+    + segHtml('artSort', [['latest', '최신순'], ['relevance', '관련도순']], 'latest') + '</div>'
+    + '<div id="sArts" class="list"></div><button type="button" class="more" id="sArtsMore" hidden style="width:100%;margin-top:10px">더 보기</button></section>'
+    + '<section class="box"><div class="box-head"><h2>종목 토론</h2><span>글·댓글·공감</span></div><div id="sBoard"></div></section>'
+    + '</main><aside class="side-panel"><section class="box"><div class="box-head"><h2>오늘의 이슈 종목</h2><span>매칭 기사 수</span></div><ol class="ranks" id="ranks"></ol></section>'
+    + '<p class="notice">감성 비율·언급량은 분석이 끝난 글을 지금 센 값이에요. 현재가는 1차 범위(시세 제외)가 아니라 없어요.</p></aside></div>';
+
+  var head = document.getElementById('sHead');
+  try {
+    var s = await api('/api/stocks/' + encodeURIComponent(code));
+    head.innerHTML = '<h1>' + esc(s.stockName) + '</h1><span class="code">' + esc(s.stockCode) + ' · ' + esc(s.market) + (s.sector ? ' · ' + esc(s.sector) : '') + '</span>'
+      + '<span id="watchBtnBox"></span>';
+  } catch (e) { showError(head, e); return; }
+
+  loadWatchButton(code);
+  loadSummary(code, '');
+  bindSeg('sentiSrc', function (v) { loadSummary(code, v); });
+  loadMentions(code, 'today');
+  bindSeg('period', function (v) { loadMentions(code, v); });
+  var arts = articleList('sArts', 'sArtsMore', '/api/articles', { stockCode: code });
+  bindSeg('artSrc', function (v) { arts.state.source = v; arts.load(true); });
+  bindSeg('artSort', function (v) { arts.state.sort = v; arts.load(true); });
+  arts.load(true);
+  loadBoard(code);
+  loadIssues();
+}
+
+/** 관심 종목 추가·해제 버튼 (로그인했을 때만 실제 동작) */
+async function loadWatchButton(code) {
+  var box = document.getElementById('watchBtnBox');
+  if (!loggedIn()) { box.innerHTML = '<a class="btn-sm" style="display:inline-flex;align-items:center" href="' + esc(loginLink()) + '">☆ 관심 종목 추가 (로그인)</a>'; return; }
+  try {
+    var mine = await api('/api/watchlist');
+    var on = mine.items.some(function (w) { return w.stockCode === code; });
+    box.innerHTML = on ? '<button type="button" class="btn-sm" id="watchBtn">★ 관심 종목 해제</button>'
+                       : '<button type="button" class="btn-sm primary" id="watchBtn">☆ 관심 종목 추가</button>';
+    document.getElementById('watchBtn').addEventListener('click', async function () {
+      try {
+        if (on) await api('/api/watchlist/' + encodeURIComponent(code), { method: 'DELETE' });
+        else await api('/api/watchlist', { method: 'POST', body: { stockCode: code } });
+        loadWatchButton(code);
+      } catch (e) { alert(e.message); }
+    });
+  } catch (e) { box.innerHTML = ''; }
+}
+
+async function loadSummary(code, source) {
+  var sumBox = document.getElementById('sSum'), sentiBox = document.getElementById('sSenti');
+  try {
+    var d = await api('/api/stocks/' + encodeURIComponent(code) + '/summary' + qs({ source: source }));
+    document.getElementById('sumAt').textContent = d.generatedAt ? '생성 ' + fmtTime(d.generatedAt) : '';
+    sumBox.innerHTML = (d.newsSummary || d.snsSummary)
+      ? '<div class="ai-sum"><b>뉴스 요약</b>' + esc(d.newsSummary || '아직 없어요') + '</div>'
+        + '<div class="ai-sum" style="margin-top:8px"><b>SNS 반응 (참고용)</b>' + esc(d.snsSummary || '아직 없어요') + '</div>'
+      : '<div class="empty" style="padding:16px">요약 준비 중이에요. AI가 1시간마다 만들어요.</div>';
+    var se = d.sentiment;
+    document.getElementById('sentiCnt').textContent = '오늘 글 ' + se.articleCount + '개';
+    sentiBox.innerHTML = se.articleCount
+      ? '<div class="senti-bar" aria-hidden="true"><i class="p" style="width:' + Number(se.positive) + '%"></i><i class="n" style="width:' + Number(se.negative) + '%"></i><i class="u" style="width:' + Number(se.neutral) + '%"></i></div>'
+        + '<div class="legend"><span><i class="sw" style="background:#12B76A"></i>긍정 ' + se.positive + '% (' + se.positiveCount + ')</span>'
+        + '<span><i class="sw" style="background:#F04438"></i>부정 ' + se.negative + '% (' + se.negativeCount + ')</span>'
+        + '<span><i class="sw" style="background:#98A2B3"></i>중립 ' + se.neutral + '% (' + se.neutralCount + ')</span></div>'
+      : '<p class="none">오늘 이 종목이 나온 글이 없어요</p>';
+  } catch (e) { showError(sumBox, e); }
+}
+
+async function loadMentions(code, period) {
+  var box = document.getElementById('sMent');
+  box.innerHTML = '<div class="none">불러오는 중…</div>';
+  try {
+    var m = await api('/api/stocks/' + encodeURIComponent(code) + '/mentions' + qs({ period: period }));
+    var max = 1, news = 0, sns = 0;
+    m.items.forEach(function (x) { max = Math.max(max, x.totalCount); news += x.newsCount; sns += x.snsCount; });
+    var every = m.items.length > 12 ? Math.ceil(m.items.length / 8) : 1;
+    function label(iso) {
+      var d = new Date(iso);
+      return m.unit === 'HOUR' ? d.getHours() + '시' : (pad(d.getMonth() + 1) + '/' + pad(d.getDate()));
+    }
+    box.innerHTML = '<div class="legend" style="margin-bottom:6px"><span><i class="sw" style="background:#0E7490"></i>뉴스 ' + news + '</span>'
+      + '<span><i class="sw" style="background:#F59E0B"></i>SNS ' + sns + '</span><span>칸: ' + (m.unit === 'HOUR' ? '1시간' : '1일') + '</span></div>'
+      + '<div class="chart">' + m.items.map(function (x) {
+          return '<div class="col" title="' + esc(label(x.time)) + ' · 뉴스 ' + x.newsCount + ' · SNS ' + x.snsCount + '">'
+            + '<i class="news" style="height:' + (x.newsCount / max * 100) + '%"></i><i class="sns" style="height:' + (x.snsCount / max * 100) + '%"></i></div>';
+        }).join('') + '</div>'
+      + '<div class="chart-x">' + m.items.map(function (x, i) { return '<span>' + (i % every === 0 ? esc(label(x.time)) : '') + '</span>'; }).join('') + '</div>';
+  } catch (e) { showError(box, e); }
+}
+
+/** 종목 토론: 글 목록 + 글쓰기. 글 제목을 누르면 본문·공감·댓글이 펼쳐짐 */
+async function loadBoard(code) {
+  var box = document.getElementById('sBoard');
+  if (!box) return;
+  var form = loggedIn()
+    ? '<form class="form" id="postForm" style="margin-bottom:14px"><input name="title" maxlength="200" placeholder="제목" required>'
+      + '<textarea name="content" maxlength="5000" placeholder="내용 (투자 판단은 본인 책임이에요)" required></textarea>'
+      + '<div class="row-gap"><button class="btn-sm primary" type="submit">글쓰기</button><span class="msg" id="postMsg"></span></div></form>'
+    : '<p style="font-size:14px;color:var(--text-3)">글쓰기·댓글·공감은 <a href="' + esc(loginLink()) + '" style="color:var(--accent)">로그인</a> 후에 할 수 있어요. 읽기는 누구나.</p>';
+  try {
+    var d = await api('/api/stocks/' + encodeURIComponent(code) + '/posts' + qs({ page: 1, size: 20 }));
+    box.innerHTML = form + (d.items.length ? d.items.map(function (p) {
+      return '<div class="post" data-post="' + p.postId + '"><button type="button" class="post-title" data-open="' + p.postId + '">' + esc(p.title) + '</button>'
+        + '<div class="post-meta">' + esc(p.authorLoginId) + ' · ' + esc(fmtTime(p.createdAt)) + ' · 댓글 ' + p.commentCount + ' · 공감 ' + p.likeCount + '</div>'
+        + '<div id="post-' + p.postId + '"></div></div>';
+    }).join('') : '<p class="none">아직 글이 없어요. 첫 글을 써 보세요.</p>')
+      + (d.totalCount > d.items.length ? '<p class="none">최근 20개만 보여요 (전체 ' + d.totalCount + '개)</p>' : '');
+  } catch (e) { showError(box, e); return; }
+
+  var pf = document.getElementById('postForm');
+  if (pf) pf.addEventListener('submit', async function (e) {
+    e.preventDefault();
+    try {
+      await api('/api/stocks/' + encodeURIComponent(code) + '/posts', { method: 'POST', body: { title: pf.elements.namedItem('title').value, content: pf.elements.namedItem('content').value } });
+      loadBoard(code);
+    } catch (err) { document.getElementById('postMsg').textContent = err.message; }
+  });
+  box.querySelectorAll('[data-open]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var slot = document.getElementById('post-' + b.dataset.open);
+      if (slot.innerHTML) { slot.innerHTML = ''; return; }   // 다시 누르면 접기
+      openPost(code, b.dataset.open);
+    });
+  });
+}
+
+async function openPost(code, postId) {
+  var slot = document.getElementById('post-' + postId);
+  try {
+    var p = await api('/api/posts/' + postId);
+    var c = await api('/api/posts/' + postId + '/comments');
+  } catch (e) { showError(slot, e); return; }
+  var mine = loggedIn() && p.authorLoginId === myLoginId();
+  slot.innerHTML = '<div class="post-body">' + esc(p.content) + '</div>'
+    + '<div class="row-gap" style="margin:8px 0">'
+    + '<button type="button" class="btn-sm" id="like-' + postId + '">♥ 공감 ' + p.likeCount + '</button>'
+    + (mine ? '<button type="button" class="btn-sm danger" id="del-' + postId + '">글 삭제</button>' : '')
+    + '<span class="msg" id="pmsg-' + postId + '"></span></div>'
+    + (c.items.length ? c.items.map(function (x) {
+        var mineC = loggedIn() && x.authorLoginId === myLoginId();
+        return '<div class="comment"><span>' + esc(x.content) + ' <small>— ' + esc(x.authorLoginId) + ' · ' + esc(fmtTime(x.createdAt)) + '</small></span>'
+          + (mineC ? '<button type="button" class="btn-sm danger" data-cdel="' + x.commentId + '">삭제</button>' : '') + '</div>';
+      }).join('') : '<p class="none">댓글이 없어요</p>')
+    + (loggedIn() ? '<form class="row-gap" id="cform-' + postId + '" style="margin-top:8px"><input name="content" maxlength="1000" placeholder="댓글" required style="flex:1 1 200px;height:36px;padding:0 10px;border:1px solid var(--input);border-radius:8px">'
+      + '<button class="btn-sm primary" type="submit">댓글</button></form>' : '');
+
+  var msg = document.getElementById('pmsg-' + postId);
+  document.getElementById('like-' + postId).addEventListener('click', async function (e) {
+    if (!loggedIn()) { location.hash = loginLink(); return; }
+    try {
+      var r = await api('/api/posts/' + postId + '/like', { method: 'POST' });
+      e.target.textContent = (r.liked ? '♥ 공감함 ' : '♥ 공감 ') + r.likeCount;
+    } catch (err) { msg.textContent = err.message; }
+  });
+  var del = document.getElementById('del-' + postId);
+  if (del) del.addEventListener('click', async function () {
+    if (!confirm('이 글을 삭제할까요? 댓글·공감도 함께 지워져요.')) return;
+    try { await api('/api/posts/' + postId, { method: 'DELETE' }); loadBoard(code); } catch (err) { msg.textContent = err.message; }
+  });
+  slot.querySelectorAll('[data-cdel]').forEach(function (b) {
+    b.addEventListener('click', async function () {
+      try { await api('/api/comments/' + b.dataset.cdel, { method: 'DELETE' }); openPost(code, postId); } catch (err) { msg.textContent = err.message; }
+    });
+  });
+  var cf = document.getElementById('cform-' + postId);
+  if (cf) cf.addEventListener('submit', async function (e) {
+    e.preventDefault();
+    try { await api('/api/posts/' + postId + '/comments', { method: 'POST', body: { content: cf.content.value } }); openPost(code, postId); }
+    catch (err) { msg.textContent = err.message; }
+  });
+}
+
+// ===== 4단계: 로그인·회원가입 (F-18) =====
+
+function renderLogin(params) {
+  var next = params.get('next') || '';
+  if (!/^#\//.test(next) || /^#\/(login|logout)/.test(next)) next = '#/';   // 이 화면 안의 주소로만 돌아감
+  view.innerHTML = '<div class="auth-box"><section class="box">'
+    + '<div class="box-head"><h2>로그인 · 회원가입</h2></div>'
+    + segHtml('authTab', [['login', '로그인'], ['signup', '회원가입']], 'login')
+    + '<form class="form" id="authForm" style="margin-top:14px">'
+    + '<label>아이디<input name="loginId" autocomplete="username" required></label>'
+    + '<label>비밀번호<input name="password" type="password" autocomplete="current-password" required></label>'
+    + '<button class="btn-main" type="submit" id="authSubmit">로그인</button><span class="msg" id="authMsg"></span></form>'
+    + '<p class="notice" style="margin-top:12px">테스트용: 아이디는 영문 소문자·숫자 4~20자, 비밀번호 8~64자. 가입한 계정은 이 PC의 DB에만 있어요. 토큰은 이 브라우저에 저장돼요(60분).</p>'
+    + '</section></div>';
+  var mode = 'login', f = document.getElementById('authForm'), msg = document.getElementById('authMsg');
+  bindSeg('authTab', function (v) {
+    mode = v;
+    document.getElementById('authSubmit').textContent = v === 'login' ? '로그인' : '가입하고 로그인';
+    f.password.autocomplete = v === 'login' ? 'current-password' : 'new-password';
+    msg.textContent = '';
+  });
+  f.addEventListener('submit', async function (e) {
+    e.preventDefault();
+    msg.className = 'msg'; msg.textContent = '';
+    var body = { loginId: f.loginId.value.trim(), password: f.password.value };
+    try {
+      if (mode === 'signup') await api('/api/auth/signup', { method: 'POST', body: body });
+      var r = await api('/api/auth/login', { method: 'POST', body: body });
+      store.set(TOKEN_KEY, r.accessToken);
+      var me = await api('/api/auth/me');
+      store.set(LOGIN_ID_KEY, me.loginId);
+      updateAuthUi();
+      location.hash = next;
+    } catch (err) { msg.textContent = err.message + (err.code ? ' (' + err.code + ')' : ''); }
+  });
+  f.loginId.focus();
+}
+
+function logout() {
+  store.del(TOKEN_KEY); store.del(LOGIN_ID_KEY);
+  updateAuthUi();
+  location.hash = '#/';
+}
+
+// ===== 4단계: 관심 종목 (F-19) =====
+
+async function renderWatchlist() {
+  view.innerHTML = '<div class="title-row"><h1>관심 종목</h1></div><div id="wBody"></div>';
+  var body = document.getElementById('wBody');
+  if (!loggedIn()) { body.innerHTML = needLoginHtml('관심 종목은 로그인해야 볼 수 있어요.'); return; }
+  body.innerHTML = '<section class="box" style="margin-bottom:16px"><div class="box-head"><h2>종목 추가</h2><span>이름·코드·별칭</span></div>'
+    + '<div class="pick"><input id="wQ" type="search" placeholder="예: 현대차, 005930" aria-label="관심 종목 추가할 종목"></div>'
+    + '<div class="suggest" id="wList" hidden></div><div class="msg" id="wMsg"></div>'
+    + '<div id="wTable"></div></section>'
+    + '<section class="box"><div class="box-head"><h2>관심 종목 글 모아 보기</h2></div>'
+    + '<div class="row-gap" style="margin-bottom:10px">' + segHtml('wSrc', [['', '전체'], ['NEWS', '뉴스'], ['SNS', 'SNS']], '')
+    + segHtml('wSort', [['latest', '최신순'], ['relevance', '관련도순']], 'latest') + '</div>'
+    + '<div id="wArts" class="list"></div><button type="button" class="more" id="wArtsMore" hidden style="width:100%;margin-top:10px">더 보기</button></section>';
+  var arts = articleList('wArts', 'wArtsMore', '/api/watchlist/articles', {});
+  bindSeg('wSrc', function (v) { arts.state.source = v; arts.load(true); });
+  bindSeg('wSort', function (v) { arts.state.sort = v; arts.load(true); });
+  attachSuggest(document.getElementById('wQ'), document.getElementById('wList'), async function (code, name) {
+    var msg = document.getElementById('wMsg');
+    try {
+      await api('/api/watchlist', { method: 'POST', body: { stockCode: code } });
+      msg.className = 'msg ok'; msg.textContent = name + ' 추가했어요';
+      loadWatchTable(); arts.load(true);
+    } catch (e) { msg.className = 'msg'; msg.textContent = e.message; }
+  });
+  loadWatchTable(function () { arts.load(true); });
+  arts.load(true);
+}
+
+async function loadWatchTable(onChange) {
+  var box = document.getElementById('wTable');
+  try {
+    var d = await api('/api/watchlist');
+    box.innerHTML = d.items.length
+      ? '<table class="watch"><thead><tr><th>종목</th><th>오늘 매칭 글</th><th>최근 매칭</th><th>추가한 때</th><th></th></tr></thead><tbody>'
+        + d.items.map(function (w) {
+            return '<tr><td><a href="#/stock/' + encodeURIComponent(w.stockCode) + '"><b>' + esc(w.stockName) + '</b></a> <small style="color:var(--muted)">' + esc(w.stockCode) + '</small></td>'
+              + '<td>' + w.todayArticleCount + '건</td><td>' + esc(w.lastMatchedAt ? fmtTime(w.lastMatchedAt) : '-') + '</td>'
+              + '<td>' + esc(fmtTime(w.addedAt)) + '</td>'
+              + '<td><button type="button" class="btn-sm danger" data-wdel="' + esc(w.stockCode) + '">삭제</button></td></tr>';
+          }).join('') + '</tbody></table>'
+      : '<p class="none" style="margin-top:10px">아직 관심 종목이 없어요. 위에서 종목을 찾아 추가해 보세요.</p>';
+    box.querySelectorAll('[data-wdel]').forEach(function (b) {
+      b.addEventListener('click', async function () {
+        try { await api('/api/watchlist/' + encodeURIComponent(b.dataset.wdel), { method: 'DELETE' }); loadWatchTable(onChange); if (onChange) onChange(); }
+        catch (e) { document.getElementById('wMsg').textContent = e.message; }
+      });
+    });
+  } catch (e) { showError(box, e); }
+}
+
+// ===== 화면 이동 (주소의 # 뒤를 보고 그릴 화면을 고름) =====
+
+function route() {
+  var hash = location.hash.replace(/^#/, '') || '/';
+  var path = hash.split('?')[0], params = new URLSearchParams(hash.split('?')[1] || '');
+  var parts = path.split('/').filter(Boolean);
+  var nav = 'main';
+  if (parts[0] === 'logout') { logout(); return; }
+  if (parts[0] === 'search' && params.get('q')) renderSearch(params);
+  else if (parts[0] === 'article' && parts[1]) renderArticle(parts[1]);
+  else if (parts[0] === 'stock') { nav = 'stock'; if (parts[1]) renderStock(parts[1]); else renderStockPicker(); }
+  else if (parts[0] === 'watchlist') { nav = 'watch'; renderWatchlist(); }
+  else if (parts[0] === 'login') renderLogin(params);
+  else renderHome();
+  updateAuthUi();
+  document.querySelectorAll('[data-nav]').forEach(function (a) { a.classList.toggle('on', a.dataset.nav === nav); });
+  window.scrollTo(0, 0);
+}
+
+// 검색: 엔터 → #/search?q=…&period=…
+document.getElementById('searchForm').addEventListener('submit', function (e) {
+  e.preventDefault();
+  var q = document.getElementById('q').value.trim();
+  if (!q) return;
+  location.hash = '#/search' + qs({ q: q, period: document.getElementById('qPeriod').value });
+});
+
+// 왼쪽 메뉴 접기·펴기 (목업과 같이 브라우저에 기억)
+(function () {
+  var side = document.getElementById('side'), btn = document.getElementById('sideToggle');
+  function apply(collapsed) {
+    side.classList.toggle('collapsed', collapsed);
+    btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    btn.setAttribute('aria-label', collapsed ? '메뉴 펼치기' : '메뉴 접기');
+    btn.title = btn.getAttribute('aria-label');
+  }
+  apply(store.get('si-menu-collapsed') === '1');
+  btn.addEventListener('click', function () {
+    var next = !side.classList.contains('collapsed');
+    store.set('si-menu-collapsed', next ? '1' : '0');
+    apply(next);
+  });
+})();
+
+window.addEventListener('hashchange', route);
+route();
+</script>
+</body>
+</html>
