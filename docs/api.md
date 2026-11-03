@@ -212,6 +212,37 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 - `lastRun`: 가장 최근 수집 실행. `status`가 `RUNNING`이면 수집 중(`finishedAt`은 `null`), `FAILED`면 마지막 수집 실패
 - 아직 데이터가 없으면 각각 `null` → 화면은 "아직 없음"
 
+### 시세 (확장 ①②, 1차 시연 범위 밖)
+
+한국투자증권(KIS) 현재가·차트·체결. **서버 `.env`에 `KIS_ENABLED=true`(+ 본인 KIS 키)일 때만** 동작하고, 아니면 `503 QUOTE_DISABLED` → 화면은 "시세 준비 중". 녹화본 API(다시 보기·점검)는 DB만 읽어서 스위치와 상관없이 동작. 로그인 없이.
+
+| | 방식 | 주소 | 설명 |
+|---|---|---|---|
+| 🔓 | GET | `/api/quotes/{stockCode}` | 현재가. 생중계 종목은 DB 실시간 값(`live: true`), 아니면 KIS 조회(5초 캐시) |
+| 🔓 | GET | `/api/quotes?codes=005930,000660` | 여러 종목 현재가 (최대 10개, 없는·실패한 종목은 빠짐) |
+| 🔓 | GET | `/api/quotes/{stockCode}/chart?unit=minute` | 오늘 1분봉 최근 약 2시간 (`unit=day`: 일봉 최근 약 100거래일). `items`는 오래된 것부터 |
+| 🔓 | GET | `/api/quotes/{stockCode}/ticks` | 최근 체결 30건 (최신이 앞) |
+| 🔓 | GET (SSE) | `/api/quotes/stream?codes=005930` | **실시간 방송** (최대 5종목). 이벤트 `quote`(현재가, 연결 직후 한 번 + 바뀔 때마다), `tick`(새 체결, 생중계 종목만) |
+| 🔓 | GET | `/api/quotes/status` | 수집 상태: 웹소켓 연결, 생중계 자리(`capacity`, `activeCodes`, `waitingCodes`, `viewers`), 받은·저장·버린 체결 수 |
+| 🔓 | GET | `/api/quotes/{stockCode}/recordings` | 다시 볼 수 있는 날 (녹화된 날짜·체결 수) |
+| 🔓 | GET (SSE) | `/api/quotes/{stockCode}/replay?date=2026-11-03&from=09:00&speed=10` | **다시 보기**. 이벤트 `start` → `replay`(체결마다) → `end`. 배속 1·5·10·30·60 |
+| 🔓 | GET | `/api/quotes/check?date=` | 수집 점검: 종목별 저장 체결량 ÷ 실제 거래량(누적 거래량 차이) = `coverageRate`, 지연 ms |
+
+현재가 한 건:
+
+```json
+{ "stockCode": "005930", "price": 219500, "changeAmount": -9500, "changeRate": -4.15, "direction": "DOWN",
+  "open": 220500, "high": 223000, "low": 217000, "accVolume": 7611275,
+  "fetchedAt": "2026-11-03T13:04:55+09:00", "live": true }
+```
+
+- `direction`: `UP`(상승·상한) / `DOWN`(하락·하한) / `FLAT`. 화면 색은 상승 빨강, 하락 파랑 (국내 증권 앱 관례)
+- `live`: `true`면 웹소켓 실시간 값(`fetchedAt` = 마지막 체결 시각), `false`면 몇 초마다 조회한 값
+- 방송(SSE)은 브라우저 `EventSource`로 듣기: `new EventSource('/api/quotes/stream?codes=005930')` → `addEventListener('quote', e => JSON.parse(e.data))`. 끊기면 브라우저가 알아서 다시 연결. 화면을 떠나면 `close()`
+- 생중계 자리: 보는 사람이 있는 종목에 KIS 구독을 돌려씀 (공식 41건, 신규 키는 처음 3일 동안 3건). 자리가 없으면 그 종목은 5초마다 조회값으로 방송
+- 오류: `503 QUOTE_DISABLED`(시세 꺼짐), `429 QUOTE_BUSY`(KIS 초당 호출 초과), `429 REPLAY_BUSY`(다시 보기 동시 5개 초과), `502 QUOTE_UPSTREAM_ERROR`·`QUOTE_UNREACHABLE`(KIS 오류·연결 실패)
+- 개발 중 확인: `http://localhost:8080/demo.html` 종목 화면의 "시세" 칸
+
 ### 아직 없는 API
 
 종합 요약 다시 생성 (AI 서버 API 형식이 정해지면 추가).
@@ -230,4 +261,7 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 | 404 | `STOCK_NOT_FOUND` / `ARTICLE_NOT_FOUND` / `POST_NOT_FOUND` / `COMMENT_NOT_FOUND` / `WATCHLIST_NOT_FOUND` | 없는 종목·글·댓글·관심 종목 |
 | 409 | `DUPLICATE_LOGIN_ID` | 이미 있는 아이디로 가입 |
 | 409 | `ALREADY_IN_WATCHLIST` | 이미 관심 종목에 있음 |
+| 429 | `QUOTE_BUSY` / `REPLAY_BUSY` | KIS 초당 호출 초과 / 다시 보기 동시 실행 초과 (시세 확장) |
+| 502 | `QUOTE_UPSTREAM_ERROR` / `QUOTE_UNREACHABLE` | KIS가 오류로 답함 / KIS에 연결 못 함 (시세 확장) |
+| 503 | `QUOTE_DISABLED` | 이 서버에서 시세 기능이 꺼져 있음 (`KIS_ENABLED`) |
 | 500 | `INTERNAL_ERROR` | 서버 오류 (백엔드에 알려 주세요) |
