@@ -34,6 +34,7 @@ def test_step6_match():
     assert on_topic("실적 기사", "두산이 수주했다", [side], names) == [side], "앞부분에 있으면 조연도 유지"
     assert on_topic("삼전 강세", tail, [main], names) == [main], "별칭으로도 찾음"
     assert on_topic("[주간 증시 전망] 삼성전자", "삼성전자", [main], names) == [], "유형 기사"
+    assert on_topic("[부고] 삼성전자 전무 부친상", "삼성전자", [main], names) == [], "부고 말머리"
     assert on_topic("[특징주] 코스피 시황에 삼성전자 급등", "삼성전자", [main], names) == [main], "특징주는 예외"
     many = "".join(f"회사{i}번 " for i in range(6))
     assert on_topic("저PBR 151곳 공표", many + "두산", [side], names) == [], "명단 기사"
