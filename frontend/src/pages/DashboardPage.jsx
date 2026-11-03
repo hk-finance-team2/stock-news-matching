@@ -758,13 +758,105 @@ function ArticleDetailPanel({
 
 export default function DashboardPage() {
   // 양방향 정규화된 초기 데이터
-  const allStocks = useMemo(
-    () => normalizeStocks(STOCKS_DATA, STOCK_SUMMARIES_DATA, MENTION_TRENDS_DATA),
-    []
-  );
-  const allArticles = useMemo(() => normalizeArticles(ARTICLES_DATA), []);
-  const initialSummaries = useMemo(() => normalizeSummaries(STOCK_SUMMARIES_DATA), []);
-  const initialTrends = useMemo(() => normalizeMentionTrends(MENTION_TRENDS_DATA), []);
+  // const allStocks = useMemo(
+  //   () => normalizeStocks(STOCKS_DATA, STOCK_SUMMARIES_DATA, MENTION_TRENDS_DATA),
+  //   []
+  // );
+  // const allArticles = useMemo(() => normalizeArticles(ARTICLES_DATA), []);
+  // const initialSummaries = useMemo(() => normalizeSummaries(STOCK_SUMMARIES_DATA), []);
+  // const initialTrends = useMemo(() => normalizeMentionTrends(MENTION_TRENDS_DATA), []);
+
+// 1. useState로 변경 (백엔드에서 데이터가 도착하면 실데이터로 자동 렌더링)
+const [allStocks, setAllStocks] = useState(() =>
+  normalizeStocks(STOCKS_DATA, STOCK_SUMMARIES_DATA, MENTION_TRENDS_DATA)
+);
+const [allArticles, setAllArticles] = useState(() => normalizeArticles(ARTICLES_DATA));
+const initialSummaries = useMemo(() => normalizeSummaries(STOCK_SUMMARIES_DATA), []);
+const initialTrends = useMemo(() => normalizeMentionTrends(MENTION_TRENDS_DATA), []);
+
+// 2. 백엔드 종목 사전 API 연동 (items 감싸기 및 필드명 stockCode, stockName 매핑)
+// 백엔드 전체 종목 목록 가져오기
+useEffect(() => {
+  const fetchAllStocks = async () => {
+    try {
+      const pageSize = 100;
+
+      // 첫 페이지 조회
+      const firstResponse = await fetch(
+        `http://localhost:8080/api/stocks?q=&page=1&size=${pageSize}`
+      );
+
+      if (!firstResponse.ok) {
+        throw new Error(`API 오류: ${firstResponse.status}`);
+      }
+
+      const firstData = await firstResponse.json();
+
+      const totalCount = firstData.totalCount;
+      const totalPages = Math.ceil(totalCount / pageSize);
+
+      let allItems = [...firstData.items];
+
+      // 나머지 페이지 조회
+      for (let page = 2; page <= totalPages; page++) {
+        const response = await fetch(
+          `http://localhost:8080/api/stocks?q=&page=${page}&size=${pageSize}`
+        );
+
+        if (!response.ok) {
+          throw new Error(`${page}페이지 조회 실패`);
+        }
+
+        const data = await response.json();
+        allItems = [...allItems, ...data.items];
+      }
+
+      // 백엔드 데이터를 React UI 형식으로 변환
+      const stocks = allItems.map((item) => ({
+        code: item.stockCode,
+        name: item.stockName,
+        market: item.market || 'KOSPI',
+        sector: item.sector || '기타',
+        price: null,
+        changeRate: null,
+        todayMatchedCount: 0,
+        sentimentRatio: {
+          positive: 50,
+          neutral: 30,
+          negative: 20,
+        },
+        aliases: [],
+        themes: [],
+      }));
+
+      setAllStocks(stocks);
+
+      console.log('전체 종목 연동 성공:', stocks.length, '개');
+
+    } catch (error) {
+      console.error('전체 종목 API 연결 실패:', error);
+    }
+  };
+
+  fetchAllStocks();
+}, []);
+// 3. 백엔드 기사 목록 API 연동 (DB에 적재된 예시/실제 기사)
+useEffect(() => {
+  fetch('http://localhost:8080/api/articles')
+    .then((res) => {
+      if (!res.ok) throw new Error('기사 API 응답 실패');
+      return res.json();
+    })
+    .then((data) => {
+      const articleList = data.articles || (Array.isArray(data) ? data : []);
+      if (articleList.length > 0) {
+        console.log('✅ [백엔드 연동 성공] 실제 기사 수신:', articleList.length, '개');
+        setAllArticles(normalizeArticles(articleList));
+      }
+    })
+    .catch((err) => console.warn('백엔드 기사 API 미연결 (목업 데이터 유지):', err));
+}, []);
+
 
   const [activeView, setActiveView] = useState('home'); // home | news | sns | mention | ranking
   const [watchlistCodes, setWatchlistCodes] = useState(INITIAL_WATCHLIST_CODES);
@@ -889,8 +981,26 @@ export default function DashboardPage() {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return { matchedStocks: [], matchedArticles: [] };
 
-    const matchedStocks = allStocks.filter((s) => matchStockByQuery(s, q)).slice(0, 5);
+    // const matchedStocks = allStocks.filter((s) => matchStockByQuery(s, q)).slice(0, 5);
+    const priorityStocks = ['005930', '000660', '005380', '035420', '035720'];
 
+const matchedStocks = allStocks
+  .filter((s) => matchStockByQuery(s, q))
+  .sort((a, b) => {
+    const getScore = (stock) => {
+      const name = stock.name.toLowerCase();
+
+      if (name === q || stock.code === q) return 100;
+      if (priorityStocks.includes(stock.code)) return 80;
+      if (name.startsWith(q)) return 60;
+
+      return 10;
+    };
+
+    return getScore(b) - getScore(a) || a.name.localeCompare(b.name, 'ko');
+  })
+  .slice(0, 5);
+  
     const matchedArticles = allArticles
       .filter((art) => {
         if (searchSource !== 'ALL' && art.sourceType !== searchSource) return false;
