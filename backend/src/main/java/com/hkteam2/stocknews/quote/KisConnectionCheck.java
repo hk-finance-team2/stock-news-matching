@@ -8,7 +8,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 /**
- * 0단계 연결 시험: 서버가 켜질 때 삼성전자 현재가를 한 번 받아 로그에 남김
+ * 연결 확인: 서버가 켜질 때 삼성전자 현재가를 한 번 받아 로그에 남김
  * 키가 맞는지, 실전 승인이 끝났는지, 우리 서버에서 KIS까지 통신이 되는지를 한 번에 확인
  * 실패해도 서버는 그대로 켜짐 (경고 로그만). 키·토큰 값은 찍지 않음
  */
