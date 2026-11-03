@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<!--
+  백엔드 확인용 테스트 화면 (진짜 프론트엔드가 아님)
+  - 팀 통합 목업(팀장안 + 왼쪽 메뉴, 2026-10-29)의 디자인에 실제 백엔드 API를 붙인 것
+  - 서버를 켜고 http://localhost:8080/demo.html 로 열기. 같은 주소(8080)라 CORS 설정이 필요 없음
+  - 진짜 서비스 화면은 frontend/ (React). 이 파일은 API가 잘 도는지 직접 눌러 보는 용도
+  - 설치·빌드 없음: HTML + 순수 자바스크립트 한 파일. 화면 이동은 주소의 # 뒤로 구분 (#/, #/search?q=…)
+-->
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>뉴스×종목 (백엔드 확인용)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #F6F7F9; --card: #FFFFFF; --line: #E4E7EC; --line-soft: #F2F4F7; --input: #D0D5DD;
+  --text: #101828; --text-2: #344054; --text-3: #475467; --muted: #5D6679;
+  --accent: #0E7490; --accent-soft: #ECFEFF; --nav: #0F1E3D; --nav-hover: #243A66; --nav-on: #1F4FD8;
+  --news-bg: #E0F2FE; --news: #075985; --sns-bg: #FEF3C7; --sns: #92400E;
+  --pos: #027A48; --neg: #B42318;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font-family: 'Noto Sans KR', system-ui, sans-serif; font-variant-numeric: tabular-nums; }
+a { color: var(--text); text-decoration: none; }
+a:hover { color: var(--accent); }
+button, input, select { font-family: inherit; }
+button { cursor: pointer; }
+
+.demo-bar { background: #FFF7ED; color: #9A3412; font-size: 13px; padding: 6px 16px; border-bottom: 1px solid #FED7AA; }
+.demo-bar code { background: #FFEDD5; padding: 1px 5px; border-radius: 4px; }
+.layout { min-height: 100vh; display: flex; flex-wrap: wrap; align-items: stretch; }
+
+/* 왼쪽 메뉴 (접기·펴기) */
+.side { flex: 0 0 200px; max-width: 100%; background: var(--nav); color: #FFFFFF; padding: 20px 12px; }
+.side.collapsed { flex-basis: 64px; padding: 20px 10px; }
+.side-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 0 12px 12px; }
+.side-head b { font-size: 17px; white-space: nowrap; }
+.side.collapsed .side-head { padding: 0; }
+.side.collapsed .side-head b, .side.collapsed .side-link { display: none; }
+.icon-btn { width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; border: none; border-radius: 8px; background: transparent; color: #FFFFFF; }
+.icon-btn:hover { background: var(--nav-hover); }
+.side-link { display: flex; align-items: center; min-height: 44px; padding: 0 12px; color: #FFFFFF; border-radius: 8px; margin-bottom: 2px; }
+.side-link:hover { background: var(--nav-hover); color: #FFFFFF; }
+.side-link.on { background: var(--nav-on); font-weight: 700; }
+.side-link.login { margin-top: 40px; }
+
+.page { flex: 999 1 640px; min-width: 0; }
+header.top { background: var(--card); border-bottom: 1px solid var(--line); }
+.top-in { max-width: 1280px; margin: 0 auto; padding: 14px 24px; display: flex; flex-wrap: wrap; align-items: center; gap: 16px 28px; }
+.logo { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; }
+.logo span { color: var(--accent); }
+.top-nav { display: flex; gap: 4px; flex-wrap: wrap; }
+.top-nav a { padding: 10px 14px; border-radius: 8px; font-size: 15px; font-weight: 500; color: var(--text-2); }
+.top-nav a.on { font-weight: 700; background: var(--accent-soft); color: var(--accent); }
+form.search { flex: 1 1 280px; display: flex; gap: 8px; align-items: center; }
+form.search input { flex: 1 1 auto; min-width: 0; height: 44px; padding: 0 14px; border: 1px solid var(--input); border-radius: 10px; font-size: 15px; background: #F9FAFB; color: var(--text); }
+select { height: 44px; padding: 0 10px; border: 1px solid var(--input); border-radius: 10px; font-size: 14px; background: #FFFFFF; color: var(--text-2); }
+.btn-line { height: 44px; display: inline-flex; align-items: center; padding: 0 16px; border: 1px solid var(--input); border-radius: 10px; font-size: 14px; font-weight: 500; color: var(--text-2); background: #FFFFFF; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+.wrap { max-width: 1280px; margin: 0 auto; padding: 20px 24px 48px; }
+.title-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 18px; }
+.title-row h1 { margin: 0; font-size: 26px; letter-spacing: -0.02em; }
+.status { margin: 0; font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: #12B76A; display: inline-block; }
+.dot.off { background: #98A2B3; } .dot.bad { background: #F04438; }
+.cols { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
+main.list { flex: 999 1 600px; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+aside.side-panel { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.seg { display: flex; gap: 4px; }
+.seg button { height: 40px; padding: 0 14px; border-radius: 8px; border: 1px solid transparent; background: transparent; color: var(--text-3); font-size: 14px; font-weight: 500; }
+.seg button[aria-pressed="true"] { border-color: var(--text); background: var(--text); color: #FFFFFF; font-weight: 700; }
+.tool-right { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.tool-right label { font-size: 13px; color: var(--text-3); }
+.tool-right select { height: 40px; border-radius: 8px; padding: 0 8px; }
+
+article.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; }
+.meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.badge { padding: 2px 8px; border-radius: 6px; font-weight: 700; font-size: 12px; }
+.badge.news { background: var(--news-bg); color: var(--news); }
+.badge.sns { background: var(--sns-bg); color: var(--sns); }
+.unverified { font-size: 12px; color: var(--sns); }
+article.card h2 { margin: 0; font-size: 18px; line-height: 1.45; letter-spacing: -0.01em; }
+article.card p { margin: 0; font-size: 14px; line-height: 1.6; color: var(--text-3); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; font-size: 13px; }
+.chip.direct { border: 1px solid var(--text); color: var(--text); }
+.chip.direct b { font-weight: 700; }
+.chip.indirect { border: 1px dashed #98A2B3; color: var(--text-2); }
+.chip.indirect b { font-weight: 500; }
+.chip.plain { border: 1px solid var(--line); color: var(--text-2); }
+.chip small { color: var(--text-3); font-size: 13px; }
+.none { font-size: 13px; color: var(--muted); padding: 4px 0; }
+.more { height: 48px; border: 1px solid var(--input); border-radius: 12px; background: #FFFFFF; font-size: 15px; font-weight: 500; color: var(--text-2); }
+.more:disabled { color: #98A2B3; cursor: default; }
+.empty, .error { background: var(--card); border: 1px dashed var(--input); border-radius: 12px; padding: 28px 20px; text-align: center; color: var(--muted); font-size: 14px; line-height: 1.7; }
+.error { border-color: #FDA29B; color: var(--neg); }
+
+section.box { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; }
+.box-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; }
+.box-head h2 { margin: 0; font-size: 17px; }
+.box-head span, .box-head a { font-size: 12px; color: var(--muted); }
+.box-head a { font-size: 13px; color: var(--accent); }
+ol.ranks { list-style: none; margin: 0; padding: 0; }
+ol.ranks li { border-top: 1px solid var(--line-soft); }
+ol.ranks a { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 12px 0; }
+.rank-no { font-weight: 700; color: var(--accent); font-size: 15px; }
+.rank-name { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rank-name b { font-size: 15px; }
+.rank-name small { font-size: 12px; color: var(--muted); }
+.rank-cnt { font-size: 15px; font-weight: 700; color: var(--text-2); }
+.box p { margin: 0 0 14px; font-size: 14px; line-height: 1.6; color: var(--text-3); }
+.btn-main { display: flex; align-items: center; justify-content: center; height: 44px; border-radius: 10px; background: var(--accent); color: #FFFFFF; font-size: 15px; font-weight: 700; border: none; width: 100%; }
+.btn-main:hover { color: #FFFFFF; }
+.notice { margin: 0; font-size: 12px; line-height: 1.6; color: var(--muted); }
+.result-stocks { display: flex; flex-wrap: wrap; gap: 8px; }
+h3.sec { margin: 8px 0 0; font-size: 16px; }
+</style>
+</head>
+<body>
+<div class="demo-bar">백엔드 확인용 테스트 화면입니다. 진짜 서비스 화면은 <code>frontend/</code>(React)이고, 이 화면은 API가 잘 도는지 직접 눌러 보는 용도예요.</div>
+<div class="layout">
+  <nav class="side" id="side" aria-label="주 메뉴">
+    <div class="side-head">
+      <b>Stock Insight</b>
+      <button type="button" class="icon-btn" id="sideToggle" aria-label="메뉴 접기" aria-expanded="true" title="메뉴 접기">
+        <svg aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3.5 5.5h13M3.5 10h13M3.5 14.5h13"/></svg>
+      </button>
+    </div>
+    <a class="side-link" data-nav="main" href="#/">뉴스·SNS</a>
+    <a class="side-link" data-nav="stock" href="#/stock">종목</a>
+    <a class="side-link" data-nav="watch" href="#/watchlist">관심 종목</a>
+    <a class="side-link login" href="#/login">로그인</a>
+  </nav>
+  <div class="page">
+    <header class="top">
+      <div class="top-in">
+        <a class="logo" href="#/">뉴스<span>×</span>종목</a>
+        <nav class="top-nav" aria-label="주 메뉴">
+          <a data-nav="main" href="#/">뉴스·SNS</a>
+          <a data-nav="stock" href="#/stock">종목</a>
+          <a data-nav="watch" href="#/watchlist">관심 종목</a>
+        </nav>
+        <form class="search" role="search" id="searchForm">
+          <label for="q" class="sr-only">통합 검색</label>
+          <input id="q" type="search" maxlength="50" placeholder="종목명·코드·별칭, 기사 키워드 검색">
+          <select id="qPeriod" aria-label="검색 기간">
+            <option value="today">오늘</option><option value="7d">7일</option><option value="30d">30일</option>
+          </select>
+        </form>
+        <a class="btn-line" href="#/login">로그인</a>
+      </div>
+    </header>
+    <div class="wrap" id="view"></div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ===== 공통 도구 =====
+
+/** 브라우저 저장소. 시크릿 창 등에서 막혀도 화면이 깨지지 않게 try로 감쌈 */
+var store = {
+  get: function (k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } },
+  set: function (k, v) { try { window.localStorage.setItem(k, v); } catch (e) { /* 무시 */ } },
+  del: function (k) { try { window.localStorage.removeItem(k); } catch (e) { /* 무시 */ } }
+};
+var TOKEN_KEY = 'demo-access-token';
+
+/**
+ * API 부르기. 실패하면 백엔드 공통 오류 { code, message }를 담아 throw
+ * 로그인 토큰이 있으면 Authorization: Bearer 를 붙임 (docs/api.md 2절)
+ */
+async function api(path, options) {
+  options = options || {};
+  var headers = { 'Accept': 'application/json' };
+  var token = store.get(TOKEN_KEY);
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  if (options.body !== undefined) headers['Content-Type'] = 'application/json';
+  var res = await fetch(path, {
+    method: options.method || 'GET',
+    headers: headers,
+    body: options.body === undefined ? undefined : JSON.stringify(options.body)
+  });
+  if (res.status === 401 && token) store.del(TOKEN_KEY);   // 만료된 토큰은 지움 (api.md 2절 4번)
+  var text = await res.text();
+  var data = text ? JSON.parse(text) : null;
+  if (!res.ok) {
+    var err = new Error((data && data.message) || ('HTTP ' + res.status));
+    err.code = data && data.code; err.status = res.status;
+    throw err;
+  }
+  return data;
+}
+
+/** 주소 뒤 조건 만들기. 빈 값은 뺌 */
+function qs(params) {
+  var parts = [];
+  Object.keys(params).forEach(function (k) {
+    var v = params[k];
+    if (v !== undefined && v !== null && v !== '') parts.push(encodeURIComponent(k) + '=' + encodeURIComponent(v));
+  });
+  return parts.length ? '?' + parts.join('&') : '';
+}
+
+/**
+ * 글자를 HTML에 넣기 전에 특수 문자를 바꿈. 기사 제목·요약은 바깥에서 온 글이라
+ * 그대로 넣으면 제목 속 <script> 같은 글자가 코드로 실행될 수 있음 (XSS)
+ */
+function esc(s) {
+  return String(s === null || s === undefined ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function pad(n) { return n < 10 ? '0' + n : '' + n; }
+
+/** 2026-11-02T09:04:19+09:00 → 오늘이면 09:04, 아니면 11/02 09:04 */
+function fmtTime(iso) {
+  if (!iso) return '';
+  var d = new Date(iso), now = new Date();
+  var hm = pad(d.getHours()) + ':' + pad(d.getMinutes());
+  return d.toDateString() === now.toDateString() ? hm : (pad(d.getMonth() + 1) + '/' + pad(d.getDate()) + ' ' + hm);
+}
+
+/** 몇 분 전 / 몇 시간 전 / 날짜 */
+function ago(iso) {
+  if (!iso) return null;
+  var min = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  if (min < 1) return '방금';
+  if (min < 60) return min + '분 전';
+  if (min < 60 * 24) return Math.floor(min / 60) + '시간 전';
+  return fmtTime(iso);
+}
+
+var view = document.getElementById('view');
+
+function showError(target, e) {
+  target.innerHTML = '<div class="error">불러오지 못했어요: ' + esc(e.message)
+    + (e.code ? ' (' + esc(e.code) + ')' : '')
+    + '<br>서버가 켜져 있는지 확인하세요 (<code>./gradlew bootRun</code> 또는 <code>docker compose up -d</code>)</div>';
+}
+
+// ===== 글 카드 (목록·검색에서 같이 씀) =====
+
+function chipHtml(s) {
+  var rel = s.relevance === null || s.relevance === undefined ? '' : s.relevance + '%';
+  var href = '#/stock/' + encodeURIComponent(s.stockCode);
+  if (s.matchType === 'DIRECT') {
+    return '<a class="chip direct" href="' + href + '"><b>' + esc(s.stockName) + '</b><small>직접 ' + rel + '</small></a>';
+  }
+  if (s.matchType === 'INDIRECT') {
+    return '<a class="chip indirect" href="' + href + '"><b>' + esc(s.stockName) + '</b><small>간접 ' + rel + '</small></a>';
+  }
+  // AI가 직접/간접·관련도를 아직 안 채운 경우 (api.md: null이면 칩 모양·% 생략)
+  return '<a class="chip plain" href="' + href + '"><b>' + esc(s.stockName) + '</b>' + (rel ? '<small>' + rel + '</small>' : '') + '</a>';
+}
+
+function cardHtml(a) {
+  var isSns = a.sourceType === 'SNS';
+  var badge = isSns
+    ? '<span class="badge sns">SNS</span><span class="unverified">확인되지 않은 정보</span>'
+    : '<span class="badge news">뉴스</span>';
+  var stocks = a.stocks && a.stocks.length
+    ? a.stocks.map(chipHtml).join('')
+    : '<span class="none">관련 종목 없음</span>';
+  return '<article class="card">'
+    + '<div class="meta">' + badge + '<span>' + esc(a.press || a.channel) + '</span><span aria-hidden="true">·</span>'
+    + '<span>' + esc(fmtTime(a.publishedAt)) + '</span></div>'
+    + '<h2><a href="#/article/' + encodeURIComponent(a.articleId) + '">' + esc(a.title) + '</a></h2>'
+    + '<p>' + esc(a.summary) + '</p>'
+    + '<div class="chips">' + stocks + '</div>'
+    + '</article>';
+}
+
+// ===== 홈: 뉴스·SNS 목록 (F-10) + 오늘의 이슈 종목 (F-12) + 관심 종목 + 데이터 상태 (F-16) =====
+
+var home = { source: '', sort: 'latest', minRelevance: '', page: 1, size: 10, items: [], total: 0 };
+
+function renderHome() {
+  view.innerHTML =
+    '<div class="title-row"><h1>오늘의 뉴스·SNS</h1><p class="status" id="status"><span class="dot off"></span>갱신 시각 불러오는 중…</p></div>'
+    + '<div class="cols">'
+    + '<main class="list">'
+    + '<div class="toolbar">'
+    + '<div class="seg" role="group" aria-label="출처" id="srcTabs">'
+    + segBtn('source', '', '전체') + segBtn('source', 'NEWS', '뉴스') + segBtn('source', 'SNS', 'SNS')
+    + '</div>'
+    + '<div class="tool-right"><label for="rel">관련도</label>'
+    + '<select id="rel"><option value="">전체</option><option value="50">50% 이상</option><option value="80">80% 이상</option></select>'
+    + '<div class="seg" role="group" aria-label="정렬" id="sortTabs" style="margin-left:4px">'
+    + segBtn('sort', 'latest', '최신순') + segBtn('sort', 'relevance', '관련도순')
+    + '</div></div></div>'
+    + '<div id="articles"></div>'
+    + '<button type="button" class="more" id="more" hidden>더 보기</button>'
+    + '</main>'
+    + '<aside class="side-panel">'
+    + '<section class="box" aria-labelledby="rank-h"><div class="box-head"><h2 id="rank-h">오늘의 이슈 종목</h2><span>매칭 기사 수</span></div><ol class="ranks" id="ranks"></ol></section>'
+    + '<section class="box" aria-labelledby="watch-h"><div class="box-head"><h2 id="watch-h">관심 종목</h2><a href="#/watchlist">전체 보기</a></div><div id="watch"></div></section>'
+    + '<p class="notice">요약·연결 이유는 AI가 생성해 틀릴 수 있어요. 원문은 언론사 링크로 확인하세요. SNS 글은 참고용입니다.</p>'
+    + '</aside></div>';
+
+  document.getElementById('rel').value = home.minRelevance;
+  view.querySelectorAll('.seg button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      home[b.dataset.key] = b.dataset.val;
+      syncSeg();
+      loadArticles(true);
+    });
+  });
+  document.getElementById('rel').addEventListener('change', function (e) {
+    home.minRelevance = e.target.value;
+    loadArticles(true);
+  });
+  document.getElementById('more').addEventListener('click', function () { loadArticles(false); });
+  syncSeg();
+  loadArticles(true);
+  loadIssues();
+  loadStatus();
+  loadWatchBox();
+}
+
+function segBtn(key, val, label) {
+  return '<button type="button" data-key="' + key + '" data-val="' + val + '">' + label + '</button>';
+}
+
+function syncSeg() {
+  view.querySelectorAll('.seg button').forEach(function (b) {
+    b.setAttribute('aria-pressed', home[b.dataset.key] === b.dataset.val ? 'true' : 'false');
+  });
+}
+
+/** 글 목록. reset이면 1쪽부터 다시, 아니면 다음 쪽을 아래에 붙임 (더 보기) */
+async function loadArticles(reset) {
+  var box = document.getElementById('articles'), more = document.getElementById('more');
+  if (reset) { home.page = 1; home.items = []; box.innerHTML = '<div class="empty">불러오는 중…</div>'; }
+  more.disabled = true;
+  try {
+    var data = await api('/api/articles' + qs({
+      source: home.source, sort: home.sort, minRelevance: home.minRelevance, page: home.page, size: home.size
+    }));
+    home.items = home.items.concat(data.items);
+    home.total = data.totalCount;
+    home.page += 1;
+    box.innerHTML = home.items.length
+      ? home.items.map(cardHtml).join('')
+      : '<div class="empty">조건에 맞는 글이 없어요.<br>개발 PC라면 예시 기사를 켜 보세요 (docs/setup.md 2절)</div>';
+    more.hidden = home.items.length >= home.total;
+    more.disabled = false;
+    more.textContent = '더 보기 (' + home.items.length + ' / ' + home.total + ')';
+  } catch (e) {
+    showError(box, e);
+    more.hidden = true;
+  }
+}
+
+async function loadIssues() {
+  var ol = document.getElementById('ranks');
+  try {
+    var data = await api('/api/stocks/issues' + qs({ limit: 5 }));
+    if (!data.items.length) { ol.innerHTML = '<li class="none" style="padding:12px 0">오늘 연결된 글이 아직 없어요</li>'; return; }
+    ol.innerHTML = data.items.map(function (r) {
+      var sub = r.avgRelevance === null ? '최근 ' + fmtTime(r.lastPublishedAt) : '평균 관련도 ' + r.avgRelevance + '% · 최근 ' + fmtTime(r.lastPublishedAt);
+      return '<li><a href="#/stock/' + encodeURIComponent(r.stockCode) + '">'
+        + '<span class="rank-no">' + r.rank + '</span>'
+        + '<span class="rank-name"><b>' + esc(r.stockName) + '</b><small>' + esc(sub) + '</small></span>'
+        + '<span class="rank-cnt">' + r.articleCount + '건</span></a></li>';
+    }).join('');
+  } catch (e) {
+    ol.innerHTML = '<li class="none" style="padding:12px 0">불러오지 못했어요: ' + esc(e.message) + '</li>';
+  }
+}
+
+async function loadStatus() {
+  var el = document.getElementById('status');
+  try {
+    var s = await api('/api/status');
+    var parts = [];
+    if (s.newsCollectedAt) parts.push('뉴스 ' + ago(s.newsCollectedAt));
+    if (s.snsCollectedAt) parts.push('SNS ' + ago(s.snsCollectedAt));
+    if (s.summaryGeneratedAt) parts.push('요약 ' + ago(s.summaryGeneratedAt));
+    var dot = 'dot', extra = '';
+    if (s.lastRun && s.lastRun.status === 'RUNNING') extra = ' · 수집 중';
+    if (s.lastRun && s.lastRun.status === 'FAILED') { dot = 'dot bad'; extra = ' · 마지막 수집 실패'; }
+    if (!parts.length) { dot = 'dot off'; parts.push('아직 수집 기록이 없어요'); }
+    el.innerHTML = '<span class="' + dot + '"></span>' + esc(parts.join(' · ') + extra);
+  } catch (e) {
+    el.innerHTML = '<span class="dot bad"></span>갱신 시각을 불러오지 못했어요';
+  }
+}
+
+/** 관심 종목 칸: 로그인했으면 내 관심 종목, 아니면 로그인 안내 */
+async function loadWatchBox() {
+  var box = document.getElementById('watch');
+  if (!store.get(TOKEN_KEY)) {
+    box.innerHTML = '<p>로그인하면 관심 종목의 새 기사를 여기서 바로 볼 수 있어요.</p><a class="btn-main" href="#/login">로그인</a>';
+    return;
+  }
+  try {
+    var data = await api('/api/watchlist');
+    var items = data.items || data;
+    if (!items.length) { box.innerHTML = '<p>아직 관심 종목이 없어요. 종목 화면에서 추가할 수 있어요.</p>'; return; }
+    box.innerHTML = '<ol class="ranks">' + items.slice(0, 5).map(function (w) {
+      return '<li><a href="#/stock/' + encodeURIComponent(w.stockCode) + '"><span class="rank-no">·</span>'
+        + '<span class="rank-name"><b>' + esc(w.stockName) + '</b><small>최근 매칭 ' + esc(w.lastMatchedAt ? fmtTime(w.lastMatchedAt) : '없음') + '</small></span>'
+        + '<span class="rank-cnt">오늘 ' + w.todayArticleCount + '건</span></a></li>';
+    }).join('') + '</ol>';
+  } catch (e) {
+    box.innerHTML = '<p>로그인이 만료됐어요. 다시 로그인해 주세요.</p><a class="btn-main" href="#/login">로그인</a>';
+  }
+}
+
+// ===== 통합 검색 (F-13) =====
+
+var search = { q: '', period: 'today', page: 1, size: 10, items: [], total: 0 };
+
+function renderSearch(params) {
+  search.q = params.get('q') || '';
+  search.period = params.get('period') || 'today';
+  document.getElementById('q').value = search.q;
+  document.getElementById('qPeriod').value = search.period;
+  var label = { today: '오늘', '7d': '7일', '30d': '30일' }[search.period] || search.period;
+  view.innerHTML = '<div class="title-row"><h1>“' + esc(search.q) + '” 검색 결과</h1><p class="status">기간: ' + esc(label) + '</p></div>'
+    + '<main class="list" style="max-width:900px">'
+    + '<h3 class="sec">종목</h3><div id="sStocks" class="result-stocks"></div>'
+    + '<h3 class="sec">글</h3><div id="sArticles"></div>'
+    + '<button type="button" class="more" id="sMore" hidden>더 보기</button></main>';
+  document.getElementById('sMore').addEventListener('click', function () { loadSearch(false); });
+  loadSearch(true);
+}
+
+async function loadSearch(reset) {
+  var sBox = document.getElementById('sStocks'), aBox = document.getElementById('sArticles'), more = document.getElementById('sMore');
+  if (reset) { search.page = 1; search.items = []; aBox.innerHTML = '<div class="empty">찾는 중…</div>'; }
+  try {
+    var data = await api('/api/search' + qs({ q: search.q, period: search.period, page: search.page, size: search.size }));
+    if (reset) {
+      sBox.innerHTML = data.stocks.items.length
+        ? data.stocks.items.map(function (s) {
+            return '<a class="chip direct" href="#/stock/' + encodeURIComponent(s.stockCode) + '"><b>' + esc(s.stockName) + '</b><small>' + esc(s.stockCode) + ' · ' + esc(s.market) + '</small></a>';
+          }).join('') + (data.stocks.totalCount > data.stocks.items.length ? '<span class="none">외 ' + (data.stocks.totalCount - data.stocks.items.length) + '개</span>' : '')
+        : '<span class="none">맞는 종목이 없어요</span>';
+    }
+    search.items = search.items.concat(data.articles.items);
+    search.total = data.articles.totalCount;
+    search.page += 1;
+    aBox.innerHTML = search.items.length
+      ? search.items.map(cardHtml).join('')
+      : '<div class="empty">이 기간에 제목·요약·키워드에 “' + esc(search.q) + '”가 들어간 글이 없어요.<br>기간을 7일·30일로 늘려 보세요.</div>';
+    more.hidden = search.items.length >= search.total;
+    more.textContent = '더 보기 (' + search.items.length + ' / ' + search.total + ')';
+  } catch (e) {
+    showError(aBox, e);
+    sBox.innerHTML = '';
+  }
+}
+
+// ===== 아직 만들지 않은 화면 (다음 단계) =====
+
+function renderTodo(title, step, apis) {
+  view.innerHTML = '<div class="title-row"><h1>' + esc(title) + '</h1></div>'
+    + '<div class="empty">' + esc(step) + '에서 만들 화면이에요.<br>쓸 API: <code>' + apis.map(esc).join('</code>, <code>') + '</code>'
+    + '<br><br><a href="#/" style="color:var(--accent)">← 홈으로</a></div>';
+}
+
+// ===== 화면 이동 (주소의 # 뒤를 보고 그릴 화면을 고름) =====
+
+function route() {
+  var hash = location.hash.replace(/^#/, '') || '/';
+  var path = hash.split('?')[0], params = new URLSearchParams(hash.split('?')[1] || '');
+  var parts = path.split('/').filter(Boolean);
+  var nav = 'main';
+  if (parts[0] === 'search' && params.get('q')) renderSearch(params);
+  else if (parts[0] === 'article') renderTodo('글 상세', '2단계', ['GET /api/articles/' + (parts[1] || '{id}')]);
+  else if (parts[0] === 'stock') { nav = 'stock'; renderTodo('종목별 조회', '3단계', ['GET /api/stocks/' + (parts[1] || '{code}') + '/summary', '/mentions', '/api/articles?stockCode=']); }
+  else if (parts[0] === 'watchlist') { nav = 'watch'; renderTodo('관심 종목', '4단계', ['GET /api/watchlist', 'GET /api/watchlist/articles']); }
+  else if (parts[0] === 'login') renderTodo('로그인', '4단계', ['POST /api/auth/signup', 'POST /api/auth/login']);
+  else renderHome();
+  document.querySelectorAll('[data-nav]').forEach(function (a) { a.classList.toggle('on', a.dataset.nav === nav); });
+  window.scrollTo(0, 0);
+}
+
+// 검색: 엔터 → #/search?q=…&period=…
+document.getElementById('searchForm').addEventListener('submit', function (e) {
+  e.preventDefault();
+  var q = document.getElementById('q').value.trim();
+  if (!q) return;
+  location.hash = '#/search' + qs({ q: q, period: document.getElementById('qPeriod').value });
+});
+
+// 왼쪽 메뉴 접기·펴기 (목업과 같이 브라우저에 기억)
+(function () {
+  var side = document.getElementById('side'), btn = document.getElementById('sideToggle');
+  function apply(collapsed) {
+    side.classList.toggle('collapsed', collapsed);
+    btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    btn.setAttribute('aria-label', collapsed ? '메뉴 펼치기' : '메뉴 접기');
+    btn.title = btn.getAttribute('aria-label');
+  }
+  apply(store.get('si-menu-collapsed') === '1');
+  btn.addEventListener('click', function () {
+    var next = !side.classList.contains('collapsed');
+    store.set('si-menu-collapsed', next ? '1' : '0');
+    apply(next);
+  });
+})();
+
+window.addEventListener('hashchange', route);
+route();
+</script>
+</body>
+</html>
