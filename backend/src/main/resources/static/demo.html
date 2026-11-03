@@ -751,6 +751,10 @@ async function renderStock(code) {
     + '<div id="sChart" style="margin-top:10px"></div>'
     + '<h3 class="sec" style="margin-top:14px">최근 체결</h3><div id="sTicks"></div>'
     + '<h3 class="sec" style="margin-top:14px">수집 점검 <small style="font-weight:400;color:var(--muted)">(오늘, 빠진 체결 비율·지연)</small></h3><div id="sCheck" style="font-size:13px;color:var(--text-3)"></div></section>'
+    + '<section class="box"><div class="box-head"><h2>급등·급락한 날 <small style="font-weight:400;color:var(--muted)">(F-17 · 일봉 기준)</small></h2>'
+    + '<div class="row-gap">' + segHtml('moveTh', [['5', '±5%'], ['10', '±10%']], '5')
+    + segHtml('movePeriod', [['3m', '3개월'], ['6m', '6개월'], ['1y', '1년']], '1y') + '</div></div>'
+    + '<div id="sMoves"></div></section>'
     + '<section class="box"><div class="box-head"><h2>오늘의 종합 요약</h2><span id="sumAt"></span></div><div id="sSum"></div>'
     + '<h3 class="sec" style="margin-top:16px">감성 비율 <small id="sentiCnt" style="font-weight:400;color:var(--muted)"></small></h3>'
     + segHtml('sentiSrc', [['', '전체'], ['NEWS', '뉴스'], ['SNS', 'SNS']], '') + '<div id="sSenti"></div>'
@@ -778,6 +782,10 @@ async function renderStock(code) {
   loadChart(code, 'minute');
   bindSeg('chartUnit', function (v) { loadChart(code, v); });
   loadTicks(code);
+  var moveOpt = { period: '1y', threshold: '5' };
+  loadBigMoves(code, moveOpt);
+  bindSeg('movePeriod', function (v) { moveOpt.period = v; loadBigMoves(code, moveOpt); });
+  bindSeg('moveTh', function (v) { moveOpt.threshold = v; loadBigMoves(code, moveOpt); });
   loadSummary(code, '');
   bindSeg('sentiSrc', function (v) { loadSummary(code, v); });
   loadMentions(code, 'today');
@@ -1126,6 +1134,35 @@ async function loadCheck(code) {
       : '오늘 이 종목은 생중계로 받은 체결이 없어요';
   } catch (e) {
     box.textContent = '점검을 불러오지 못했어요: ' + e.message;
+  }
+}
+
+/**
+ * 급등·급락한 날 (F-17): 하루 등락률이 기준을 넘은 날(최신부터) + 그날 이 종목에 연결된 글
+ * 글은 AI가 기사를 모으기 시작한 뒤부터만 있으므로, 그 전 날짜는 "연결된 글 없음"이 정상
+ */
+async function loadBigMoves(code, opt) {
+  var box = document.getElementById('sMoves');
+  if (!box) return;
+  box.innerHTML = '<p class="none">불러오는 중… (일봉 1년 치, 처음엔 몇 초 걸려요)</p>';
+  try {
+    var d = await api('/api/quotes/' + encodeURIComponent(code) + '/big-moves' + qs(opt));
+    if (!d.items.length) { box.innerHTML = '<p class="none">' + esc(d.from) + ' 이후 ±' + d.threshold + '% 넘게 움직인 날이 없어요</p>'; return; }
+    box.innerHTML = '<p style="font-size:13px;color:var(--muted);margin:0 0 6px">' + esc(d.from) + ' ~ ' + esc(d.to) + ' · ' + d.items.length + '일</p>'
+      + '<table class="watch"><thead><tr><th>날짜</th><th>종가</th><th>등락률</th><th>거래량</th><th>그날 연결된 글</th></tr></thead><tbody>'
+      + d.items.map(function (m) {
+          var c = dirClass(m.direction);
+          var arts = m.articles.length
+            ? m.articles.map(function (a) {
+                return '<div><a href="#/article/' + a.articleId + '">' + esc(a.title) + '</a> <small style="color:var(--muted)">'
+                  + esc(a.sourceType === 'SNS' ? 'SNS' : (a.press || '뉴스')) + (a.relevance === null ? '' : ' · ' + a.relevance + '%') + '</small></div>';
+              }).join('') + (m.articleCount > m.articles.length ? '<small style="color:var(--muted)">외 ' + (m.articleCount - m.articles.length) + '건</small>' : '')
+            : '<small style="color:var(--muted)">연결된 글 없음</small>';
+          return '<tr><td style="white-space:nowrap">' + esc(m.date) + '</td><td>' + won(m.close) + '</td>'
+            + '<td class="' + c + '"><b>' + signedRate(m.changeRate) + '</b></td><td>' + won(m.volume) + '</td><td>' + arts + '</td></tr>';
+        }).join('') + '</tbody></table>';
+  } catch (e) {
+    box.innerHTML = '<p class="none">' + esc(quoteMsg(e)) + '</p>';
   }
 }
 
