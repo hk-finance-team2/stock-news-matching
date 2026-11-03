@@ -745,9 +745,11 @@ async function renderStock(code) {
     + '<div class="stock-head" id="sHead"><h1>불러오는 중…</h1></div>'
     + '<div class="cols"><main class="list">'
     + '<section class="box"><div class="box-head"><h2>시세 <small style="font-weight:400;color:var(--muted)">(KIS · 확장 기능)</small></h2>'
-    + segHtml('chartUnit', [['minute', '오늘 분봉'], ['day', '일봉']], 'minute') + '</div>'
+    + segHtml('chartUnit', [['1m', '1분'], ['5m', '5분'], ['10m', '10분'], ['30m', '30분'], ['day', '일'], ['week', '주'], ['month', '월'], ['year', '년']], '5m') + '</div>'
     + '<div id="quoteHead" class="quote-head"><small>불러오는 중…</small></div>'
     + '<div id="replayBar" class="row-gap" style="margin-top:8px;font-size:13px"></div>'
+    + '<div class="row-gap" style="margin-top:8px;font-size:13px" id="chartDateRow"><label>분봉 날짜 <input type="date" id="chartDate"></label>'
+    + '<small style="color:var(--muted)">최대 1년 전까지 · 장이 없던 날은 비어 있어요</small></div>'
     + '<div id="sChart" style="margin-top:10px"></div>'
     + '<h3 class="sec" style="margin-top:14px">최근 체결</h3><div id="sTicks"></div>'
     + '<h3 class="sec" style="margin-top:14px">수집 점검 <small style="font-weight:400;color:var(--muted)">(오늘, 빠진 체결 비율·지연)</small></h3><div id="sCheck" style="font-size:13px;color:var(--text-3)"></div></section>'
@@ -779,8 +781,17 @@ async function renderStock(code) {
   loadQuoteHead(code);
   loadReplayBar(code);
   loadCheck(code);
-  loadChart(code, 'minute');
-  bindSeg('chartUnit', function (v) { loadChart(code, v); });
+  var chartOpt = { unit: '5m', date: '' };
+  var dateInput = document.getElementById('chartDate');
+  var todayIso = isoDate(new Date());
+  dateInput.max = todayIso; dateInput.min = isoDate(new Date(Date.now() - 365 * 864e5)); dateInput.value = todayIso;
+  loadChart(code, chartOpt);
+  bindSeg('chartUnit', function (v) {
+    chartOpt.unit = v;
+    document.getElementById('chartDateRow').style.display = /m$/.test(v) ? '' : 'none';   // 날짜는 분봉에서만 (.row-gap의 flex가 hidden을 덮어서 style로)
+    loadChart(code, chartOpt);
+  });
+  dateInput.addEventListener('change', function () { chartOpt.date = dateInput.value === todayIso ? '' : dateInput.value; loadChart(code, chartOpt); });
   loadTicks(code);
   var moveOpt = { period: '1y', threshold: '5' };
   loadBigMoves(code, moveOpt);
@@ -991,43 +1002,59 @@ function renderQuoteHead(q) {
     + badge;
 }
 
-/** 차트: 종가 선 + 아래 거래량 막대 (SVG 직접). 마지막 종가가 첫 시가보다 높으면 빨강 */
-async function loadChart(code, unit) {
+function isoDate(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+
+/** 차트: 봉(캔들) + 아래 거래량 막대 (SVG 직접). opt = { unit: 1m·5m·10m·30m·day·week·month·year, date: 분봉 날짜(없으면 오늘) } */
+async function loadChart(code, opt) {
   var box = document.getElementById('sChart');
   if (!box) return;
   box.innerHTML = '<p class="none">차트 불러오는 중…</p>';
   try {
-    var c = await api('/api/quotes/' + encodeURIComponent(code) + '/chart' + qs({ unit: unit }));
+    var c = await api('/api/quotes/' + encodeURIComponent(code) + '/chart' + qs({ unit: opt.unit, date: /m$/.test(opt.unit) ? opt.date : '' }));
     box.innerHTML = chartSvg(c);
   } catch (e) {
     box.innerHTML = '<p class="none">' + esc(quoteMsg(e)) + '</p>';
   }
 }
 
+/**
+ * 캔들 하나 = 꼬리(고가~저가 세로선) + 몸통(시가~종가 네모). 종가 > 시가면 빨강(상승), < 시가면 파랑(하락), 같으면 회색
+ * 봉마다 <title>을 달아 마우스를 올리면 시가·고가·저가·종가·거래량이 보임
+ */
 function chartSvg(c) {
   var items = c.items;
-  if (!items.length) return '<p class="none">차트 데이터가 없어요</p>';
-  var W = 600, H = 170, VH = 40, P = 6;
+  if (!items.length) return '<p class="none">' + (c.date ? esc(c.date) + ' 분봉이 없어요 (장이 없던 날이거나 아직 장 시작 전)' : '차트 데이터가 없어요') + '</p>';
+  var W = 600, H = 170, VH = 40, P = 6, GAP = 4;
   var hi = Math.max.apply(null, items.map(function (x) { return x.high; }));
   var lo = Math.min.apply(null, items.map(function (x) { return x.low; }));
   if (hi === lo) { hi += 1; lo -= 1; }
   var vmax = Math.max.apply(null, [1].concat(items.map(function (x) { return x.volume; })));
-  var step = W / items.length;
-  function y(v) { return P + (hi - v) / (hi - lo) * (H - 2 * P); }
-  var pts = items.map(function (it, i) { return (i * step + step / 2).toFixed(1) + ',' + y(it.close).toFixed(1); }).join(' ');
-  var color = items[items.length - 1].close >= items[0].open ? '#C81E1E' : '#1D4ED8';
-  var vols = items.map(function (it, i) {
-    var h = it.volume / vmax * VH;
-    return '<rect x="' + (i * step + step * 0.15).toFixed(1) + '" y="' + (H + VH - h).toFixed(1) + '" width="' + Math.max(0.5, step * 0.7).toFixed(1) + '" height="' + h.toFixed(1) + '" fill="#CBD5E1"/>';
-  }).join('');
+  var step = W / items.length, bw = Math.max(1, step * 0.7);
+  // 최고가가 최저가의 10배를 넘으면(월·년봉 수십 년) 로그 눈금: 같은 "몇 %" 움직임이 같은 높이로 보임
+  var useLog = lo > 0 && hi / lo > 10;
+  function f(v) { return useLog ? Math.log(Math.max(v, 1)) : v; }
+  function y(v) { return P + (f(hi) - f(v)) / (f(hi) - f(lo)) * (H - 2 * P); }
   function label(iso) {
     var d = new Date(iso);
-    return c.unit === 'MINUTE' ? pad(d.getHours()) + ':' + pad(d.getMinutes()) : pad(d.getMonth() + 1) + '/' + pad(d.getDate());
+    if (/m$/.test(c.unit)) return pad(d.getHours()) + ':' + pad(d.getMinutes());
+    if (c.unit === 'year') return String(d.getFullYear());
+    if (c.unit === 'month') return d.getFullYear() + '/' + pad(d.getMonth() + 1);
+    return String(d.getFullYear()).slice(2) + '/' + pad(d.getMonth() + 1) + '/' + pad(d.getDate());
   }
-  return '<svg viewBox="0 0 ' + W + ' ' + (H + VH) + '" width="100%" role="img" aria-label="' + (c.unit === 'MINUTE' ? '오늘 1분봉' : '일봉') + ' 종가 차트">'
-    + vols + '<polyline fill="none" stroke="' + color + '" stroke-width="1.8" points="' + pts + '"/></svg>'
+  var bars = items.map(function (it, i) {
+    var x = i * step + step / 2;
+    var color = it.close > it.open ? '#C81E1E' : (it.close < it.open ? '#1D4ED8' : '#98A2B3');
+    var top = y(Math.max(it.open, it.close)), bottom = y(Math.min(it.open, it.close));
+    var vh = it.volume / vmax * VH;
+    return '<g><title>' + esc(label(it.time) + ' 시 ' + won(it.open) + ' 고 ' + won(it.high) + ' 저 ' + won(it.low) + ' 종 ' + won(it.close) + ' · 거래량 ' + won(it.volume)) + '</title>'
+      + '<line x1="' + x.toFixed(1) + '" x2="' + x.toFixed(1) + '" y1="' + y(it.high).toFixed(1) + '" y2="' + y(it.low).toFixed(1) + '" stroke="' + color + '" stroke-width="1"/>'
+      + '<rect x="' + (x - bw / 2).toFixed(1) + '" y="' + top.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + Math.max(1, bottom - top).toFixed(1) + '" fill="' + color + '"/>'
+      + '<rect x="' + (x - bw / 2).toFixed(1) + '" y="' + (H + GAP + VH - vh).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + vh.toFixed(1) + '" fill="' + color + '" opacity="0.35"/></g>';
+  }).join('');
+  var names = { '1m': '1분봉', '5m': '5분봉', '10m': '10분봉', '30m': '30분봉', day: '일봉', week: '주봉', month: '월봉', year: '년봉' };
+  return '<svg viewBox="0 0 ' + W + ' ' + (H + GAP + VH) + '" width="100%" role="img" aria-label="' + esc((c.date || '') + ' ' + names[c.unit]) + ' 캔들 차트">' + bars + '</svg>'
     + '<div class="chart-meta"><span>' + esc(label(items[0].time)) + '</span>'
-    + '<span>고가 ' + won(hi) + ' · 저가 ' + won(lo) + ' · ' + items.length + (c.unit === 'MINUTE' ? '분' : '일') + '</span>'
+    + '<span>' + esc((c.date ? c.date + ' ' : '') + names[c.unit]) + ' ' + items.length + '개 · 고가 ' + won(hi) + ' · 저가 ' + won(lo) + (useLog ? ' · 로그 눈금' : '') + '</span>'
     + '<span>' + esc(label(items[items.length - 1].time)) + '</span></div>';
 }
 
