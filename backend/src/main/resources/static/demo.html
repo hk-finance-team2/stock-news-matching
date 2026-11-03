@@ -179,6 +179,17 @@ textarea { min-height: 70px; resize: vertical; }
 .msg { font-size: 13px; color: var(--neg); min-height: 18px; }
 .msg.ok { color: var(--pos); }
 
+/* 시세 (주제 ①②, KIS) — 상승 빨강, 하락 파랑 (국내 증권 앱 관례) */
+.up { color: #C81E1E; } .down { color: #1D4ED8; } .flat { color: var(--text-3); }
+.qprice { font-size: 24px; font-weight: 700; }
+.quote-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; }
+.quote-head small { color: var(--muted); }
+table.ticks { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.ticks th, table.ticks td { text-align: right; padding: 5px 6px; border-top: 1px solid var(--line-soft); }
+table.ticks th { color: var(--muted); font-weight: 500; border-top: none; }
+table.ticks td:first-child, table.ticks th:first-child { text-align: left; }
+.chart-meta { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-top: 4px; }
+
 /* 4단계: 로그인·관심 종목 */
 .auth-box { max-width: 420px; margin: 24px auto; }
 table.watch { width: 100%; border-collapse: collapse; font-size: 14px; }
@@ -438,9 +449,10 @@ async function loadIssues() {
       var sub = r.avgRelevance === null ? '최근 ' + fmtTime(r.lastPublishedAt) : '평균 관련도 ' + r.avgRelevance + '% · 최근 ' + fmtTime(r.lastPublishedAt);
       return '<li><a href="#/stock/' + encodeURIComponent(r.stockCode) + '">'
         + '<span class="rank-no">' + r.rank + '</span>'
-        + '<span class="rank-name"><b>' + esc(r.stockName) + '</b><small>' + esc(sub) + '</small></span>'
+        + '<span class="rank-name"><b>' + esc(r.stockName) + '</b><small class="rq" data-code="' + esc(r.stockCode) + '"></small><small>' + esc(sub) + '</small></span>'
         + '<span class="rank-cnt">' + r.articleCount + '건</span></a></li>';
     }).join('');
+    fillRankQuotes(data.items.map(function (r) { return r.stockCode; }));
   } catch (e) {
     ol.innerHTML = '<li class="none" style="padding:12px 0">불러오지 못했어요: ' + esc(e.message) + '</li>';
   }
@@ -699,6 +711,10 @@ async function renderStock(code) {
   view.innerHTML = '<a class="back" href="javascript:history.back()">← 뒤로</a>'
     + '<div class="stock-head" id="sHead"><h1>불러오는 중…</h1></div>'
     + '<div class="cols"><main class="list">'
+    + '<section class="box"><div class="box-head"><h2>시세 <small style="font-weight:400;color:var(--muted)">(KIS · 확장 기능)</small></h2>'
+    + segHtml('chartUnit', [['minute', '오늘 분봉'], ['day', '일봉']], 'minute') + '</div>'
+    + '<div id="quoteHead" class="quote-head"><small>불러오는 중…</small></div><div id="sChart" style="margin-top:10px"></div>'
+    + '<h3 class="sec" style="margin-top:14px">최근 체결</h3><div id="sTicks"></div></section>'
     + '<section class="box"><div class="box-head"><h2>오늘의 종합 요약</h2><span id="sumAt"></span></div><div id="sSum"></div>'
     + '<h3 class="sec" style="margin-top:16px">감성 비율 <small id="sentiCnt" style="font-weight:400;color:var(--muted)"></small></h3>'
     + segHtml('sentiSrc', [['', '전체'], ['NEWS', '뉴스'], ['SNS', 'SNS']], '') + '<div id="sSenti"></div>'
@@ -710,7 +726,7 @@ async function renderStock(code) {
     + '<div id="sArts" class="list"></div><button type="button" class="more" id="sArtsMore" hidden style="width:100%;margin-top:10px">더 보기</button></section>'
     + '<section class="box"><div class="box-head"><h2>종목 토론</h2><span>글·댓글·공감</span></div><div id="sBoard"></div></section>'
     + '</main><aside class="side-panel"><section class="box"><div class="box-head"><h2>오늘의 이슈 종목</h2><span>매칭 기사 수</span></div><ol class="ranks" id="ranks"></ol></section>'
-    + '<p class="notice">감성 비율·언급량은 분석이 끝난 글을 지금 센 값이에요. 현재가는 1차 범위(시세 제외)가 아니라 없어요.</p></aside></div>';
+    + '<p class="notice">감성 비율·언급량은 분석이 끝난 글을 지금 센 값이에요. 시세는 확장 기능(주제 ①②)이라 서버에서 켠 경우에만 나와요. 지금은 몇 초마다 조회한 값이고, 실시간은 다음 단계예요.</p></aside></div>';
 
   var head = document.getElementById('sHead');
   try {
@@ -720,6 +736,10 @@ async function renderStock(code) {
   } catch (e) { showError(head, e); return; }
 
   loadWatchButton(code);
+  loadQuoteHead(code);
+  loadChart(code, 'minute');
+  bindSeg('chartUnit', function (v) { loadChart(code, v); });
+  loadTicks(code);
   loadSummary(code, '');
   bindSeg('sentiSrc', function (v) { loadSummary(code, v); });
   loadMentions(code, 'today');
@@ -873,6 +893,108 @@ async function openPost(code, postId) {
     try { await api('/api/posts/' + postId + '/comments', { method: 'POST', body: { content: cf.content.value } }); openPost(code, postId); }
     catch (err) { msg.textContent = err.message; }
   });
+}
+
+// ===== 시세 (주제 ①②, KIS 확장 기능): GET /api/quotes/... =====
+// 서버 .env 에 KIS_ENABLED=true 일 때만 값이 나옴. 꺼져 있으면 503 QUOTE_DISABLED → "시세 꺼짐" 안내만
+
+function won(n) { return Number(n).toLocaleString('ko-KR'); }
+function dirClass(d) { return d === 'UP' ? 'up' : (d === 'DOWN' ? 'down' : 'flat'); }
+function signedWon(n) { return (Number(n) > 0 ? '+' : '') + won(n); }
+function signedRate(r) { return (Number(r) > 0 ? '+' : '') + Number(r) + '%'; }
+function hms(iso) { var d = new Date(iso); return pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()); }
+function quoteMsg(e) {
+  return e.code === 'QUOTE_DISABLED' ? '시세 꺼짐 (서버 .env 의 KIS_ENABLED)' : '시세를 불러오지 못했어요: ' + e.message;
+}
+
+/** 종목 화면 위쪽 현재가 */
+async function loadQuoteHead(code) {
+  var el = document.getElementById('quoteHead');
+  if (!el) return;
+  try {
+    var q = await api('/api/quotes/' + encodeURIComponent(code));
+    var c = dirClass(q.direction);
+    el.innerHTML = '<span class="qprice ' + c + '">' + won(q.price) + '원</span>'
+      + '<span class="' + c + '">' + signedWon(q.changeAmount) + ' (' + signedRate(q.changeRate) + ')</span>'
+      + '<small>시가 ' + won(q.open) + ' · 고가 ' + won(q.high) + ' · 저가 ' + won(q.low) + ' · 거래량 ' + won(q.accVolume) + '</small>'
+      + '<small>' + esc(hms(q.fetchedAt)) + ' 기준 (조회)</small>'
+      + '<button type="button" class="btn-sm" id="qRefresh">새로고침</button>';
+    document.getElementById('qRefresh').addEventListener('click', function () { loadQuoteHead(code); loadTicks(code); });
+  } catch (e) {
+    el.innerHTML = '<small>' + esc(quoteMsg(e)) + '</small>';
+  }
+}
+
+/** 차트: 종가 선 + 아래 거래량 막대 (SVG 직접). 마지막 종가가 첫 시가보다 높으면 빨강 */
+async function loadChart(code, unit) {
+  var box = document.getElementById('sChart');
+  if (!box) return;
+  box.innerHTML = '<p class="none">차트 불러오는 중…</p>';
+  try {
+    var c = await api('/api/quotes/' + encodeURIComponent(code) + '/chart' + qs({ unit: unit }));
+    box.innerHTML = chartSvg(c);
+  } catch (e) {
+    box.innerHTML = '<p class="none">' + esc(quoteMsg(e)) + '</p>';
+  }
+}
+
+function chartSvg(c) {
+  var items = c.items;
+  if (!items.length) return '<p class="none">차트 데이터가 없어요</p>';
+  var W = 600, H = 170, VH = 40, P = 6;
+  var hi = Math.max.apply(null, items.map(function (x) { return x.high; }));
+  var lo = Math.min.apply(null, items.map(function (x) { return x.low; }));
+  if (hi === lo) { hi += 1; lo -= 1; }
+  var vmax = Math.max.apply(null, [1].concat(items.map(function (x) { return x.volume; })));
+  var step = W / items.length;
+  function y(v) { return P + (hi - v) / (hi - lo) * (H - 2 * P); }
+  var pts = items.map(function (it, i) { return (i * step + step / 2).toFixed(1) + ',' + y(it.close).toFixed(1); }).join(' ');
+  var color = items[items.length - 1].close >= items[0].open ? '#C81E1E' : '#1D4ED8';
+  var vols = items.map(function (it, i) {
+    var h = it.volume / vmax * VH;
+    return '<rect x="' + (i * step + step * 0.15).toFixed(1) + '" y="' + (H + VH - h).toFixed(1) + '" width="' + Math.max(0.5, step * 0.7).toFixed(1) + '" height="' + h.toFixed(1) + '" fill="#CBD5E1"/>';
+  }).join('');
+  function label(iso) {
+    var d = new Date(iso);
+    return c.unit === 'MINUTE' ? pad(d.getHours()) + ':' + pad(d.getMinutes()) : pad(d.getMonth() + 1) + '/' + pad(d.getDate());
+  }
+  return '<svg viewBox="0 0 ' + W + ' ' + (H + VH) + '" width="100%" role="img" aria-label="' + (c.unit === 'MINUTE' ? '오늘 1분봉' : '일봉') + ' 종가 차트">'
+    + vols + '<polyline fill="none" stroke="' + color + '" stroke-width="1.8" points="' + pts + '"/></svg>'
+    + '<div class="chart-meta"><span>' + esc(label(items[0].time)) + '</span>'
+    + '<span>고가 ' + won(hi) + ' · 저가 ' + won(lo) + ' · ' + items.length + (c.unit === 'MINUTE' ? '분' : '일') + '</span>'
+    + '<span>' + esc(label(items[items.length - 1].time)) + '</span></div>';
+}
+
+/** 최근 체결 10건 */
+async function loadTicks(code) {
+  var box = document.getElementById('sTicks');
+  if (!box) return;
+  try {
+    var d = await api('/api/quotes/' + encodeURIComponent(code) + '/ticks');
+    box.innerHTML = d.items.length
+      ? '<table class="ticks"><thead><tr><th>시각</th><th>체결가</th><th>전일 대비</th><th>수량</th><th>체결 강도</th></tr></thead><tbody>'
+        + d.items.slice(0, 10).map(function (t) {
+            var c = dirClass(t.direction);
+            return '<tr><td>' + esc(hms(t.time)) + '</td><td class="' + c + '">' + won(t.price) + '</td>'
+              + '<td class="' + c + '">' + signedRate(t.changeRate) + '</td><td>' + won(t.volume) + '</td><td>' + Number(t.strength) + '</td></tr>';
+          }).join('') + '</tbody></table>'
+      : '<p class="none">체결이 없어요</p>';
+  } catch (e) {
+    box.innerHTML = '<p class="none">' + esc(quoteMsg(e)) + '</p>';
+  }
+}
+
+/** 이슈 종목 순위 옆 현재가 (여러 종목 한 번에). 시세가 꺼져 있으면 아무것도 안 보임 */
+async function fillRankQuotes(codes) {
+  if (!codes.length) return;
+  try {
+    var d = await api('/api/quotes' + qs({ codes: codes.join(',') }));
+    d.items.forEach(function (q) {
+      document.querySelectorAll('.rq[data-code="' + q.stockCode + '"]').forEach(function (el) {
+        el.innerHTML = '<span class="' + dirClass(q.direction) + '">' + won(q.price) + '원 ' + signedRate(q.changeRate) + '</span>';
+      });
+    });
+  } catch (e) { /* 시세 꺼짐·실패: 표시만 안 함 */ }
 }
 
 // ===== 4단계: 로그인·회원가입 (F-18) =====
