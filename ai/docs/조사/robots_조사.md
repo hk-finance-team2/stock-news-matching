@@ -35,10 +35,10 @@
   - ❌ 금지: AI 학습·데이터셋 제작, **기사 전문 영구 저장**, 원문 대체 수준의 재구성, 유료 기사
 - → 우리 설계: 화면엔 **요약 + 원문 링크만**, 본문은 **7일 후 삭제**
 
-## 코드: `hk_llm/robots.py`
+## 코드: `hk_llm/steps/robots.py`
 
 - `allowed(url)`: 본문 가져오기 전에 호출. 사이트별 robots.txt 를 한 번만 받아 캐시
 - `crawl_delay(url)`: 사이트가 정한 요청 간격, 없으면 1초
 - 봇 이름: `hk-llm-news-bot/0.1 (academy student project)` (정체를 숨기지 않음)
 - robots.txt 를 못 받으면(네트워크 오류·5xx) 수집 안 함, 없으면(404) 허용
-- 확인: `python -m hk_llm.robots` → `ok`
+- 확인: `python -m hk_llm.steps.robots` → `ok`
