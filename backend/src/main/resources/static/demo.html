@@ -713,8 +713,11 @@ async function renderStock(code) {
     + '<div class="cols"><main class="list">'
     + '<section class="box"><div class="box-head"><h2>시세 <small style="font-weight:400;color:var(--muted)">(KIS · 확장 기능)</small></h2>'
     + segHtml('chartUnit', [['minute', '오늘 분봉'], ['day', '일봉']], 'minute') + '</div>'
-    + '<div id="quoteHead" class="quote-head"><small>불러오는 중…</small></div><div id="sChart" style="margin-top:10px"></div>'
-    + '<h3 class="sec" style="margin-top:14px">최근 체결</h3><div id="sTicks"></div></section>'
+    + '<div id="quoteHead" class="quote-head"><small>불러오는 중…</small></div>'
+    + '<div id="replayBar" class="row-gap" style="margin-top:8px;font-size:13px"></div>'
+    + '<div id="sChart" style="margin-top:10px"></div>'
+    + '<h3 class="sec" style="margin-top:14px">최근 체결</h3><div id="sTicks"></div>'
+    + '<h3 class="sec" style="margin-top:14px">수집 점검 <small style="font-weight:400;color:var(--muted)">(오늘, 빠진 체결 비율·지연)</small></h3><div id="sCheck" style="font-size:13px;color:var(--text-3)"></div></section>'
     + '<section class="box"><div class="box-head"><h2>오늘의 종합 요약</h2><span id="sumAt"></span></div><div id="sSum"></div>'
     + '<h3 class="sec" style="margin-top:16px">감성 비율 <small id="sentiCnt" style="font-weight:400;color:var(--muted)"></small></h3>'
     + segHtml('sentiSrc', [['', '전체'], ['NEWS', '뉴스'], ['SNS', 'SNS']], '') + '<div id="sSenti"></div>'
@@ -737,6 +740,8 @@ async function renderStock(code) {
 
   loadWatchButton(code);
   loadQuoteHead(code);
+  loadReplayBar(code);
+  loadCheck(code);
   loadChart(code, 'minute');
   bindSeg('chartUnit', function (v) { loadChart(code, v); });
   loadTicks(code);
@@ -1003,6 +1008,94 @@ async function loadTicks(code) {
   }
 }
 
+// ----- 다시 보기 (녹화본 재생): GET /api/quotes/{code}/replay (SSE). KIS가 꺼져 있어도 녹화본만 있으면 됨 -----
+var replayStream = null;
+function stopReplay() {
+  if (replayStream) { replayStream.close(); replayStream = null; }
+}
+
+async function loadReplayBar(code) {
+  var bar = document.getElementById('replayBar');
+  if (!bar) return;
+  var d;
+  try { d = await api('/api/quotes/' + encodeURIComponent(code) + '/recordings'); } catch (e) { bar.innerHTML = ''; return; }
+  if (!d.items.length) {
+    bar.innerHTML = '<small class="none">다시 보기: 녹화된 날이 없어요 (생중계로 받은 종목만 녹화돼요)</small>';
+    return;
+  }
+  function hm(iso) { var t = new Date(iso); return pad(t.getHours()) + ':' + pad(t.getMinutes()); }
+  bar.innerHTML = '<b style="font-size:13px">다시 보기</b>'
+    + '<select id="rpDate" style="height:34px">' + d.items.map(function (r, i) {
+        return '<option value="' + esc(r.date) + '" data-from="' + esc(hm(r.firstAt)) + '">' + esc(r.date) + ' (' + won(r.tickCount) + '건, ' + esc(hm(r.firstAt)) + '~' + esc(hm(r.lastAt)) + ')</option>';
+      }).join('') + '</select>'
+    + '<input id="rpFrom" type="time" style="height:34px;border:1px solid var(--input);border-radius:8px;padding:0 6px" value="' + esc(hm(d.items[0].firstAt)) + '">'
+    + '<select id="rpSpeed" style="height:34px"><option value="1">1배</option><option value="5">5배</option><option value="10" selected>10배</option><option value="30">30배</option><option value="60">60배</option></select>'
+    + '<button type="button" class="btn-sm primary" id="rpPlay">▶ 재생</button>'
+    + '<button type="button" class="btn-sm" id="rpLive">■ 실시간으로</button><small id="rpInfo" style="color:var(--muted)"></small>';
+  var dateSel = document.getElementById('rpDate');
+  dateSel.addEventListener('change', function () {
+    document.getElementById('rpFrom').value = dateSel.selectedOptions[0].dataset.from;
+  });
+  document.getElementById('rpPlay').addEventListener('click', function () {
+    startReplay(code, dateSel.value, document.getElementById('rpFrom').value, document.getElementById('rpSpeed').value);
+  });
+  document.getElementById('rpLive').addEventListener('click', function () {
+    stopReplay();
+    document.getElementById('rpInfo').textContent = '';
+    loadQuoteHead(code);
+    loadTicks(code);
+  });
+}
+
+/** 재생: 생중계 방송을 끊고 녹화본 방송을 들음. 현재가 칸과 체결 표를 녹화 값으로 바꿈 */
+function startReplay(code, date, from, speed) {
+  stopReplay();
+  closeStream();
+  var body = document.getElementById('tickBody');
+  if (body) body.innerHTML = '';
+  var info = document.getElementById('rpInfo'), head = document.getElementById('quoteHead');
+  var total = 0, hi = null, lo = null;
+  replayStream = new EventSource('/api/quotes/' + encodeURIComponent(code) + '/replay' + qs({ date: date, from: from, speed: speed }));
+  replayStream.addEventListener('start', function (e) {
+    total = JSON.parse(e.data).total;
+    info.textContent = total ? '총 ' + won(total) + '건 재생 시작' : '그 시각 이후 녹화가 없어요';
+  });
+  replayStream.addEventListener('replay', function (e) {
+    var t = JSON.parse(e.data), c = dirClass(t.direction);
+    hi = hi === null ? t.price : Math.max(hi, t.price);
+    lo = lo === null ? t.price : Math.min(lo, t.price);
+    head.innerHTML = '<span class="qprice ' + c + '">' + won(t.price) + '원</span>'
+      + '<span class="' + c + '">' + signedRate(t.changeRate) + '</span>'
+      + '<small>재생 구간 고가 ' + won(hi) + ' · 저가 ' + won(lo) + ' · 누적 거래량 ' + won(t.accVolume) + '</small>'
+      + '<small style="color:#7C3AED">◀ 다시 보기 · ' + esc(date) + ' ' + esc(hms(t.time)) + ' (' + esc(speed) + '배속)</small>';
+    prependTick(t);
+    info.textContent = won(t.seq) + ' / ' + won(total) + '건';
+  });
+  replayStream.addEventListener('end', function () {
+    info.textContent = '재생 끝 (' + won(total) + '건)';
+    stopReplay();   // 끝나면 닫음 (안 닫으면 브라우저가 처음부터 다시 연결함)
+  });
+  replayStream.onerror = function () { stopReplay(); };
+}
+
+/** 수집 점검: 오늘 이 종목을 얼마나 빠짐없이 받았나 */
+async function loadCheck(code) {
+  var box = document.getElementById('sCheck');
+  if (!box) return;
+  try {
+    var d = await api('/api/quotes/check');
+    var it = d.items.find(function (x) { return x.stockCode === code; });
+    box.innerHTML = it
+      ? '저장 체결 <b>' + won(it.tickCount) + '건</b> · 실제 거래량 대비 <b>' + Number(it.coverageRate) + '%</b>'
+        + ' (' + won(it.savedVolume) + ' / ' + won(it.expectedVolume) + '주, ' + esc(hms(it.firstAt)) + '~' + esc(hms(it.lastAt)) + ')'
+        + ' · 지연 평균 ' + won(it.avgDelayMs) + 'ms, 최대 ' + won(it.maxDelayMs) + 'ms'
+        + '<br><small>서버가 꺼져 있던 시간·생중계 자리가 없던 시간도 "빠진 것"으로 셉니다. 계속 받은 날은 100%에 가까워야 정상</small>'
+      : '오늘 이 종목은 생중계로 받은 체결이 없어요';
+  } catch (e) {
+    box.textContent = '점검을 불러오지 못했어요: ' + e.message;
+  }
+}
+
 /** 방송으로 온 새 체결을 표 맨 위에 넣고 10줄만 남김 (새 줄은 잠깐 노랗게) */
 function prependTick(t) {
   var body = document.getElementById('tickBody');
@@ -1135,6 +1228,7 @@ function route() {
   var parts = path.split('/').filter(Boolean);
   var nav = 'main';
   closeStream();   // 다른 화면으로 가면 방송 듣기를 끊음 (서버의 "보는 사람 수"도 줄어듦)
+  stopReplay();
   if (parts[0] === 'logout') { logout(); return; }
   if (parts[0] === 'search' && params.get('q')) renderSearch(params);
   else if (parts[0] === 'article' && parts[1]) renderArticle(parts[1]);
