@@ -1,12 +1,16 @@
 package com.hkteam2.stocknews.quote;
 
+import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -15,6 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import com.hkteam2.stocknews.common.ListResponse;
+import com.hkteam2.stocknews.common.TimeUtils;
 import com.hkteam2.stocknews.common.error.BusinessException;
 import com.hkteam2.stocknews.common.error.ErrorCode;
 import com.hkteam2.stocknews.stock.StockMapper;
@@ -36,15 +41,50 @@ public class QuoteController {
     private static final int MAX_CODES = 10;
     private static final int MAX_STREAM_CODES = 5;
 
+    private static final Set<Integer> SPEEDS = Set.of(1, 5, 10, 30, 60);
+
     private final ObjectProvider<QuoteService> quoteService;
     private final ObjectProvider<QuoteStreamHub> streamHub;
+    private final QuoteHistoryService history;
     private final StockMapper stockMapper;
 
     public QuoteController(ObjectProvider<QuoteService> quoteService, ObjectProvider<QuoteStreamHub> streamHub,
-                           StockMapper stockMapper) {
+                           QuoteHistoryService history, StockMapper stockMapper) {
         this.quoteService = quoteService;
         this.streamHub = streamHub;
+        this.history = history;
         this.stockMapper = stockMapper;
+    }
+
+    // ----- 녹화본 (DB만 읽음 → KIS 스위치가 꺼져 있어도 동작) -----
+
+    @Operation(summary = "다시 볼 수 있는 날", description = "이 종목을 생중계로 받아 녹화한 날짜·체결 수 (최근 날짜부터)")
+    @GetMapping("/{stockCode}/recordings")
+    public ListResponse<RecordingResponse> getRecordings(@PathVariable String stockCode) {
+        return ListResponse.of(history.recordings(checkStock(stockCode)));
+    }
+
+    @Operation(summary = "다시 보기 (SSE)",
+            description = "녹화된 체결을 date의 from 시각부터 speed배속(1·5·10·30·60)으로 재생. 이벤트 start → replay(체결마다) → end."
+                    + " 긴 공백은 최대 5초로 줄임. 동시에 5개까지(넘으면 429 REPLAY_BUSY)")
+    @GetMapping("/{stockCode}/replay")
+    public SseEmitter replay(@PathVariable String stockCode,
+                             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+                             @RequestParam(defaultValue = "09:00") @DateTimeFormat(pattern = "HH:mm") LocalTime from,
+                             @RequestParam(defaultValue = "10") int speed) {
+        if (!SPEEDS.contains(speed)) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+        return history.replay(checkStock(stockCode), date, from, speed);
+    }
+
+    @Operation(summary = "수집 점검 (빠진 체결 비율·지연)",
+            description = "date(없으면 오늘)에 저장한 체결량을 KIS 누적 거래량과 비교. coverageRate 100%면 빠진 것 없음."
+                    + " 서버가 꺼져 있던 시간도 빠진 것으로 셈")
+    @GetMapping("/check")
+    public CollectCheckResponse check(@RequestParam(required = false)
+                                      @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        return history.check(date != null ? date : LocalDate.now(TimeUtils.KST));
     }
 
     @Operation(summary = "실시간 방송 (SSE)",

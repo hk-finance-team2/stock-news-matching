@@ -10,6 +10,7 @@ public record TickRow(
         LocalDateTime tradedAt,
         long price,
         long volume,
-        BigDecimal changeRate
+        BigDecimal changeRate,
+        long accVolume
 ) {
 }

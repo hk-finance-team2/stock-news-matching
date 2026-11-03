@@ -36,6 +36,12 @@ public class QuoteExceptionHandler {
                 .body(new ErrorResponse("QUOTE_DISABLED", "이 서버에서는 시세 기능이 꺼져 있습니다. (KIS_ENABLED)"));
     }
 
+    @ExceptionHandler(ReplayBusyException.class)
+    public ResponseEntity<ErrorResponse> replayBusy(ReplayBusyException e) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .body(new ErrorResponse("REPLAY_BUSY", "다시 보기가 많이 돌고 있습니다. 잠시 후 다시 시도해 주세요."));
+    }
+
     @ExceptionHandler(KisApiException.class)
     public ResponseEntity<ErrorResponse> kisError(KisApiException e) {
         log.warn("KIS 오류: {}", e.getMessage());

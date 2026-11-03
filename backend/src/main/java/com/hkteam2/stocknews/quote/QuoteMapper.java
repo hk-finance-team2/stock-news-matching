@@ -32,6 +32,24 @@ public interface QuoteMapper {
     /** 지금까지 저장된 가장 큰 체결 ID (없으면 0) */
     long maxTickId();
 
+    // ----- 다시 보기 (녹화본) -----
+
+    /** 이 종목을 녹화한 날짜들 (최근 날짜부터): 날짜, 체결 수, 첫·마지막 체결 시각 */
+    List<RecordingRow> findRecordings(@Param("stockCode") String stockCode);
+
+    /** 다시 보기용 체결: 그날 from 시각 이후, afterId 다음부터 limit건 (저장 순서 = 받은 순서) */
+    List<TickRow> findReplayTicks(@Param("stockCode") String stockCode, @Param("tradeDate") LocalDate tradeDate,
+                                  @Param("from") LocalDateTime from, @Param("afterId") long afterId,
+                                  @Param("limit") int limit);
+
+    long countReplayTicks(@Param("stockCode") String stockCode, @Param("tradeDate") LocalDate tradeDate,
+                          @Param("from") LocalDateTime from);
+
+    // ----- 수집 점검 (정합성) -----
+
+    /** 그날 종목별 저장 체결 수·거래량 합·누적 거래량 처음/끝·지연 (점검 계산 재료) */
+    List<CollectCheckRow> checkCollection(@Param("tradeDate") LocalDate tradeDate);
+
     /** 그날 저장된 체결 수 */
     long countTicks(@Param("tradeDate") LocalDate tradeDate);
 

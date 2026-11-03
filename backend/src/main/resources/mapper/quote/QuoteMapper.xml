@@ -89,12 +89,13 @@
             <arg column="price" javaType="_long"/>
             <arg column="volume" javaType="_long"/>
             <arg column="change_rate" javaType="java.math.BigDecimal"/>
+            <arg column="acc_volume" javaType="_long"/>
         </constructor>
     </resultMap>
 
     <!-- 새 체결만: 기본키(tick_id)가 afterId 보다 큰 것. 기본키라 인덱스로 바로 찾음 -->
     <select id="findTicksAfter" resultMap="tickRow">
-        SELECT tick_id, stock_code, traded_at, price, volume, change_rate
+        SELECT tick_id, stock_code, traded_at, price, volume, change_rate, acc_volume
         FROM quote_tick
         WHERE tick_id &gt; #{afterId}
           AND stock_code IN
@@ -105,6 +106,83 @@
 
     <select id="maxTickId" resultType="long">
         SELECT COALESCE(MAX(tick_id), 0) FROM quote_tick
+    </select>
+
+    <!-- ===== 다시 보기 ===== -->
+
+    <resultMap id="recordingRow" type="com.hkteam2.stocknews.quote.RecordingRow">
+        <constructor>
+            <arg column="trade_date" javaType="java.time.LocalDate"/>
+            <arg column="tick_count" javaType="_long"/>
+            <arg column="first_at" javaType="java.time.LocalDateTime"/>
+            <arg column="last_at" javaType="java.time.LocalDateTime"/>
+        </constructor>
+    </resultMap>
+
+    <!-- 녹화된 날: 체결을 날짜로 묶음. idx_quote_tick_time (stock_code, traded_at) 를 씀 -->
+    <select id="findRecordings" resultMap="recordingRow">
+        SELECT trade_date, COUNT(*) AS tick_count, MIN(traded_at) AS first_at, MAX(traded_at) AS last_at
+        FROM quote_tick
+        WHERE stock_code = #{stockCode}
+        GROUP BY trade_date
+        ORDER BY trade_date DESC
+    </select>
+
+    <!-- 다시 보기: from 시각 이후 체결을 받은 순서(tick_id)대로 limit건씩. afterId로 다음 쪽 -->
+    <select id="findReplayTicks" resultMap="tickRow">
+        SELECT tick_id, stock_code, traded_at, price, volume, change_rate, acc_volume
+        FROM quote_tick
+        WHERE stock_code = #{stockCode}
+          AND trade_date = #{tradeDate}
+          AND traded_at &gt;= #{from}
+          AND tick_id &gt; #{afterId}
+        ORDER BY tick_id
+        LIMIT #{limit}
+    </select>
+
+    <select id="countReplayTicks" resultType="long">
+        SELECT COUNT(*) FROM quote_tick
+        WHERE stock_code = #{stockCode} AND trade_date = #{tradeDate} AND traded_at &gt;= #{from}
+    </select>
+
+    <!-- ===== 수집 점검 (장 마감 뒤 "빠진 체결이 있나") =====
+        누적 거래량은 체결마다 그 체결량만큼 커짐
+        → 처음~마지막 체결 사이에 실제로 거래된 양 = 마지막 누적 − 첫 누적 + 첫 체결량
+        → 우리가 저장한 체결량 합과 비교하면 빠진 비율을 알 수 있음
+        첫 체결량: 누적 거래량 순으로 이어 붙인 체결량 목록의 첫 값 (GROUP_CONCAT … ORDER BY)
+        지연: 받은 시각 − 체결 시각 (체결 시각이 초 단위라 최대 1초는 반올림 오차) -->
+    <resultMap id="collectCheckRow" type="com.hkteam2.stocknews.quote.CollectCheckRow">
+        <constructor>
+            <arg column="stock_code" javaType="String"/>
+            <arg column="stock_name" javaType="String"/>
+            <arg column="tick_count" javaType="_long"/>
+            <arg column="saved_volume" javaType="_long"/>
+            <arg column="first_acc" javaType="_long"/>
+            <arg column="first_volume" javaType="_long"/>
+            <arg column="last_acc" javaType="_long"/>
+            <arg column="first_at" javaType="java.time.LocalDateTime"/>
+            <arg column="last_at" javaType="java.time.LocalDateTime"/>
+            <arg column="avg_delay_ms" javaType="_long"/>
+            <arg column="max_delay_ms" javaType="_long"/>
+        </constructor>
+    </resultMap>
+
+    <select id="checkCollection" resultMap="collectCheckRow">
+        SELECT t.stock_code, i.stock_name,
+               COUNT(*)                     AS tick_count,
+               SUM(t.volume)                AS saved_volume,
+               MIN(t.acc_volume)            AS first_acc,
+               CAST(SUBSTRING_INDEX(GROUP_CONCAT(t.volume ORDER BY t.acc_volume), ',', 1) AS UNSIGNED) AS first_volume,
+               MAX(t.acc_volume)            AS last_acc,
+               MIN(t.traded_at)             AS first_at,
+               MAX(t.traded_at)             AS last_at,
+               ROUND(AVG(TIMESTAMPDIFF(MICROSECOND, t.traded_at, t.received_at)) / 1000) AS avg_delay_ms,
+               ROUND(MAX(TIMESTAMPDIFF(MICROSECOND, t.traded_at, t.received_at)) / 1000) AS max_delay_ms
+        FROM quote_tick t
+        JOIN stock_info i ON i.stock_code = t.stock_code
+        WHERE t.trade_date = #{tradeDate}
+        GROUP BY t.stock_code, i.stock_name
+        ORDER BY tick_count DESC
     </select>
 
     <select id="countTicks" resultType="long">
