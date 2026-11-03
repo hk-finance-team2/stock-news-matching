@@ -1,0 +1,162 @@
+"""수집 단계 규칙 시험. 실제 기사 없음. step3 은 DB, robots 는 인터넷 필요"""
+from datetime import datetime
+from unittest import mock
+
+
+def test_step1_rss():
+    from hk_llm.core.config import KST
+    from hk_llm.steps.step1_rss import ET, parse
+
+    sample = """<rss><channel>
+      <item><title><![CDATA[삼성전자 급등]]></title><link>https://www.fnnews.com/news/1</link>
+        <author><![CDATA[bng@fnnews.com 김희선]]></author><pubDate>Mon,2 Nov 2026 07:04:55 +0900</pubDate></item>
+      <item><title>제목만</title><link>https://www.hankyung.com/article/2</link>
+        <author>도쿄=최만수</author></item>
+      <item><title>링크 없음</title></item>
+    </channel></rss>"""
+    now = datetime(2026, 11, 2, 9, 0, tzinfo=KST)
+    a, b = parse(sample, "테스트", now)
+    assert a.reporter == "김희선" and a.published_at.isoformat() == "2026-11-02T07:04:55+09:00"
+    assert b.reporter == "최만수" and b.published_at == now and b.description is None
+    other = """<rss xmlns:dc="http://purl.org/dc/elements/1.1/"><channel>
+      <item><title>오지 않은 &amp;quot;업토버&amp;quot;</title><link>https://a/1</link><author>전병훈 기자</author>
+        <pubDate>2026-11-02 15:17:18</pubDate></item>
+      <item><title>호반</title><link>https://a/2</link><author>j@bizwatch.co.kr(강민경 기자)</author>
+        <dc:date>2026-11-02T15:19:02+09:00</dc:date></item>
+    </channel></rss>"""
+    c, d = parse(other, "테스트", now)
+    assert c.title == '오지 않은 "업토버"' and c.reporter == "전병훈"
+    assert c.published_at.isoformat() == "2026-11-02T15:17:18+09:00"
+    assert d.reporter == "강민경" and d.published_at.isoformat() == "2026-11-02T15:19:02+09:00"
+    try:
+        parse('<!DOCTYPE r [<!ENTITY x "y">]><rss><item><title>&x;</title></item></rss>', "테스트")
+        raise AssertionError("엔티티가 든 XML 은 거부해야 함")
+    except ET.ParseError as e:
+        raise AssertionError(f"defusedxml 전용 오류여야 함: {e}") from e
+    except ValueError:
+        pass  # defusedxml 의 EntitiesForbidden
+
+
+def test_step2_dedup():
+    from hk_llm.core.models import Article
+    from hk_llm.steps.step2_dedup import dedup_by_url, url_key
+
+    # 조사 5번 실제 사례 (RSS 주소 vs 네이버 API 주소)
+    assert url_key("https://www.yna.co.kr/view/AKR20261030137800008?input=1195m") == "https://www.yna.co.kr/view/AKR20261030137800008"
+    assert url_key("https://www.sedaily.com/article/20108364?ref=naver") == "https://www.sedaily.com/article/20108364"
+    k = url_key("https://www.edaily.co.kr/News/Read?newsId=0511&mediaCodeNo=257&utm_source=naver&utm_medium=news")
+    assert k == "https://www.edaily.co.kr/News/Read?mediaCodeNo=257&newsId=0511", k  # 기사 번호는 남김
+    assert url_key("https://WWW.Hankyung.com/article/202610306351i/#top") == "https://www.hankyung.com/article/202610306351i"
+    assert url_key("https://x.com/News/A") != url_key("https://x.com/news/a")  # 경로 대소문자는 구분
+
+    from datetime import datetime
+
+    def art(url, title):
+        return Article(url=url, press="연합뉴스", title=title, published_at=datetime(2026, 11, 2))
+
+    out = dedup_by_url([art("https://www.yna.co.kr/view/AKR1", "첫 건"),
+                        art("https://www.yna.co.kr/view/AKR1?input=1195m", "꼬리만 다름"),
+                        art("https://www.yna.co.kr/view/AKR2", "다른 기사")])
+    assert [x.title for x in out] == ["첫 건", "다른 기사"] and out[0].url_key == "https://www.yna.co.kr/view/AKR1"
+
+
+def test_step3_save():
+    from sqlalchemy import text
+    from hk_llm.core.db import get_engine, to_db
+    from hk_llm.steps.step3_save import save_listed
+
+    # DB 가 켜져 있어야 함 (docker compose up -d db). 시험용 1건을 넣었다가 지운다
+    from datetime import datetime
+
+    from hk_llm.core.config import KST
+    from hk_llm.core.models import Article
+
+    key = "test://hk_llm/step3_save_check"
+    a = Article(url=key, url_key=key, press="테스트", title="저장 확인",
+                published_at=datetime(2026, 11, 2, 9, 0, tzinfo=KST))
+    engine = get_engine()
+    try:
+        assert save_listed([a]) == 1
+        assert save_listed([a]) == 0, "같은 url_key 는 두 번 안 들어감"
+        with engine.connect() as conn:
+            row = conn.execute(text("SELECT status, published_at FROM article WHERE url_key = :k"), {"k": key}).one()
+        assert row.status == "LISTED" and row.published_at == to_db(a.published_at), "시각 KST"
+    finally:
+        with engine.begin() as conn:
+            conn.execute(text("DELETE FROM article WHERE url_key = :k"), {"k": key})
+
+
+def test_step4_extract():
+    from hk_llm.steps.step4_body import extract
+
+    html = """<html><body><div id="articletxt">
+        <figure><figcaption>사진=SOOP</figcaption></figure>
+        SOOP이 3분기 실적 부진에 급락하고 있다.<br><br>2일 오전   9시16분 코스닥시장에서<br>
+        <aside>광고</aside>한경우 한경닷컴 기자 case@hankyung.com</div></body></html>"""
+    got = extract(html, "https://www.hankyung.com/article/1")
+    assert got == "SOOP이 3분기 실적 부진에 급락하고 있다.\n2일 오전 9시16분 코스닥시장에서", repr(got)
+    assert extract(html, "https://unknown.example/1") is None
+
+
+def test_robots():
+    from hk_llm.steps.robots import allowed
+
+    # 2026-10-30 확인 결과 기준. 사이트가 robots.txt 를 바꾸면 달라질 수 있음
+    assert allowed("https://www.hankyung.com/article/2026103049506")
+    assert not allowed("https://www.hankyung.com/print/2026103049506")
+    assert not allowed("https://news.mt.co.kr/mtview.php?no=2025092114541910435")
+    assert allowed("https://www.yna.co.kr/view/AKR20261030097100055")
+
+
+def test_dart_rules():
+    import requests
+    from hk_llm.core.config import KST
+    from hk_llm.steps.dart import API, _get_page, important, published
+
+    # 필터·시각·키 보호 시험 (네트워크 없음)
+    from unittest import mock
+
+    for title in ("연결재무제표기준영업(잠정)실적(공정공시)", "단일판매ㆍ공급계약체결", "주요사항보고서(자기주식취득결정)", "공개매수신고서"):
+        assert important(title), title
+    for title in ("증권발행실적보고서", "합병등종료보고서", "자기주식처분결과보고서", "공개매수설명서", "결산실적공시예고(안내공시)",
+                  "임원ㆍ주요주주특정증권등소유상황보고서", "조회공시요구(현저한시황변동)에대한답변(중요공시대상없음)"):
+        assert not important(title), title
+    now = datetime(2026, 11, 2, 15, 0, tzinfo=KST)
+    assert published("20261102", now) == now
+    assert published("20261101", now) == datetime(2026, 11, 1, tzinfo=KST)
+    secret = "SECRETKEY"
+    boom = requests.ConnectionError(f"{API}?crtfc_key={secret}")
+    with mock.patch("hk_llm.steps.dart.requests.get", side_effect=boom):
+        try:
+            _get_page(secret, "Y", "20261101", "20261102", 1)
+            raise AssertionError("예외가 나야 함")
+        except RuntimeError as e:
+            assert secret not in str(e) and e.__cause__ is None and e.__suppress_context__, "오류에 키가 남으면 안 됨"
+
+
+def test_util_retry():
+    import requests
+    from hk_llm.core.util import retry
+
+    calls = []
+
+    def flaky():  # 두 번 끊겼다가 성공
+        calls.append(1)
+        if len(calls) < 3:
+            raise requests.ConnectionError("끊김")
+        return "ok"
+
+    assert retry(flaky, wait=0) == "ok" and len(calls) == 3
+
+    def not_found():
+        r = requests.Response()
+        r.status_code = 404
+        calls.append(1)
+        return r
+
+    calls.clear()
+    try:
+        retry(not_found, wait=0)
+        raise AssertionError("404 는 예외가 나야 함")
+    except requests.HTTPError:
+        assert len(calls) == 1, "404 는 다시 해도 같으니 재시도 안 함"

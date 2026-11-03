@@ -1,9 +1,9 @@
 # ai
 
-뉴스·공시 수집 및 LLM 요약 서버
+뉴스·공시 수집 및 LLM 요약 파이프라인 (`loop.py` 로 자동 실행, `api.py` 는 "다시 생성" 서버)
 
 - 역할: 뉴스·공시 수집, 정제·중복 제거, 기사-종목 연결, LLM 요약, 매칭 정확도 측정
-- 기술: Python, LangChain (FastAPI 는 아직 안 씀: 백엔드와 DB 로만 주고받음, 팀 합의 예정)
+- 기술: Python, LangChain, FastAPI (백엔드와는 DB 로 주고받고, "다시 생성" 만 API)
 
 ## 팀원이 먼저 볼 것
 
@@ -13,41 +13,52 @@
 | [docs/AI테이블_제안.md](docs/AI테이블_제안.md) | **백엔드에 드리는** AI 테이블(`article`, `article_stock`, `collect_run`) 컬럼 제안 |
 | [docs/결정사항.md](docs/결정사항.md) | 지금 기준 AI 설계 한눈에 보기 |
 
-## 지금 상태 (2026-11-02)
+## 지금 상태 (2026-11-03)
 
-- 끝: RSS 목록 받기(15) → 주소 중복 제거(16) → DB 저장 `LISTED`(18) → 본문 `FETCHED`(20~22) → LLM 요약 `SUMMARIZED`(27~34) → 종목 매칭 `DONE`(23·25). 다음: 오탐 처리(24)·정확도 확인(26) ([docs/개발순서.md](docs/개발순서.md))
-- 뉴스: **언론사 RSS 8개** (한경·연합·서경·파이낸셜뉴스, 30분마다 확인, 하루 약 1,000건)
-- 흐름: RSS 목록 → 중복 제거 → 원문 본문 → LLM 요약 → 요약에서 코스피200 종목 연결
+- 끝: RSS 수집(15) → 중복 제거(16) → DB 저장(18) → 본문(20~22) → LLM 요약(27~34) → 종목 매칭(23·25), 공시 수집·요약, 종목별 하루 요약(32), 자동 실행 코드(35), AI 서버 ([docs/개발순서.md](docs/개발순서.md))
+- 다음: 자동 실행 켜기, 프론트 연결 뒤 E2E(36), SNS (수집처 조사만 끝남, [docs/조사/SNS_조사.md](docs/조사/SNS_조사.md)). 품질 한계는 [docs/결정사항.md](docs/결정사항.md)
+- 뉴스: **언론사 7곳 RSS 11개** (한경·연합·서경·파이낸셜·전자신문·연합인포맥스·비즈워치, 하루 최대 약 1,600건 추정). 주기 5분, **자동 실행은 켜야 돎** (`python -m hk_llm.loop`)
+- 흐름: RSS 목록 → 중복 제거 → 원문 본문 → LLM 요약 → 요약에서 종목 연결 + 주제 확인 → 공시 요약 → 기사 묶기, 1시간마다 하루 요약
 - 단계끼리는 `article.status` 로 넘김: `LISTED` → `FETCHED` → `SUMMARIZED` → `DONE` / `NO_STOCK`
 - 백엔드와는 **DB 로만** 주고받음 (AI 가 쓰고 백엔드가 읽음). 테이블은 백엔드 Flyway V5·V7
 - 화면에는 **요약 + 원문 링크만** (본문은 7일 후 삭제, 언론사 AI 정책)
-- 🧪 합의 전: 매칭 범위(코스피200), 점수 공식 ([docs/할일.md](docs/할일.md))
-- 보류: 네이버 API(과거 기록용), SNS
+- 기다리는 것: 비슷한 기사 저장(17, 백엔드 칸이 생기면 자동 시작), 백엔드 "다시 생성" 연결 ([docs/팀공유.md](docs/팀공유.md) 8번)
+- 공시: DART 주요 공시 원문을 LLM 으로 요약·감성 판단. 실패하면 제목·NEUTRAL 로 남음
+- 🧪 팀 공유 필요: 매칭 점수(이름 통과 + 테마 가산점), 주제 확인 규칙, 공시 표시 방식
+- 보류: 네이버 API(과거 기록용)
 
 ## 폴더
 
-파일 이름 = 파이프라인 단계. 위에서 아래로 읽으면 흐름 순서.
+`steps/` 의 번호가 파이프라인 순서.
 
 ```
 ai/
 ├── README.md
 ├── requirements.txt
 ├── hk_llm/
-│   ├── run.py           ★ 파이프라인 1번 실행 (1→6, 실행 기록 collect_run)
-│   ├── step1_rss.py     1. 언론사 RSS 8개 기사 목록 받기 (15번)
-│   ├── step2_dedup.py   2. 주소 기준 중복 제거 (16번)
-│   ├── step3_save.py    3. article 에 LISTED 로 저장 (18번)
-│   ├── step4_body.py    4. 원문 본문 가져와 FETCHED, 7일 지난 본문 삭제 (20~22번)
-│   ├── step5_summary.py 5. LLM 요약·감성·회사 목록 → SUMMARIZED (27~34번)
-│   ├── step6_match.py   6. 회사 이름 → 코스피200 종목 연결 → DONE / NO_STOCK (23·25번)
-│   ├── robots.py        본문 가져오기 전 robots.txt 허용 확인
-│   ├── models.py        기사 한 건의 모양 (Article, article 테이블 한 줄)
-│   ├── db.py            DB 연결, KST 시각 변환
-│   ├── util.py          로그, 실패 시 재시도
-│   ├── config.py        설정: 폴더 위치, 시간대, .env 값
-│   ├── tools/           가끔 손으로 돌리는 도구: stock_master.py 종목 목록
-│   ├── data/            (Git 제외) stocks.csv, kospi200.csv, sample_rss.json
-│   └── logs/            (Git 제외) hk_llm.log
+│   ├── run.py               ★ 파이프라인 1번 실행 (실행 기록 collect_run)
+│   ├── loop.py              ★ 자동 실행: 5분마다 run, 1시간마다 하루 요약 (35번)
+│   ├── api.py               AI 서버: "다시 생성" (FastAPI)
+│   ├── steps/               단계별 코드. 번호 순서가 흐름 순서
+│   │   ├── step1_rss.py     1. 언론사 RSS 11개 기사 목록 받기 (15번)
+│   │   ├── step2_dedup.py   2. 주소 기준 중복 제거 (16번)
+│   │   ├── step3_save.py    3. article 에 LISTED 로 저장 (18번)
+│   │   ├── step4_body.py    4. 원문 본문 가져와 FETCHED, 7일 지난 본문 삭제 (20~22번)
+│   │   ├── step5_summary.py 5. LLM 요약·감성·회사 목록 → SUMMARIZED (27~34번)
+│   │   ├── step6_match.py   6. 회사 이름 → 종목 연결 → DONE / NO_STOCK (23·25번)
+│   │   ├── step7_group.py   7. 비슷한 기사 묶기 (17번, 칸이 생기면 저장)
+│   │   ├── step8_daily.py   8. 종목별 하루 요약 → stock_daily_summary (32번)
+│   │   ├── dart.py          공시 수집 → 바로 DONE, 원문 LLM 요약·감성
+│   │   └── robots.py        본문 가져오기 전 robots.txt 허용 확인
+│   ├── core/                여러 단계가 같이 쓰는 것
+│   │   ├── config.py        설정: 폴더 위치, 시간대, .env 값
+│   │   ├── db.py            DB 연결, KST 시각 변환
+│   │   ├── models.py        기사 한 건의 모양 (Article, article 테이블 한 줄)
+│   │   └── util.py          로그, 실패 시 재시도
+│   ├── data/                (Git 제외) 검토용 샘플
+│   └── logs/                (Git 제외) hk_llm.log
+├── tests/                   실제 기사 없이 규칙만 확인하는 시험
+├── old/                     더 이상 안 쓰는 옛 파일 (설명은 old/README.md)
 └── docs/                문서 안내는 docs/README.md
 ```
 
@@ -67,13 +78,16 @@ pip install -r requirements.txt
 
 | 하고 싶은 것 | 명령 |
 |---|---|
-| 파이프라인 1번 (RSS → 요약까지, OpenAI 비용) | `python -m hk_llm.run` |
-| 요약 n건 미리보기 (저장 안 함, 건당 약 $0.0006) | `python -m hk_llm.step5_summary 3` |
-| 요약 검사 규칙 시험 (비용 없음) | `python -m hk_llm.step5_summary` |
-| 매칭 규칙 시험 (DB·비용 없음) | `python -m hk_llm.step6_match` |
+| **자동 실행** (끌 때까지, OpenAI 비용. 처음엔 밀린 기사까지 최대 약 $0.8) | `python -m hk_llm.loop` |
+| AI 서버 (`.env` 에 `AI_INTERNAL_TOKEN`) | `uvicorn hk_llm.api:app --port 8000` |
+| 파이프라인 1번 (OpenAI 비용) | `python -m hk_llm.run` |
+| 파이프라인 1번, 요약은 n건까지만 (시험용) | `python -m hk_llm.run --limit 30` |
+| 요약 n건 미리보기 (저장 안 함, 건당 약 $0.0006) | `python -m hk_llm.steps.step5_summary 3` |
+| 규칙 시험 전체 (LLM 비용 없음, DB·인터넷 필요) | `python -m tests` |
+| 실제 공시 수집 (비용 없음, DB 저장, `DART_API_KEY` 필요) | `python -m hk_llm.steps.dart` |
+| 오늘 종목별 요약 (2건 이상인 종목만 비용) | `python -m hk_llm.steps.step8_daily --run` |
 | 1~3단계 시험 | `python -m hk_llm.run --check` |
-| RSS 만 받아 보기 | `python -m hk_llm.step1_rss` |
-| 종목 목록 `data/stocks.csv` 만들기 | `python -m hk_llm.tools.stock_master` **6단계에 꼭 필요** (먼저 KRX 코스피200 CSV 를 `hk_llm/data/kospi200.csv` 로, [docs/진행기록/1_준비.md](docs/진행기록/1_준비.md) 1-6) |
+| RSS 만 받아 보기 | `python -m hk_llm.steps.step1_rss` |
 
-- 각 파일 맨 아래 `if __name__ == "__main__":` 은 자체 시험. 실행해서 `ok` 가 나오면 통과
+- 가짜 데이터로 하는 시험은 `tests/`, 각 파일 맨 아래 `if __name__ == "__main__":` 은 실제 기사·API 로 돌리는 부분
 - `data/`·`logs/` 는 Git 에 올리지 않는다 (팀 규칙)

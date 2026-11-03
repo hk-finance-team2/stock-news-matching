@@ -56,7 +56,7 @@ erDiagram
   | **DONE** | 종목 연결까지 끝 | ✅ |
   | FAILED | 본문·요약 3번 실패 | |
   | SKIPPED | robots.txt 금지 등 수집 제외 | |
-  | NO_STOCK | 요약했지만 연결된 코스피200 종목 없음 | |
+  | NO_STOCK | 요약했지만 연결된 종목 없음 | |
 
 - 버린 기사(FAILED·SKIPPED·NO_STOCK)도 **행은 지우지 않음**: 지우면 RSS 에 떠 있는 동안 다시 받아서 다시 요약함 (비용 낭비)
 
