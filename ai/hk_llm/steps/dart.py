@@ -68,9 +68,10 @@ def _get_page(key, cls, begin, end, page):
     return data["list"], int(data["total_page"])
 
 
-def fetch_disclosures(key, today=None):
+def fetch_disclosures(key, today=None, start=None):
+    """start~today 주요 공시 (start 가 없으면 어제~오늘)"""
     today = today or datetime.now(KST).date()
-    begin, end = (today - timedelta(days=1)).strftime("%Y%m%d"), today.strftime("%Y%m%d")
+    begin, end = (start or today - timedelta(days=1)).strftime("%Y%m%d"), today.strftime("%Y%m%d")
     rows = []
     for cls in ("Y", "K"):  # 코스피, 코스닥
         page, pages = 1, 1
@@ -93,7 +94,30 @@ def collect_disclosures(engine=None, key=None):
         return 0
     engine = engine or get_engine()
     now = datetime.now(KST)
-    rows = fetch_disclosures(key, now.date())
+    new = save_disclosures(engine, fetch_disclosures(key, now.date()), now)
+    return new
+
+
+def backfill_disclosures(start, end, engine=None, key=None, days=7):
+    """지난 공시를 start~end(날짜 포함) 동안 days 일씩 나눠 저장 (collect_mode BACKFILL). LLM 요약은 안 함 → 비용 0
+
+    summarize_disclosures 는 어제 이후만 요약하므로 지난 공시는 제목·종목 연결만 남는다 (화면에 'AI 요약' 표시 안 붙음)
+    """
+    key = key or os.environ.get("DART_API_KEY")
+    if not key:
+        raise RuntimeError("DART_API_KEY 없음")
+    engine = engine or get_engine()
+    now, new, day = datetime.now(KST), 0, start
+    while day <= end:
+        last = min(day + timedelta(days=days - 1), end)
+        new += save_disclosures(engine, fetch_disclosures(key, last, start=day), now, mode="BACKFILL")
+        day = last + timedelta(days=1)
+    log.info("지난 공시 %s~%s: 새로 저장 %d건", start, end, new)
+    return new
+
+
+def save_disclosures(engine, rows, now, mode="REALTIME"):
+    """주요 공시를 article(DONE) + article_stock 에 저장. 이미 있는 공시·사전에 없는 종목은 건너뜀. 새로 저장한 건수"""
     if not rows:
         return 0
     for r in rows:
@@ -102,7 +126,7 @@ def collect_disclosures(engine=None, key=None):
     have_sql = text("SELECT url_key FROM article WHERE url_key IN :k").bindparams(bindparam("k", expanding=True))
     insert = text("""INSERT INTO article (url_key, url, press, title, description, published_at, status, summary,
                                           sentiment, source_type, channel, collect_mode)
-                     VALUES (:url_key, :url, :press, :title, NULL, :at, 'DONE', :title, 'NEUTRAL', 'NEWS', 'DART', 'REALTIME')""")
+                     VALUES (:url_key, :url, :press, :title, NULL, :at, 'DONE', :title, 'NEUTRAL', 'NEWS', 'DART', :mode)""")
     link = text("""INSERT INTO article_stock (article_id, stock_code, is_main, sentiment, reason, match_type, relevance,
                                               matched_keywords)
                    VALUES (:id, :code, TRUE, 'NEUTRAL', :reason, 'DIRECT', 1.00, :name)""")
@@ -116,7 +140,7 @@ def collect_disclosures(engine=None, key=None):
                 continue
             title = f"{r['corp_name'].strip()} {' '.join(r['report_nm'].split())}"[:500]
             aid = conn.execute(insert, {"url_key": r["url_key"], "url": r["url"], "press": PRESS, "title": title,
-                                        "at": to_db(published(r["rcept_dt"], now))}).lastrowid
+                                        "at": to_db(published(r["rcept_dt"], now)), "mode": mode}).lastrowid
             conn.execute(link, {"id": aid, "code": code, "reason": REASON, "name": r["corp_name"].strip()[:300]})
             new += 1
     log.info("공시: 주요 공시 %d건, 새로 저장 %d건", len(rows), new)
@@ -219,6 +243,13 @@ def summarize_disclosures(engine=None, limit=50, key=None):
 
 
 if __name__ == "__main__":
+    import sys
+
+    if "--backfill" in sys.argv:  # 지난 공시: python -m hk_llm.steps.dart --backfill 2026-08-01 2026-11-02
+        i = sys.argv.index("--backfill")
+        start, end = (datetime.strptime(x, "%Y-%m-%d").date() for x in sys.argv[i + 1:i + 3])
+        print(backfill_disclosures(start, end))
+        sys.exit()
     # 실제 API + DB: 두 번 돌려 두 번째는 새 공시만 (DB 켜져 있어야 함)
     first = collect_disclosures()
 

@@ -66,7 +66,7 @@ def group_articles(rows, similar=SIMILAR, window=WINDOW):
 def load_rows(engine, since=None):
     sql = text("""SELECT a.article_id, s.stock_code, i.stock_name, a.title, a.published_at
                   FROM article a JOIN article_stock s USING (article_id) JOIN stock_info i USING (stock_code)
-                  WHERE a.status = 'DONE' AND a.channel = 'RSS' AND (:since IS NULL OR a.published_at >= :since)""")
+                  WHERE a.status = 'DONE' AND a.channel IN ('RSS', 'SITEMAP') AND (:since IS NULL OR a.published_at >= :since)""")
     with engine.connect() as conn:
         return [dict(r._mapping) for r in conn.execute(sql, {"since": since})]
 

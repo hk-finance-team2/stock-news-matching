@@ -32,6 +32,8 @@ def test_step6_match():
     tail = "다른 내용 " * 60 + "두산 소식"
     assert on_topic("삼성전자 실적", tail, [main, side], names) == [main], "뒷부분에만 나온 조연은 빠짐"
     assert on_topic("실적 기사", "두산이 수주했다", [side], names) == [side], "앞부분에 있으면 조연도 유지"
+    twice = "다른 내용 " * 60 + "두산이 수주했다. 두산은 내년에도"
+    assert on_topic("삼성전자 실적", twice, [main, side], names) == [main, side], "뒷부분이라도 2번 나오면 당사자로 보고 유지"
     assert on_topic("삼전 강세", tail, [main], names) == [main], "별칭으로도 찾음"
     assert on_topic("[주간 증시 전망] 삼성전자", "삼성전자", [main], names) == [], "유형 기사"
     assert on_topic("[부고] 삼성전자 전무 부친상", "삼성전자", [main], names) == [], "부고 말머리"
@@ -43,6 +45,15 @@ def test_step6_match():
     many = "".join(f"회사{i}번 " for i in range(10))
     assert on_topic("삼성전자 등 151곳 공표", "삼성전자 " + many, [main], names) == [], "제목에 있어도 종목이 너무 많으면 명단"
     assert on_topic("생산 지표 기사", None, [side], names) == [side], "본문이 지워졌으면 그대로"
+
+    # 관련도: 제목·첫 부분·주인공·언급 횟수·테마로 기사 안에서 얼마나 중심인지 (화면 순서용)
+    from hk_llm.steps.step6_match import relevance
+    d = (names, {"A": {"반도체"}}, s)
+    body4 = "삼성전자가 투자했다. " + "다른 내용 " * 60 + "삼성전자 삼성전자 삼성전자"
+    assert relevance("삼성전자 투자", body4, main, ["반도체 투자"], d) == 1.0, "제목 + 주인공 + 4번 + 테마 = 만점"
+    assert relevance("실적 기사", twice, side, [], d) == 0.12, "뒤쪽 2번 조연 = 0.25 × 2/4 → 0.12 (반올림)"
+    assert relevance("실적 기사", "두산이 수주했다", side, [], d) == 0.26, "첫 부분 0.20 + 1번 0.06"
+    assert relevance("삼성전자 투자", None, main, [], d) == 1.0, "본문이 지워졌으면 예전 점수"
 
 
 def test_step7_group():
