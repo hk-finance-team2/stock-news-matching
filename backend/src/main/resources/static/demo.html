@@ -63,6 +63,7 @@ select { height: 44px; padding: 0 10px; border: 1px solid var(--input); border-r
 .wrap { max-width: 1280px; margin: 0 auto; padding: 20px 24px 48px; }
 .title-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 18px; }
 .title-row h1 { margin: 0; font-size: 26px; letter-spacing: -0.02em; }
+.status-col { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
 .status { margin: 0; font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 8px; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: #12B76A; display: inline-block; }
 .dot.off { background: #98A2B3; } .dot.bad { background: #F04438; }
@@ -365,7 +366,8 @@ var home = { source: '', sort: 'latest', minRelevance: '', page: 1, size: 10, it
 
 function renderHome() {
   view.innerHTML =
-    '<div class="title-row"><h1>오늘의 뉴스·SNS</h1><p class="status" id="status"><span class="dot off"></span>갱신 시각 불러오는 중…</p></div>'
+    '<div class="title-row"><h1>오늘의 뉴스·SNS</h1><div class="status-col"><p class="status" id="status"><span class="dot off"></span>갱신 시각 불러오는 중…</p>'
+    + '<p class="status" id="quoteStatus"></p></div></div>'
     + '<div class="cols">'
     + '<main class="list">'
     + '<div class="toolbar">'
@@ -403,6 +405,7 @@ function renderHome() {
   loadArticles(true);
   loadIssues(true);   // 홈에서만 이슈 종목 시세를 방송으로 받음
   loadStatus();
+  loadQuoteStatus();
   loadWatchBox();
 }
 
@@ -476,6 +479,35 @@ async function loadStatus() {
   }
 }
 
+/**
+ * 시세 수신 상태 한 줄 (GET /api/quotes/status). 15초마다 다시 물어봄, 화면을 떠나면 멈춤
+ * 꺼짐(503 QUOTE_DISABLED) = 회색, 연결 끊김(다시 연결 중) = 빨강, 연결됨 = 초록 + 생중계 자리 수
+ */
+var quoteStatusTimer = null;
+async function loadQuoteStatus() {
+  var el = document.getElementById('quoteStatus');
+  if (!el) return;
+  clearTimeout(quoteStatusTimer);
+  try {
+    var s = await api('/api/quotes/status');
+    var dot = 'dot', text;
+    if (!s.connected) { dot = 'dot bad'; text = '실시간 시세 연결 끊김 (다시 연결 중, 현재가는 몇 초마다 조회)'; }
+    else {
+      text = '실시간 시세 연결됨 · 생중계 ' + s.activeCodes.length + '/' + s.capacity + '종목';
+      if (s.waitingCodes.length) text += ' · 대기 ' + s.waitingCodes.length;
+      text += ' · 오늘 체결 ' + won(s.ticksToday) + '건';
+      if (s.lastMessageAt) text += ' · 마지막 수신 ' + hms(s.lastMessageAt);
+    }
+    el.innerHTML = '<span class="' + dot + '"></span>' + esc(text);
+    el.title = '생중계: ' + (s.activeCodes.join(', ') || '없음') + (s.waitingCodes.length ? ' / 대기: ' + s.waitingCodes.join(', ') : '');
+  } catch (e) {
+    el.innerHTML = '<span class="dot off"></span>' + esc(e.code === 'QUOTE_DISABLED' ? '실시간 시세 꺼짐 (서버 .env 의 KIS_ENABLED)' : '시세 상태를 불러오지 못했어요');
+    el.title = '';
+    if (e.code === 'QUOTE_DISABLED') return;   // 꺼져 있으면 다시 물어보지 않음
+  }
+  quoteStatusTimer = setTimeout(loadQuoteStatus, 15000);
+}
+
 /** 관심 종목 칸: 로그인했으면 내 관심 종목, 아니면 로그인 안내 */
 async function loadWatchBox() {
   var box = document.getElementById('watch');
@@ -489,9 +521,10 @@ async function loadWatchBox() {
     if (!items.length) { box.innerHTML = '<p>아직 관심 종목이 없어요. 종목 화면에서 추가할 수 있어요.</p>'; return; }
     box.innerHTML = '<ol class="ranks">' + items.slice(0, 5).map(function (w) {
       return '<li><a href="#/stock/' + encodeURIComponent(w.stockCode) + '"><span class="rank-no">·</span>'
-        + '<span class="rank-name"><b>' + esc(w.stockName) + '</b><small>최근 매칭 ' + esc(w.lastMatchedAt ? fmtTime(w.lastMatchedAt) : '없음') + '</small></span>'
+        + '<span class="rank-name"><b>' + esc(w.stockName) + '</b><small class="rq" data-code="' + esc(w.stockCode) + '"></small><small>최근 매칭 ' + esc(w.lastMatchedAt ? fmtTime(w.lastMatchedAt) : '없음') + '</small></span>'
         + '<span class="rank-cnt">오늘 ' + w.todayArticleCount + '건</span></a></li>';
     }).join('') + '</ol>';
+    fillRankQuotes(items.slice(0, 5).map(function (w) { return w.stockCode; }), false);
   } catch (e) {
     box.innerHTML = '<p>로그인이 만료됐어요. 다시 로그인해 주세요.</p><a class="btn-main" href="#/login">로그인</a>';
   }
@@ -1172,9 +1205,10 @@ function logout() {
 // ===== 4단계: 관심 종목 (F-19) =====
 
 async function renderWatchlist() {
-  view.innerHTML = '<div class="title-row"><h1>관심 종목</h1></div><div id="wBody"></div>';
+  view.innerHTML = '<div class="title-row"><h1>관심 종목</h1><p class="status" id="quoteStatus"></p></div><div id="wBody"></div>';
   var body = document.getElementById('wBody');
   if (!loggedIn()) { body.innerHTML = needLoginHtml('관심 종목은 로그인해야 볼 수 있어요.'); return; }
+  loadQuoteStatus();
   body.innerHTML = '<section class="box" style="margin-bottom:16px"><div class="box-head"><h2>종목 추가</h2><span>이름·코드·별칭</span></div>'
     + '<div class="pick"><input id="wQ" type="search" placeholder="예: 현대차, 005930" aria-label="관심 종목 추가할 종목"></div>'
     + '<div class="suggest" id="wList" hidden></div><div class="msg" id="wMsg"></div>'
@@ -1203,14 +1237,17 @@ async function loadWatchTable(onChange) {
   try {
     var d = await api('/api/watchlist');
     box.innerHTML = d.items.length
-      ? '<table class="watch"><thead><tr><th>종목</th><th>오늘 매칭 글</th><th>최근 매칭</th><th>추가한 때</th><th></th></tr></thead><tbody>'
+      ? '<table class="watch"><thead><tr><th>종목</th><th>현재가</th><th>오늘 매칭 글</th><th>최근 매칭</th><th>추가한 때</th><th></th></tr></thead><tbody>'
         + d.items.map(function (w) {
             return '<tr><td><a href="#/stock/' + encodeURIComponent(w.stockCode) + '"><b>' + esc(w.stockName) + '</b></a> <small style="color:var(--muted)">' + esc(w.stockCode) + '</small></td>'
+              + '<td><span class="rq" data-code="' + esc(w.stockCode) + '">-</span></td>'
               + '<td>' + w.todayArticleCount + '건</td><td>' + esc(w.lastMatchedAt ? fmtTime(w.lastMatchedAt) : '-') + '</td>'
               + '<td>' + esc(fmtTime(w.addedAt)) + '</td>'
               + '<td><button type="button" class="btn-sm danger" data-wdel="' + esc(w.stockCode) + '">삭제</button></td></tr>';
           }).join('') + '</tbody></table>'
       : '<p class="none" style="margin-top:10px">아직 관심 종목이 없어요. 위에서 종목을 찾아 추가해 보세요.</p>';
+    // 현재가: 처음엔 한 번에 조회, 앞 5종목은 방송으로 갱신 (이슈 종목과 같은 함수, 방송은 화면당 하나)
+    fillRankQuotes(d.items.map(function (w) { return w.stockCode; }).slice(0, 10), true);
     box.querySelectorAll('[data-wdel]').forEach(function (b) {
       b.addEventListener('click', async function () {
         try { await api('/api/watchlist/' + encodeURIComponent(b.dataset.wdel), { method: 'DELETE' }); loadWatchTable(onChange); if (onChange) onChange(); }
@@ -1229,6 +1266,7 @@ function route() {
   var nav = 'main';
   closeStream();   // 다른 화면으로 가면 방송 듣기를 끊음 (서버의 "보는 사람 수"도 줄어듦)
   stopReplay();
+  clearTimeout(quoteStatusTimer);
   if (parts[0] === 'logout') { logout(); return; }
   if (parts[0] === 'search' && params.get('q')) renderSearch(params);
   else if (parts[0] === 'article' && parts[1]) renderArticle(parts[1]);
