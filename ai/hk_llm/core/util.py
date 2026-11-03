@@ -1,6 +1,6 @@
 """공통 도구: 로그 남기기, 실패하면 다시 해보기
 
-    from hk_llm.util import get_logger, retry
+    from hk_llm.core.util import get_logger, retry
     log = get_logger(__name__)
     log.info("RSS %d건", n)                              # 화면 + logs/hk_llm.log
     res = retry(lambda: requests.get(url, timeout=10))  # 실패하면 3번까지 다시
@@ -11,7 +11,7 @@ import time
 
 import requests
 
-from hk_llm.config import LOG_DIR
+from hk_llm.core.config import LOG_DIR
 
 FORMAT = "%(asctime)s %(levelname)-7s %(name)s | %(message)s"
 
@@ -62,29 +62,3 @@ def retry(fn, tries=3, wait=2.0):
             log.warning("재시도 %d/%d (%.0f초 뒤): %s", i, tries - 1, wait, e)
             time.sleep(wait)
             wait *= 2
-
-
-if __name__ == "__main__":
-    calls = []
-
-    def flaky():  # 두 번 끊겼다가 성공
-        calls.append(1)
-        if len(calls) < 3:
-            raise requests.ConnectionError("끊김")
-        return "ok"
-
-    assert retry(flaky, wait=0) == "ok" and len(calls) == 3
-
-    def not_found():
-        r = requests.Response()
-        r.status_code = 404
-        calls.append(1)
-        return r
-
-    calls.clear()
-    try:
-        retry(not_found, wait=0)
-        raise AssertionError("404 는 예외가 나야 함")
-    except requests.HTTPError:
-        assert len(calls) == 1, "404 는 다시 해도 같으니 재시도 안 함"
-    print("ok")

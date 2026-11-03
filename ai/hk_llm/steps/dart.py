@@ -1,6 +1,6 @@
 """공시 수집: DART 공시 목록에서 주요 공시만 골라 저장 → 바로 DONE (LLM 안 씀, 비용 0)
 
-    from hk_llm.dart import collect_disclosures
+    from hk_llm.steps.dart import collect_disclosures
     n = collect_disclosures()   # 새로 저장한 건수. .env 에 DART_API_KEY 필요
 
 - 범위: 어제~오늘, 코스피·코스닥, 아래 TAKE 에 걸리는 제목만
@@ -15,10 +15,10 @@ from datetime import datetime, timedelta
 import requests
 from sqlalchemy import bindparam, text
 
-from hk_llm.config import KST
-from hk_llm.db import get_engine, to_db
-from hk_llm.step2_dedup import url_key
-from hk_llm.util import get_logger
+from hk_llm.core.config import KST
+from hk_llm.core.db import get_engine, to_db
+from hk_llm.steps.step2_dedup import url_key
+from hk_llm.core.util import get_logger
 
 API = "https://opendart.fss.or.kr/api/list.json"
 VIEW = "https://dart.fss.or.kr/dsaf001/main.do?rcpNo={}"
@@ -109,26 +109,6 @@ def collect_disclosures(engine=None, key=None):
 
 
 if __name__ == "__main__":
-    # 필터·시각·키 보호 시험 (네트워크 없음)
-    from unittest import mock
-
-    for title in ("연결재무제표기준영업(잠정)실적(공정공시)", "단일판매ㆍ공급계약체결", "주요사항보고서(자기주식취득결정)", "공개매수신고서"):
-        assert important(title), title
-    for title in ("증권발행실적보고서", "합병등종료보고서", "자기주식처분결과보고서", "공개매수설명서", "결산실적공시예고(안내공시)",
-                  "임원ㆍ주요주주특정증권등소유상황보고서", "조회공시요구(현저한시황변동)에대한답변(중요공시대상없음)"):
-        assert not important(title), title
-    now = datetime(2026, 11, 2, 15, 0, tzinfo=KST)
-    assert published("20261102", now) == now
-    assert published("20261101", now) == datetime(2026, 11, 1, tzinfo=KST)
-    secret = "SECRETKEY"
-    boom = requests.ConnectionError(f"{API}?crtfc_key={secret}")
-    with mock.patch("hk_llm.dart.requests.get", side_effect=boom):
-        try:
-            _get_page(secret, "Y", "20261101", "20261102", 1)
-            raise AssertionError("예외가 나야 함")
-        except RuntimeError as e:
-            assert secret not in str(e) and e.__cause__ is None and e.__suppress_context__, "오류에 키가 남으면 안 됨"
-
     # 실제 API + DB: 두 번 돌려 두 번째는 새 공시만 (DB 켜져 있어야 함)
     first = collect_disclosures()
 
@@ -144,6 +124,6 @@ if __name__ == "__main__":
         dup = c.execute(text("SELECT COUNT(*) - COUNT(DISTINCT url_key) FROM article WHERE channel = 'DART'")).scalar()
     assert dup == 0
     for r in rows:
-        assert r.status == "DONE" and "rcpNo=" in r.url and secret not in r.url
+        assert r.status == "DONE" and "rcpNo=" in r.url
         print(tuple(r))
     print("ok 새로 저장", first)

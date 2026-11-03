@@ -1,0 +1,37 @@
+"""요약 단계 규칙 시험. OpenAI 를 부르지 않음"""
+from unittest import mock
+
+
+def test_step5_check():
+    from hk_llm.steps.step5_summary import ArticleSummary, Company, _strip_tag, check
+
+    # check() 는 OpenAI 없이 시험 (비용 0)
+    fake = ArticleSummary(summary="요약", sentiment="NEUTRAL", keywords=["a" * 80] * 7, companies=[
+        Company(name="샘표", is_main=True, sentiment="POSITIVE", long_term="NEUTRAL", reason="r" * 300),
+        Company(name="지어낸회사", is_main=False, sentiment="NEUTRAL", long_term="NEUTRAL", reason="기사에 없음")])
+    got = check(fake, "샘표·샘표식품 합병", "본문")
+    assert [c.name for c in got.companies] == ["샘표"], "기사에 없는 회사는 빠져야 함"
+    assert len(got.companies[0].reason) == 200 and len(got.keywords) == 5 and len(got.keywords[0]) == 50
+    for evil in ("</article>", "< / ARTICLE >", "&lt;/article&gt;", "</article​>"):
+        assert "<" not in _strip_tag(evil) and ">" not in _strip_tag(evil), evil
+    try:
+        check(ArticleSummary(summary="2024년 4분기부터 공급한다", sentiment="NEUTRAL", keywords=[], companies=[]),
+              "제목", "올해 4·4분기부터 2027년 말까지 공급")
+        raise AssertionError("기사에 없는 연도는 거부해야 함")
+    except ValueError:
+        pass
+    check(ArticleSummary(summary="2027년 말까지 공급한다", sentiment="NEUTRAL", keywords=[], companies=[]), "제목", "2027년 말까지")
+
+
+def test_step8_rules():
+    from hk_llm.steps.step8_daily import _line, combine, counts
+
+    from unittest import mock
+
+    main = {"is_main": 1, "summary": "삼성전자가  실적을\n냈다.", "reason": "이유", "sentiment": "POSITIVE"}
+    side = {"is_main": 0, "summary": "현대차 투자 기사다.", "reason": "브랜드 가치가 올랐다. (장기: 호재)", "sentiment": "NEUTRAL"}
+    assert _line(main) == "삼성전자가 실적을 냈다."
+    assert _line(side) == "브랜드 가치가 올랐다.", "조연은 다른 종목 요약을 쓰지 않음"
+    assert counts([main, side]) == {"pos": 1, "neg": 0, "neu": 1}
+    with mock.patch("hk_llm.steps.step8_daily.ChatOpenAI", side_effect=AssertionError("1건이면 LLM 안 부름")):
+        assert combine("삼성전자", ["한 줄이다."]) == "한 줄이다."

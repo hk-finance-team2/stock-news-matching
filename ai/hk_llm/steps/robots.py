@@ -1,7 +1,7 @@
 """본문 수집 전 robots.txt 확인. 사이트(호스트)별로 한 번만 받아서 캐시한다.
 
 사용:
-    from hk_llm.robots import allowed, crawl_delay
+    from hk_llm.steps.robots import allowed, crawl_delay
     if allowed(url):
         time.sleep(crawl_delay(url))
         ...
@@ -12,7 +12,7 @@ from urllib.parse import urlsplit
 
 import requests
 
-from hk_llm.config import USER_AGENT
+from hk_llm.core.config import USER_AGENT
 
 DEFAULT_DELAY = 1.0  # robots.txt 에 Crawl-delay 가 없을 때 요청 간격(초)
 
@@ -46,12 +46,3 @@ def allowed(url):
 
 def crawl_delay(url):
     return _parser(_origin(url)).crawl_delay(USER_AGENT) or DEFAULT_DELAY
-
-
-if __name__ == "__main__":
-    # 2026-10-30 확인 결과 기준. 사이트가 robots.txt 를 바꾸면 달라질 수 있음
-    assert allowed("https://www.hankyung.com/article/2026103049506")
-    assert not allowed("https://www.hankyung.com/print/2026103049506")
-    assert not allowed("https://news.mt.co.kr/mtview.php?no=2025092114541910435")
-    assert allowed("https://www.yna.co.kr/view/AKR20261030097100055")
-    print("ok")

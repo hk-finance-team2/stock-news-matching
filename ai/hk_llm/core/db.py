@@ -6,7 +6,7 @@ from functools import lru_cache
 
 from sqlalchemy import create_engine
 
-from hk_llm.config import KST, db_url
+from hk_llm.core.config import KST, db_url
 
 
 @lru_cache(maxsize=None)

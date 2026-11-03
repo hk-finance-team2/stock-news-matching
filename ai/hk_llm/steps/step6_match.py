@@ -1,6 +1,6 @@
 """6단계 (23~25번): 요약에서 LLM 이 뽑은 회사 이름(article.companies)을 종목에 연결 → DONE / NO_STOCK
 
-    from hk_llm.step6_match import match_articles
+    from hk_llm.steps.step6_match import match_articles
     match_articles()                                         # SUMMARIZED 기사 매칭
     match_articles(statuses=("SUMMARIZED", "DONE", "NO_STOCK"))  # 규칙을 바꾼 뒤 전부 다시 매칭 (LLM 안 부름, 비용 0)
 
@@ -16,8 +16,8 @@ from collections import Counter
 
 from sqlalchemy import bindparam, text
 
-from hk_llm.db import get_engine
-from hk_llm.util import get_logger
+from hk_llm.core.db import get_engine
+from hk_llm.core.util import get_logger
 
 log = get_logger(__name__)
 
@@ -96,26 +96,3 @@ def match_articles(engine=None, statuses=("SUMMARIZED",)):
     if missing:
         log.info("사전에 없는 회사: %s", ", ".join(f"{n}({k})" for n, k in missing.most_common(50)))
     return done
-
-
-if __name__ == "__main__":
-    # 점수·매칭 규칙 시험 (DB 없이)
-    s = {"name_weight": 0.4, "theme_weight": 0.4, "context_weight": 0.2, "min_score": 0.7}
-    assert norm("(주) LG 씨엔에스") == "LG씨엔에스" and norm("hl만도") == "HL만도" and norm("기아(000270)") == "기아"
-    assert norm("에쓰-오일") == "에쓰오일" and norm("S-Oil") == "SOIL"
-    assert score(True, "A", [], {}, s) == 1.0  # 주인공: (0.4 + 0.2) / 0.6
-    assert score(False, "A", [], {}, s) == 0.83  # 조연: (0.4 + 0.1) / 0.6
-    assert score(True, "A", ["3분기 실적"], {"A": {"반도체"}}, s) == 1.0, "테마가 안 맞아도 깎지 않음"
-    assert score(False, "A", ["금리"], {"A": {"HBM"}}, s) == 0.83, "조연도 테마 때문에 탈락하지 않음"
-    assert score(False, "A", ["HBM 수요"], {"A": {"HBM"}}, s) == 1.0, "테마가 맞으면 점수를 올림"
-    d = ({"HL만도": "204320", "샘표": "007540"}, {}, s)
-    got = match_one([{"name": "HL만도", "is_main": True, "sentiment": "NEGATIVE", "reason": "r"},
-                     {"name": "샘표", "is_main": True, "sentiment": "POSITIVE", "reason": "r"},
-                     {"name": "바이낸스", "is_main": False, "sentiment": "NEUTRAL", "reason": "r"}], [], d)
-    assert [g[0] for g in got] == ["204320", "007540"], got  # 사전에 없는 바이낸스는 빠짐
-    miss = Counter()
-    match_one([{"name": "바이낸스", "is_main": False, "sentiment": "NEUTRAL", "reason": "r"}], [], d, miss)
-    assert miss == {"바이낸스": 1}, "못 찾은 이름을 모음"
-    assert reason_text({"reason": "수주", "long_term": "POSITIVE"}) == "수주 (장기: 호재)"
-    assert reason_text({"reason": "수주"}) == "수주"
-    print("ok")

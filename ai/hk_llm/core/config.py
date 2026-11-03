@@ -6,8 +6,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from sqlalchemy import URL
 
-BASE_DIR = Path(__file__).parent
-DATA_DIR = BASE_DIR / "data"  # Git 제외: 기사·KRX 데이터
+BASE_DIR = Path(__file__).parent.parent  # hk_llm 폴더
 LOG_DIR = BASE_DIR / "logs"  # Git 제외
 
 # 한국은 서머타임 없음. ZoneInfo("Asia/Seoul") 은 Windows 에서 tzdata 패키지가 필요해서 고정 +9 사용

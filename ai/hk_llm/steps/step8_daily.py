@@ -1,7 +1,7 @@
 """8단계 (32번): 종목별 오늘 뉴스 종합 요약 → stock_daily_summary (백엔드 종합 요약 API 가 읽음)
 
-    python -m hk_llm.step8_daily         규칙 시험 (DB·OpenAI 없음)
-    python -m hk_llm.step8_daily --run   오늘 요약 만들기 (기사 2건 이상인 종목만 OpenAI 호출)
+    python -m hk_llm.steps.step8_daily         규칙 시험 (DB·OpenAI 없음)
+    python -m hk_llm.steps.step8_daily --run   오늘 요약 만들기 (기사 2건 이상인 종목만 OpenAI 호출)
 
 - 기사 1건: LLM 없이 그 문장을 그대로 씀 / 2건 이상: LLM 으로 합침
 - 주인공 기사는 요약, 조연 기사는 그 종목의 이유만 씀 (묶음 기사 요약이 다른 종목에 붙지 않게)
@@ -17,10 +17,10 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from sqlalchemy import text
 
-from hk_llm.config import KST
-from hk_llm.db import get_engine
-from hk_llm.step5_summary import MODEL, STOP_ERRORS, _strip_tag
-from hk_llm.util import get_logger
+from hk_llm.core.config import KST
+from hk_llm.core.db import get_engine
+from hk_llm.steps.step5_summary import MODEL, STOP_ERRORS, _strip_tag
+from hk_llm.core.util import get_logger
 
 MAX_LINES = 10  # 종목당 최신 기사 10건까지만 (비용 상한)
 MAX_LEN = 500
@@ -114,17 +114,6 @@ def summarize_day(engine=None, day=None):
 
 if __name__ == "__main__":
     import sys
-
-    from unittest import mock
-
-    main = {"is_main": 1, "summary": "삼성전자가  실적을\n냈다.", "reason": "이유", "sentiment": "POSITIVE"}
-    side = {"is_main": 0, "summary": "현대차 투자 기사다.", "reason": "브랜드 가치가 올랐다. (장기: 호재)", "sentiment": "NEUTRAL"}
-    assert _line(main) == "삼성전자가 실적을 냈다."
-    assert _line(side) == "브랜드 가치가 올랐다.", "조연은 다른 종목 요약을 쓰지 않음"
-    assert counts([main, side]) == {"pos": 1, "neg": 0, "neu": 1}
-    with mock.patch("hk_llm.step8_daily.ChatOpenAI", side_effect=AssertionError("1건이면 LLM 안 부름")):
-        assert combine("삼성전자", ["한 줄이다."]) == "한 줄이다."
-    print("ok 규칙 시험")
 
     if "--run" in sys.argv:
         print(summarize_day())

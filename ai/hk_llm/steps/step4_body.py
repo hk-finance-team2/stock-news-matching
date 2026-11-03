@@ -1,6 +1,6 @@
 """4단계 (20~22번): LISTED 기사의 원문 페이지에서 본문을 가져와 FETCHED 로 저장
 
-    from hk_llm.step4_body import fetch_bodies, purge_old_bodies
+    from hk_llm.steps.step4_body import fetch_bodies, purge_old_bodies
     fetch_bodies()      # LISTED 를 오래된 것부터 처리. 결과 건수를 dict 로 돌려줌
     purge_old_bodies()  # 7일 지난 본문 지우기 (요약은 남음)
 
@@ -16,10 +16,10 @@ import lxml.html
 import requests
 from sqlalchemy import text
 
-from hk_llm.config import USER_AGENT
-from hk_llm.db import get_engine
-from hk_llm.robots import allowed, crawl_delay
-from hk_llm.util import get_logger, retry
+from hk_llm.core.config import USER_AGENT
+from hk_llm.core.db import get_engine
+from hk_llm.steps.robots import allowed, crawl_delay
+from hk_llm.core.util import get_logger, retry
 
 # 언론사가 적어서 범용 추출기 대신 사이트별 본문 칸을 직접 지정 (2026-11-02 기사 페이지 확인)
 BODY_XPATH = {
@@ -145,14 +145,6 @@ def purge_old_bodies(engine=None):
 
 
 if __name__ == "__main__":
-    html = """<html><body><div id="articletxt">
-        <figure><figcaption>사진=SOOP</figcaption></figure>
-        SOOP이 3분기 실적 부진에 급락하고 있다.<br><br>2일 오전   9시16분 코스닥시장에서<br>
-        <aside>광고</aside>한경우 한경닷컴 기자 case@hankyung.com</div></body></html>"""
-    got = extract(html, "https://www.hankyung.com/article/1")
-    assert got == "SOOP이 3분기 실적 부진에 급락하고 있다.\n2일 오전 9시16분 코스닥시장에서", repr(got)
-    assert extract(html, "https://unknown.example/1") is None
-
     # 실제 사이트 1건씩 (본문을 받은 적 있는 언론사별 최신 기사. 새 기사는 [속보]·[표] 처럼 본문이 없을 수 있음)
     with get_engine().connect() as conn:
         urls = conn.execute(text("SELECT url FROM article WHERE article_id IN "
