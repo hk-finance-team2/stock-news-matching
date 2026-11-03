@@ -42,7 +42,13 @@ public class QuoteController {
         this.stockMapper = stockMapper;
     }
 
-    @Operation(summary = "현재가 한 종목", description = "5초 캐시. direction UP/DOWN/FLAT, 하락이면 changeAmount·changeRate 음수")
+    @Operation(summary = "실시간 수집 상태", description = "웹소켓 연결, 구독 종목, 받은·저장한·버린 체결 수, 오늘 저장된 체결 수")
+    @GetMapping("/status")
+    public QuoteStatusResponse getStatus() {
+        return service().status();
+    }
+
+    @Operation(summary = "현재가 한 종목", description = "실시간으로 받는 종목이면 live=true(DB 현재가), 아니면 KIS 조회 5초 캐시. direction UP/DOWN/FLAT, 하락이면 changeAmount·changeRate 음수")
     @GetMapping("/{stockCode}")
     public QuoteResponse getQuote(@PathVariable String stockCode) {
         return service().price(checkStock(stockCode));

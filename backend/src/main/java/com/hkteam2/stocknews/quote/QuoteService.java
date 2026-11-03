@@ -38,17 +38,41 @@ public class QuoteService {
     private static final int PAGE_SIZE = 30;
     private static final LocalTime MARKET_OPEN = LocalTime.of(9, 0);
 
+    /** 실시간 현재가가 이만큼 안에 갱신됐으면 KIS에 묻지 않고 그 값을 씀 */
+    static final Duration LIVE_FRESH = Duration.ofSeconds(15);
+
     private final KisRestClient kis;
+    private final KisProperties props;
+    private final KisWebSocketClient realtime;
+    private final TickBuffer buffer;
+    private final TickWriter writer;
+    private final QuoteMapper mapper;
     private final QuoteCache cache;
     private final Clock clock;
 
-    public QuoteService(KisRestClient kis) {
+    public QuoteService(KisRestClient kis, KisProperties props, KisWebSocketClient realtime, TickBuffer buffer,
+                        TickWriter writer, QuoteMapper mapper) {
         this.kis = kis;
+        this.props = props;
+        this.realtime = realtime;
+        this.buffer = buffer;
+        this.writer = writer;
+        this.mapper = mapper;
         this.clock = Clock.system(TimeUtils.KST);
         this.cache = new QuoteCache(clock);
     }
 
+    /**
+     * 현재가. 실시간으로 받고 있는 종목이면 DB의 현재가(quote_snapshot)를 바로 씀 (KIS 호출 0, live=true)
+     * 아니면 KIS REST 조회 + 5초 캐시
+     */
     public QuoteResponse price(String stockCode) {
+        QuoteSnapshotRow s = mapper.findSnapshot(stockCode);
+        if (s != null && s.updatedAt().isAfter(LocalDateTime.now(clock).minus(LIVE_FRESH))) {
+            return new QuoteResponse(s.stockCode(), s.price(), s.changeAmount(), s.changeRate(),
+                    direction(s.changeSign()), s.openPrice(), s.highPrice(), s.lowPrice(), s.accVolume(),
+                    TimeUtils.toKst(s.tradedAt()), true);
+        }
         return cache.get("price:" + stockCode, PRICE_TTL, () -> {
             KisPrice p = kis.inquirePrice(stockCode);
             return new QuoteResponse(p.stockCode(), p.price(), p.changeAmount(), p.changeRate(),
@@ -94,6 +118,14 @@ public class QuoteService {
                             t.changeRate(), direction(t.changeSign()), t.volume(), t.strength()))
                     .toList();
         });
+    }
+
+    /** 실시간 수집 상태 */
+    public QuoteStatusResponse status() {
+        return new QuoteStatusResponse(props.mode(), realtime.connected(), TimeUtils.toKst(realtime.connectedAt()),
+                TimeUtils.toKst(realtime.lastMessageAt()), props.fixedCodes(), realtime.subscribedCodes(),
+                realtime.messages(), buffer.received(), writer.saved(), buffer.dropped(), writer.failed(),
+                buffer.size(), realtime.quarantined(), realtime.reconnects(), mapper.countTicks(LocalDate.now(clock)));
     }
 
     /** KIS 전일 대비 부호 → 화면용. 1 상한·2 상승 → UP, 4 하한·5 하락 → DOWN, 3 보합 → FLAT */
