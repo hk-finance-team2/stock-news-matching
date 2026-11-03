@@ -73,6 +73,20 @@ public class KisWebSocketClient {
     private final AtomicLong quarantined = new AtomicLong();
     private final AtomicLong reconnects = new AtomicLong();
     private int failures;
+    private volatile SubscriptionListener listener;
+
+    /** 구독 자리 관리자(SubscriptionManager)가 접속·등록 결과를 받는 창구 */
+    public interface SubscriptionListener {
+        /** 접속(재접속) 직후: 등록할 종목을 다시 보내 달라는 신호 */
+        void onConnected();
+
+        /** 등록·해제 응답. ok=false면 message에 이유 (예: MAX SUBSCRIBE OVER) */
+        void onResult(String code, boolean ok, String message);
+    }
+
+    public void setListener(SubscriptionListener listener) {
+        this.listener = listener;
+    }
 
     public KisWebSocketClient(KisProperties props, KisTokenManager tokens, TickBuffer buffer, QuoteMapper mapper) {
         this.props = props;
@@ -115,16 +129,31 @@ public class KisWebSocketClient {
             connectedAt = LocalDateTime.now(TimeUtils.KST);
             failures = 0;
             subscribed.clear();
-            log.info("KIS 웹소켓 연결됨 ({}), 고정 종목 {}개 구독 등록", props.mode(), props.fixedCodes().size());
-            for (String code : props.fixedCodes()) {
-                send(subscribeMessage(code, "1"));
-                Thread.sleep(200);   // 등록 요청도 몰아서 보내지 않음
+            log.info("KIS 웹소켓 연결됨 ({})", props.mode());
+            SubscriptionListener l = listener;
+            if (l != null) {
+                l.onConnected();   // 자리 관리자가 지금 자리 목록을 0.2초 간격으로 등록
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         } catch (Exception e) {
             log.warn("KIS 웹소켓 연결 실패: {} {}", e.getClass().getSimpleName(), e.getMessage());
             scheduleReconnect();
+        }
+    }
+
+    /** 실시간 등록. 연결 전이면 건너뜀 (접속하면 자리 관리자가 다시 보냄) */
+    public void subscribe(String code) {
+        if (connected()) {
+            send(subscribeMessage(code, "1"));
+        }
+    }
+
+    /** 실시간 해제 */
+    public void unsubscribe(String code) {
+        subscribed.remove(code);
+        if (connected()) {
+            send(subscribeMessage(code, "2"));
         }
     }
 
@@ -147,11 +176,15 @@ public class KisWebSocketClient {
                 + "\",\"tr_key\":\"" + code + "\"}}}";
     }
 
-    /** 보내기 (앞 메시지가 다 나간 뒤 다음 것) */
-    private void send(String text) {
+    /** 보내기 (앞 메시지가 다 나간 뒤 다음 것. 여러 스레드가 동시에 보내지 않게 synchronized) */
+    private synchronized void send(String text) {
         WebSocket ws = socket;
         if (ws != null) {
-            ws.sendText(text, true).join();
+            try {
+                ws.sendText(text, true).join();
+            } catch (RuntimeException e) {
+                log.warn("KIS 웹소켓 보내기 실패: {}", e.getMessage());
+            }
         }
     }
 
@@ -181,11 +214,20 @@ public class KisWebSocketClient {
         String rt = find(RT_CD, msg);
         String key = find(TR_KEY, msg);
         String m = find(MSG1, msg);
-        if ("0".equals(rt) && key != null) {
-            subscribed.add(key);
-            log.info("KIS 실시간 구독 {}: {}", key, m);
+        boolean ok = "0".equals(rt) || (m != null && m.contains("ALREADY IN SUBSCRIBE"));   // 이미 등록돼 있어도 성공으로 봄
+        if (ok && key != null) {
+            if (m != null && m.contains("UNSUBSCRIBE")) {
+                subscribed.remove(key);
+            } else {
+                subscribed.add(key);
+            }
+            log.info("KIS 실시간 {}: {}", key, m);
         } else {
             log.warn("KIS 실시간 응답 {}: rt_cd={} {}", key, rt, m);
+        }
+        SubscriptionListener l = listener;
+        if (l != null) {
+            l.onResult(key, ok, m);
         }
     }
 

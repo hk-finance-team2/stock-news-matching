@@ -13,6 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,12 +48,13 @@ public class QuoteStreamHub {
     private static final Duration REST_EVERY = Duration.ofSeconds(5);
     private static final int MAX_TICKS_PER_ROUND = 500;
 
-    /** 연결 하나 = 브라우저 탭 하나가 듣는 종목들 */
-    private record Client(SseEmitter emitter, Set<String> codes) {
+    /** 연결 하나 = 브라우저 탭 하나가 듣는 종목들. removed: 끊김 처리를 한 번만 하려고 */
+    private record Client(SseEmitter emitter, Set<String> codes, AtomicBoolean removed) {
     }
 
     private final QuoteMapper mapper;
     private final QuoteService quotes;
+    private final SubscriptionManager subscriptions;
     private final Set<Client> clients = ConcurrentHashMap.newKeySet();
     private final ScheduledExecutorService scheduler =
             Executors.newSingleThreadScheduledExecutor(r -> new Thread(r, "quote-stream"));
@@ -62,9 +64,10 @@ public class QuoteStreamHub {
     private final Map<String, LocalDateTime> lastSentUpdate = new HashMap<>();
     private final Map<String, Instant> lastRestAt = new HashMap<>();
 
-    public QuoteStreamHub(QuoteMapper mapper, QuoteService quotes) {
+    public QuoteStreamHub(QuoteMapper mapper, QuoteService quotes, SubscriptionManager subscriptions) {
         this.mapper = mapper;
         this.quotes = quotes;
+        this.subscriptions = subscriptions;
     }
 
     @PostConstruct
@@ -77,17 +80,24 @@ public class QuoteStreamHub {
     @PreDestroy
     void stop() {
         scheduler.shutdownNow();
-        clients.forEach(c -> c.emitter().complete());
+        clients.forEach(c -> {
+            try {
+                c.emitter().complete();
+            } catch (RuntimeException ignored) {
+                // 이미 닫힘
+            }
+        });
     }
 
     /** 새 청취자. 돌려준 SseEmitter를 Controller가 그대로 응답으로 돌려줌 (연결이 열린 채로 유지됨) */
     public SseEmitter subscribe(List<String> codes) {
         SseEmitter emitter = new SseEmitter(TIMEOUT_MS);
-        Client client = new Client(emitter, Set.copyOf(codes));
-        emitter.onCompletion(() -> clients.remove(client));
-        emitter.onTimeout(() -> clients.remove(client));
-        emitter.onError(e -> clients.remove(client));
+        Client client = new Client(emitter, Set.copyOf(codes), new AtomicBoolean());
+        emitter.onCompletion(() -> drop(client));
+        emitter.onTimeout(() -> drop(client));
+        emitter.onError(e -> drop(client));
         clients.add(client);
+        client.codes().forEach(subscriptions::watch);   // 보는 사람 +1 → 생중계 자리 요청
         scheduler.execute(() -> sendInitial(client));   // KIS 조회가 느릴 수 있어 요청 스레드에서 하지 않음
         return emitter;
     }
@@ -198,6 +208,9 @@ public class QuoteStreamHub {
      * 한 번 더 내므로 부르지 않음 → 정리는 서블릿 컨테이너가 onError/onCompletion으로 함
      */
     private void drop(Client c) {
-        clients.remove(c);
+        if (c.removed().compareAndSet(false, true)) {
+            clients.remove(c);
+            c.codes().forEach(subscriptions::unwatch);   // 보는 사람 −1 → 0이면 60초 뒤 자리 반납
+        }
     }
 }

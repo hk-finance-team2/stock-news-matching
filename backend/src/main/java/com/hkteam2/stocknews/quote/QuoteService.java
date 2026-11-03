@@ -47,17 +47,19 @@ public class QuoteService {
     private final TickBuffer buffer;
     private final TickWriter writer;
     private final QuoteMapper mapper;
+    private final SubscriptionManager subscriptions;
     private final QuoteCache cache;
     private final Clock clock;
 
     public QuoteService(KisRestClient kis, KisProperties props, KisWebSocketClient realtime, TickBuffer buffer,
-                        TickWriter writer, QuoteMapper mapper) {
+                        TickWriter writer, QuoteMapper mapper, SubscriptionManager subscriptions) {
         this.kis = kis;
         this.props = props;
         this.realtime = realtime;
         this.buffer = buffer;
         this.writer = writer;
         this.mapper = mapper;
+        this.subscriptions = subscriptions;
         this.clock = Clock.system(TimeUtils.KST);
         this.cache = new QuoteCache(clock);
     }
@@ -133,7 +135,9 @@ public class QuoteService {
     /** 실시간 수집 상태 */
     public QuoteStatusResponse status() {
         return new QuoteStatusResponse(props.mode(), realtime.connected(), TimeUtils.toKst(realtime.connectedAt()),
-                TimeUtils.toKst(realtime.lastMessageAt()), props.fixedCodes(), realtime.subscribedCodes(),
+                TimeUtils.toKst(realtime.lastMessageAt()), subscriptions.capacity(), subscriptions.fixedCodes(),
+                subscriptions.activeCodes(), realtime.subscribedCodes(), subscriptions.waitingCodes(),
+                subscriptions.viewers(),
                 realtime.messages(), buffer.received(), writer.saved(), buffer.dropped(), writer.failed(),
                 buffer.size(), realtime.quarantined(), realtime.reconnects(), mapper.countTicks(LocalDate.now(clock)));
     }
