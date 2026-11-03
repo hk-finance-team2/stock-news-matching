@@ -220,13 +220,14 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 |---|---|---|---|
 | 🔓 | GET | `/api/quotes/{stockCode}` | 현재가. 생중계 종목은 DB 실시간 값(`live: true`), 아니면 KIS 조회(5초 캐시) |
 | 🔓 | GET | `/api/quotes?codes=005930,000660` | 여러 종목 현재가 (최대 10개, 없는·실패한 종목은 빠짐) |
-| 🔓 | GET | `/api/quotes/{stockCode}/chart?unit=minute` | 오늘 1분봉 최근 약 2시간 (`unit=day`: 일봉 최근 약 100거래일). `items`는 오래된 것부터 |
+| 🔓 | GET | `/api/quotes/{stockCode}/chart?unit=5m&date=2026-10-30` | **봉(캔들) 차트**. `unit` `1m`·`5m`·`10m`·`30m`: `date` 하루(없으면 오늘)의 09:00~15:30 분봉, 최대 1년 전까지. `day`·`week`·`month`·`year`: 최근 100개(년봉은 상장 이후). 옛 값 `minute`=`1m`. `items`는 오래된 것부터 |
 | 🔓 | GET | `/api/quotes/{stockCode}/ticks` | 최근 체결 30건 (최신이 앞) |
 | 🔓 | GET (SSE) | `/api/quotes/stream?codes=005930` | **실시간 방송** (최대 5종목). 이벤트 `quote`(현재가, 연결 직후 한 번 + 바뀔 때마다), `tick`(새 체결, 생중계 종목만) |
 | 🔓 | GET | `/api/quotes/status` | 수집 상태: 웹소켓 연결, 생중계 자리(`capacity`, `activeCodes`, `waitingCodes`, `viewers`), 받은·저장·버린 체결 수 |
 | 🔓 | GET | `/api/quotes/{stockCode}/recordings` | 다시 볼 수 있는 날 (녹화된 날짜·체결 수) |
 | 🔓 | GET (SSE) | `/api/quotes/{stockCode}/replay?date=2026-11-03&from=09:00&speed=10` | **다시 보기**. 이벤트 `start` → `replay`(체결마다) → `end`. 배속 1·5·10·30·60 |
 | 🔓 | GET | `/api/quotes/check?date=` | 수집 점검: 종목별 저장 체결량 ÷ 실제 거래량(누적 거래량 차이) = `coverageRate`, 지연 ms |
+| 🔓 | GET | `/api/quotes/{stockCode}/big-moves?period=1y&threshold=5` | **과거 급등·급락 이력 (F-17)**. 하루 등락률이 ±`threshold`% 이상인 날(최신부터) + 그날 이 종목에 연결된 글. `period` `3m`·`6m`·`1y`(기본), `threshold` 3~30(기본 5) |
 
 현재가 한 건:
 
@@ -240,6 +241,20 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 - `live`: `true`면 웹소켓 실시간 값(`fetchedAt` = 마지막 체결 시각), `false`면 몇 초마다 조회한 값
 - 방송(SSE)은 브라우저 `EventSource`로 듣기: `new EventSource('/api/quotes/stream?codes=005930')` → `addEventListener('quote', e => JSON.parse(e.data))`. 끊기면 브라우저가 알아서 다시 연결. 화면을 떠나면 `close()`
 - 생중계 자리: 보는 사람이 있는 종목에 KIS 구독을 돌려씀 (공식 41건, 신규 키는 처음 3일 동안 3건). 자리가 없으면 그 종목은 5초마다 조회값으로 방송
+- 차트 응답: `{ stockCode, unit, date, items: [{ time, open, high, low, close, volume }] }`. `date`는 분봉일 때만(아니면 `null`). 분봉 `time`은 구간 시작 시각(5분봉 09:05 = 09:05~09:09), 일·주·월·년봉은 KIS가 준 날짜. 수정주가
+  - 분봉은 서버가 KIS 1분봉(한 번에 120분, 하루 4번)을 받아 n분씩 묶음: 시가 = 첫 봉, 종가 = 마지막 봉, 고가·저가 = 최고·최저, 거래량 = 합. 장 시간(09:00~15:30)만이라 거래량 합은 일봉(시간외 포함)보다 조금 적음
+  - 캐시: 오늘 분봉 60초, 지난 날 분봉 1시간, 일·주·월·년봉 10분. 1분봉 원본을 날짜마다 캐시해서 5·10·30분으로 바꿔도 KIS를 다시 부르지 않음
+  - `400 INVALID_REQUEST`: 모르는 `unit`, 일·주·월·년봉에 `date`, 미래 날짜, 1년보다 이전 날짜
+- 급등·급락 이력 한 날:
+
+  ```json
+  { "date": "2026-10-29", "close": 61200, "changeAmount": 4300, "changeRate": 7.56, "direction": "UP", "volume": 31200000,
+    "articleCount": 4,
+    "articles": [ { "articleId": 579, "title": "...", "sourceType": "NEWS", "press": "...",
+                    "publishedAt": "2026-10-29T10:00:00+09:00", "relevance": 92 } ] }
+  ```
+
+  응답 전체는 `{ stockCode, period, threshold, from, to, items: [위 모양] }`. 등락률은 KIS 일봉(수정주가) 종가로 `(그날 종가 − 전날 종가) ÷ 전날 종가`. 글은 **그날 0시~24시 작성**, `DONE`만, 관련도 높은 순 3개(`relevance`는 %, 없으면 `null`이고 뒤로)와 전체 수 `articleCount`. AI가 기사를 모으기 전 날짜는 글이 없는 게 정상. 일봉은 KIS 3번 조회 + 10분 캐시
 - 오류: `503 QUOTE_DISABLED`(시세 꺼짐), `429 QUOTE_BUSY`(KIS 초당 호출 초과), `429 REPLAY_BUSY`(다시 보기 동시 5개 초과), `502 QUOTE_UPSTREAM_ERROR`·`QUOTE_UNREACHABLE`(KIS 오류·연결 실패)
 - 개발 중 확인: `http://localhost:8080/demo.html` 종목 화면의 "시세" 칸
 

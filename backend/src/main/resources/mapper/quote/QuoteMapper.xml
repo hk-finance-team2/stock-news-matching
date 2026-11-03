@@ -193,4 +193,31 @@
         SELECT COUNT(*) FROM quote_quarantine
     </select>
 
+    <!--
+        급등·급락한 날들의 글 (F-17): 날짜마다 따로 묻지 않고 한 번에 (N+1 피하기)
+        글은 화면과 같이 status = 'DONE'만. 날짜는 작성 시각(published_at, 한국 시간)의 날짜
+    -->
+    <resultMap id="bigMoveArticleRow" type="com.hkteam2.stocknews.quote.BigMoveArticleRow">
+        <constructor>
+            <arg column="day" javaType="java.time.LocalDate"/>
+            <arg column="article_id" javaType="_long"/>
+            <arg column="title" javaType="String"/>
+            <arg column="source_type" javaType="String"/>
+            <arg column="press" javaType="String"/>
+            <arg column="published_at" javaType="java.time.LocalDateTime"/>
+            <arg column="relevance" javaType="java.math.BigDecimal"/>
+        </constructor>
+    </resultMap>
+
+    <select id="findArticlesOnDays" resultMap="bigMoveArticleRow">
+        SELECT DATE(a.published_at) AS day, a.article_id, a.title, a.source_type, a.press, a.published_at, s.relevance
+        FROM article_stock s
+        JOIN article a ON a.article_id = s.article_id
+        WHERE s.stock_code = #{stockCode}
+          AND a.status = 'DONE'
+          AND DATE(a.published_at) IN
+          <foreach collection="days" item="d" open="(" separator="," close=")">#{d}</foreach>
+        ORDER BY day, s.relevance IS NULL, s.relevance DESC, a.published_at DESC
+    </select>
+
 </mapper>

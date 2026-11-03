@@ -46,13 +46,15 @@ public class QuoteController {
     private final ObjectProvider<QuoteService> quoteService;
     private final ObjectProvider<QuoteStreamHub> streamHub;
     private final QuoteHistoryService history;
+    private final BigMoveService bigMoveService;
     private final StockMapper stockMapper;
 
     public QuoteController(ObjectProvider<QuoteService> quoteService, ObjectProvider<QuoteStreamHub> streamHub,
-                           QuoteHistoryService history, StockMapper stockMapper) {
+                           QuoteHistoryService history, BigMoveService bigMoveService, StockMapper stockMapper) {
         this.quoteService = quoteService;
         this.streamHub = streamHub;
         this.history = history;
+        this.bigMoveService = bigMoveService;
         this.stockMapper = stockMapper;
     }
 
@@ -137,16 +139,42 @@ public class QuoteController {
         return ListResponse.of(out);
     }
 
-    @Operation(summary = "차트", description = "unit=minute: 오늘 1분봉 최근 약 2시간 (60초 캐시), unit=day: 일봉 최근 약 100거래일 (10분 캐시). items는 오래된 것부터")
+    @Operation(summary = "차트 (봉)",
+            description = "unit=1m·5m·10m·30m: date 하루(없으면 오늘)의 09:00~15:30 분봉. KIS 1분봉을 서버가 n분씩 묶음, 최대 1년 전까지"
+                    + " (오늘 60초·지난 날 1시간 캐시). unit=day·week·month·year: 최근 100개, 년봉은 상장 이후 (10분 캐시)."
+                    + " 옛 값 minute = 1m. items는 오래된 것부터, 수정주가")
     @GetMapping("/{stockCode}/chart")
-    public ChartResponse getChart(@PathVariable String stockCode, @RequestParam(defaultValue = "minute") String unit) {
+    public ChartResponse getChart(@PathVariable String stockCode, @RequestParam(defaultValue = "1m") String unit,
+                                  @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        ChartUnit u = ChartUnit.of(unit).orElseThrow(() -> new BusinessException(ErrorCode.INVALID_REQUEST));
+        if (date != null && !u.isMinute()) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);   // 날짜는 분봉에서만
+        }
         QuoteService service = service();
         String code = checkStock(stockCode);
-        return switch (unit) {
-            case "minute" -> service.minuteChart(code);
-            case "day" -> service.dayChart(code);
-            default -> throw new BusinessException(ErrorCode.INVALID_REQUEST);
-        };
+        if (!u.isMinute()) {
+            return service.periodChart(code, u);
+        }
+        LocalDate today = service.today();
+        LocalDate day = date != null ? date : today;
+        if (day.isAfter(today) || day.isBefore(today.minusDays(QuoteService.MINUTE_HISTORY_DAYS))) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);   // 미래, 또는 KIS가 보관하지 않는 1년 전
+        }
+        return service.minuteChart(code, u, day);
+    }
+
+    @Operation(summary = "과거 급등·급락 이력 (F-17)",
+            description = "일봉으로 하루 등락률이 ±threshold% 이상인 날(최신부터)과 그날 이 종목에 연결된 글(관련도 높은 순 3개, 전체 수)."
+                    + " period 3m·6m·1y(기본), threshold 3~30(기본 5). 일봉은 KIS에서 받아 10분 캐시. 글은 작성일 기준, DONE만")
+    @GetMapping("/{stockCode}/big-moves")
+    public BigMoveResponse getBigMoves(@PathVariable String stockCode,
+                                       @RequestParam(defaultValue = "1y") String period,
+                                       @RequestParam(defaultValue = "5") int threshold) {
+        BigMovePeriod p = BigMovePeriod.of(period).orElseThrow(() -> new BusinessException(ErrorCode.INVALID_REQUEST));
+        if (threshold < 3 || threshold > 30) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+        return bigMoveService.bigMoves(checkStock(stockCode), p, threshold);
     }
 
     @Operation(summary = "최근 체결 30건", description = "최신이 앞. 5초 캐시. strength: 체결 강도")
