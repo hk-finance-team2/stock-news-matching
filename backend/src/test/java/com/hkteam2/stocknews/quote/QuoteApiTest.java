@@ -17,10 +17,21 @@ class QuoteApiTest extends ApiTestSupport {
     @Test
     void 시세가_꺼져_있으면_503_QUOTE_DISABLED() throws Exception {
         for (String url : new String[] {"/api/quotes/status", "/api/quotes/stream?codes=005930","/api/quotes/005930", "/api/quotes?codes=005930,000660",
-                "/api/quotes/005930/chart?unit=minute", "/api/quotes/005930/ticks"}) {
+                "/api/quotes/005930/chart?unit=minute", "/api/quotes/005930/ticks",
+                "/api/quotes/005930/big-moves"}) {
             mvc.perform(get(url))
                     .andExpect(status().isServiceUnavailable())
                     .andExpect(jsonPath("$.code").value("QUOTE_DISABLED"));
         }
+    }
+
+    @Test
+    void 급등락_이력의_기간_기준이_틀리면_400_없는_종목은_404() throws Exception {
+        for (String url : new String[] {"/api/quotes/005930/big-moves?period=2y", "/api/quotes/005930/big-moves?threshold=2",
+                "/api/quotes/005930/big-moves?threshold=31"}) {
+            mvc.perform(get(url)).andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+        }
+        mvc.perform(get("/api/quotes/999999/big-moves"))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("STOCK_NOT_FOUND"));
     }
 }
