@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.hkteam2.stocknews.quote.QuoteMapper">
+
+    <!--
+        체결 묶음 저장 (Batch): 여러 건을 INSERT 한 문장으로. 저장하는 쪽(TickWriter)이 1초마다 모아서 부름
+        INSERT IGNORE: uk_quote_tick (stock_code, trade_date, acc_volume)이 겹치는 줄은 조용히 건너뜀
+        → 웹소켓이 끊겼다 다시 붙어 같은 체결이 또 와도 한 번만 저장 (Idempotent Write)
+    -->
+    <insert id="insertTicks">
+        INSERT IGNORE INTO quote_tick
+            (stock_code, trade_date, traded_at, price, volume, acc_volume, change_rate, trade_side, received_at)
+        VALUES
+        <foreach collection="ticks" item="t" separator=",">
+            (#{t.stockCode}, #{t.tradeDate}, #{t.tradedAt}, #{t.price}, #{t.volume}, #{t.accVolume},
+             #{t.changeRate}, #{t.tradeSide}, #{t.receivedAt})
+        </foreach>
+    </insert>
+
+    <!--
+        현재가 넣기·덮어쓰기 (종목당 1줄)
+        이미 있으면: 새 체결의 누적 거래량이 더 클 때만 값을 바꿈 (늦게 도착한 옛 체결이 새 값을 덮지 않게)
+        IF(조건, 새 값, 옛 값)은 위에서부터 차례로 계산되므로, acc_volume은 맨 마지막에 바꿈
+    -->
+    <insert id="upsertSnapshots">
+        INSERT INTO quote_snapshot
+            (stock_code, price, change_sign, change_amount, change_rate, open_price, high_price, low_price,
+             acc_volume, acc_amount, trade_date, traded_at, updated_at)
+        VALUES
+        <foreach collection="ticks" item="t" separator=",">
+            (#{t.stockCode}, #{t.price}, #{t.changeSign}, #{t.changeAmount}, #{t.changeRate}, #{t.open}, #{t.high},
+             #{t.low}, #{t.accVolume}, #{t.accAmount}, #{t.tradeDate}, #{t.tradedAt}, #{now})
+        </foreach>
+        ON DUPLICATE KEY UPDATE
+            price         = IF(VALUES(acc_volume) >= acc_volume OR VALUES(trade_date) > trade_date, VALUES(price), price),
+            change_sign   = IF(VALUES(acc_volume) >= acc_volume OR VALUES(trade_date) > trade_date, VALUES(change_sign), change_sign),
+            change_amount = IF(VALUES(acc_volume) >= acc_volume OR VALUES(trade_date) > trade_date, VALUES(change_amount), change_amount),
+            change_rate   = IF(VALUES(acc_volume) >= acc_volume OR VALUES(trade_date) > trade_date, VALUES(change_rate), change_rate),
+            open_price    = IF(VALUES(acc_volume) >= acc_volume OR VALUES(trade_date) > trade_date, VALUES(open_price), open_price),
+            high_price    = IF(VALUES(acc_volume) >= acc_volume OR VALUES(trade_date) > trade_date, VALUES(high_price), high_price),
+            low_price     = IF(VALUES(acc_volume) >= acc_volume OR VALUES(trade_date) > trade_date, VALUES(low_price), low_price),
+            acc_amount    = IF(VALUES(acc_volume) >= acc_volume OR VALUES(trade_date) > trade_date, VALUES(acc_amount), acc_amount),
+            traded_at     = IF(VALUES(acc_volume) >= acc_volume OR VALUES(trade_date) > trade_date, VALUES(traded_at), traded_at),
+            updated_at    = IF(VALUES(acc_volume) >= acc_volume OR VALUES(trade_date) > trade_date, VALUES(updated_at), updated_at),
+            trade_date    = IF(VALUES(acc_volume) >= acc_volume OR VALUES(trade_date) > trade_date, VALUES(trade_date), trade_date),
+            acc_volume    = IF(VALUES(acc_volume) >= acc_volume OR VALUES(trade_date) > trade_date, VALUES(acc_volume), acc_volume)
+    </insert>
+
+    <insert id="insertQuarantine">
+        INSERT INTO quote_quarantine (raw, reason, received_at) VALUES (#{raw}, #{reason}, #{receivedAt})
+    </insert>
+
+    <resultMap id="snapshotRow" type="com.hkteam2.stocknews.quote.QuoteSnapshotRow">
+        <constructor>
+            <arg column="stock_code" javaType="String"/>
+            <arg column="price" javaType="_long"/>
+            <arg column="change_sign" javaType="String"/>
+            <arg column="change_amount" javaType="_long"/>
+            <arg column="change_rate" javaType="java.math.BigDecimal"/>
+            <arg column="open_price" javaType="_long"/>
+            <arg column="high_price" javaType="_long"/>
+            <arg column="low_price" javaType="_long"/>
+            <arg column="acc_volume" javaType="_long"/>
+            <arg column="traded_at" javaType="java.time.LocalDateTime"/>
+            <arg column="updated_at" javaType="java.time.LocalDateTime"/>
+        </constructor>
+    </resultMap>
+
+    <select id="findSnapshot" resultMap="snapshotRow">
+        SELECT stock_code, price, change_sign, change_amount, change_rate, open_price, high_price, low_price,
+               acc_volume, traded_at, updated_at
+        FROM quote_snapshot
+        WHERE stock_code = #{stockCode}
+    </select>
+
+    <select id="countTicks" resultType="long">
+        SELECT COUNT(*) FROM quote_tick WHERE trade_date = #{tradeDate}
+    </select>
+
+    <select id="countQuarantine" resultType="long">
+        SELECT COUNT(*) FROM quote_quarantine
+    </select>
+
+</mapper>
