@@ -3,7 +3,7 @@
 
 def test_step6_match():
     from collections import Counter
-    from hk_llm.steps.step6_match import match_one, norm, reason_text, score
+    from hk_llm.steps.step6_match import match_one, norm, on_topic, reason_text, score
 
     # 점수·매칭 규칙 시험 (DB 없이)
     s = {"name_weight": 0.4, "theme_weight": 0.4, "context_weight": 0.2, "min_score": 0.7}
@@ -24,6 +24,24 @@ def test_step6_match():
     assert miss == {"바이낸스": 1}, "못 찾은 이름을 모음"
     assert reason_text({"reason": "수주", "long_term": "POSITIVE"}) == "수주 (장기: 호재)"
     assert reason_text({"reason": "수주"}) == "수주"
+
+    # 주제 확인: 유형·명단 기사 제외, 제목이나 앞부분에 있어야 연결
+    names = {"삼성전자": "A", "삼전": "A", "두산": "B", **{f"회사{i}번": f"C{i}" for i in range(6)}}
+    main = ("A", {"is_main": True}, 1.0, "삼성전자")
+    side = ("B", {"is_main": False}, 0.83, "두산")
+    tail = "다른 내용 " * 60 + "두산 소식"
+    assert on_topic("삼성전자 실적", tail, [main, side], names) == [main], "뒷부분에만 나온 조연은 빠짐"
+    assert on_topic("실적 기사", "두산이 수주했다", [side], names) == [side], "앞부분에 있으면 조연도 유지"
+    assert on_topic("삼전 강세", tail, [main], names) == [main], "별칭으로도 찾음"
+    assert on_topic("[주간 증시 전망] 삼성전자", "삼성전자", [main], names) == [], "유형 기사"
+    assert on_topic("[특징주] 코스피 시황에 삼성전자 급등", "삼성전자", [main], names) == [main], "특징주는 예외"
+    many = "".join(f"회사{i}번 " for i in range(6))
+    assert on_topic("저PBR 151곳 공표", many + "두산", [side], names) == [], "명단 기사"
+    assert on_topic("삼성전자 투자", "삼성전자 " + many, [main], names) == [main], "제목에 주인공이 있으면 명단 아님"
+    names.update({f"회사{i}번": f"C{i}" for i in range(6, 10)})
+    many = "".join(f"회사{i}번 " for i in range(10))
+    assert on_topic("삼성전자 등 151곳 공표", "삼성전자 " + many, [main], names) == [], "제목에 있어도 종목이 너무 많으면 명단"
+    assert on_topic("생산 지표 기사", None, [side], names) == [side], "본문이 지워졌으면 그대로"
 
 
 def test_step7_group():

@@ -8,6 +8,7 @@
 - 범위: stock_info 전체 (코스피+코스닥, 결정사항 2번)
 - 점수 (match_setting 가중치 사용): 이름이 맞으면 기본 통과, 테마가 맞으면 점수만 올림 🧪 (2026-11-02)
   키워드가 테마와 안 맞아도 깎지 않음: 삼성전자 '3분기 실적' 기사가 테마 때문에 탈락하면 안 되므로
+- 주제 확인 (on_topic) 🧪 (2026-11-03): 시황·전망·지표 기사와 명단 기사는 연결 안 함, 그 밖에는 제목이나 본문 앞부분에 이름이 있어야 연결
 - 결과: article_stock 에 기사 1 : 종목 N. 다시 매칭하면 그 기사의 연결을 지우고 새로 넣음
 """
 import json
@@ -20,6 +21,11 @@ from hk_llm.core.db import get_engine
 from hk_llm.core.util import get_logger
 
 log = get_logger(__name__)
+
+TYPE_WORDS = ("시황", "주간전망", "증시 전망", "증시전망", "산업생산", "생산지표", "CPI", "소비자물가", "고용지표")  # 제목에 있으면 특정 회사 기사가 아님
+LEAD_CHARS = 200  # 본문 앞부분
+LIST_MAX = 5  # 본문에 나온 종목이 이보다 많으면 명단 기사 🧪
+LIST_TITLED_MAX = 9  # 제목에 주인공이 있어도 이보다 많으면 명단·시황 🧪 본문 716건 중 제목에 회사가 있고 10개 이상인 기사는 저PBR 명단 2건·시황 1건뿐
 
 
 def norm(name):
@@ -70,10 +76,28 @@ def match_one(companies, keywords, dictionary, missing=None):
     return list(best.values())
 
 
+def on_topic(title, body, found, names):
+    """match_one 결과에서 기사 주제와 맞는 연결만 남긴다. LLM 답이 실행마다 흔들려도 결과가 같아지게 코드로 거름"""
+    if "[특징주]" not in title and any(w in title for w in TYPE_WORDS):
+        return []
+    if not body:  # 7일 지나 본문이 지워진 기사는 위치를 볼 수 없어 그대로 둠
+        return found
+
+    def seen(text_, code, name):
+        return norm(name) in text_ or any(n in text_ for n, c in names.items() if c == code and len(n) >= 2)
+
+    head, lead, whole = norm(title), norm(body[:LEAD_CHARS]), norm(body)
+    # ponytail: 부분 문자열 비교라 '이닉스' 가 SK하이닉스에도 걸림. 명단 판단에만 쓰므로 둠, 오판이 나오면 최장 일치로
+    stocks = len({c for n, c in names.items() if len(n) >= 3 and n in whole})
+    if stocks > LIST_TITLED_MAX or (stocks > LIST_MAX and not any(f[1]["is_main"] and seen(head, f[0], f[3]) for f in found)):
+        return []
+    return [f for f in found if seen(head, f[0], f[3]) or seen(lead, f[0], f[3])]
+
+
 def match_articles(engine=None, statuses=("SUMMARIZED",)):
     engine = engine or get_engine()
     dictionary = load_dictionary(engine)
-    sql = text("SELECT article_id, keywords, companies FROM article WHERE status IN :st AND companies IS NOT NULL"
+    sql = text("SELECT article_id, title, body, keywords, companies FROM article WHERE status IN :st AND companies IS NOT NULL"
                ).bindparams(bindparam("st", expanding=True))
     with engine.connect() as conn:
         rows = conn.execute(sql, {"st": list(statuses)}).all()
@@ -81,6 +105,7 @@ def match_articles(engine=None, statuses=("SUMMARIZED",)):
     missing = Counter()  # 사전에 없는 회사 이름 → 별칭 추가 후보
     for r in rows:
         found = match_one(json.loads(r.companies), (r.keywords or "").split(","), dictionary, missing)
+        found = on_topic(r.title, r.body, found, dictionary[0])
         with engine.begin() as conn:  # 한 기사의 연결 지우기·넣기·상태 바꾸기를 한 번에
             conn.execute(text("DELETE FROM article_stock WHERE article_id = :id"), {"id": r.article_id})
             for code, c, sc, name in found:

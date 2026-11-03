@@ -1,6 +1,7 @@
 """파이프라인 1번 실행: 1 RSS → 2 중복 제거 → 3 DB 저장 + 공시 → 4 본문 → 5 요약 → 6 종목 매칭, 실행 기록은 collect_run 에
 
     python -m hk_llm.run           (ai 폴더에서, DB 켜져 있어야 함. 5단계에서 OpenAI 비용 발생)
+    python -m hk_llm.run --limit 30   요약을 30건까지만 (시험용)
     python -m hk_llm.run --check   1~3단계 시험 (두 번 연속 수집해서 새 기사만 들어가는지, 비용 없음)
 
 5분마다 이 파일을 돌리는 게 35번 스케줄러 (앞 실행이 안 끝났으면 건너뜀, 아직 미구현).
@@ -16,7 +17,7 @@ from hk_llm.steps.step1_rss import FEEDS, fetch_all
 from hk_llm.steps.step2_dedup import dedup_by_url
 from hk_llm.steps.step3_save import save_listed
 from hk_llm.steps.step4_body import fetch_bodies, purge_old_bodies
-from hk_llm.steps.step5_summary import summarize_articles
+from hk_llm.steps.step5_summary import BATCH, summarize_articles
 from hk_llm.steps.step6_match import match_articles
 from hk_llm.core.util import get_logger
 
@@ -33,7 +34,7 @@ def collect(engine):
     return new, failed
 
 
-def run(engine=None):
+def run(engine=None, limit=BATCH):
     """한 번 실행. 성공하면 collect_run 이 SUCCESS (화면의 '갱신 시각'), 어느 단계든 예외면 FAILED"""
     engine = engine or get_engine()
     with engine.begin() as conn:
@@ -50,7 +51,7 @@ def run(engine=None):
             log.error("공시 수집 실패: %s", e)
             errors.append(f"공시 실패: {e}")
         fetch_bodies(engine)
-        summarized = summarize_articles(engine)
+        summarized = summarize_articles(engine, limit)
         match_articles(engine)
     except Exception as e:
         log.exception("실행 실패")
@@ -69,7 +70,7 @@ if __name__ == "__main__":
     import sys
 
     if "--check" not in sys.argv:
-        run()
+        run(limit=int(sys.argv[sys.argv.index("--limit") + 1]) if "--limit" in sys.argv else BATCH)
         sys.exit()
     engine = get_engine()
 
