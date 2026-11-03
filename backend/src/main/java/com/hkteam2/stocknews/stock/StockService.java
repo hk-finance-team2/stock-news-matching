@@ -22,6 +22,8 @@ public class StockService {
 
     private static final Set<String> SOURCE_TYPES = Set.of("NEWS", "SNS");
     private static final int MAX_ISSUE_LIMIT = 50;
+    /** 종목 검색에서 "최근 많이 언급된 종목 먼저"를 셀 기간 */
+    private static final int SEARCH_MENTION_DAYS = 7;
 
     private final StockMapper stockMapper;
 
@@ -29,14 +31,16 @@ public class StockService {
         this.stockMapper = stockMapper;
     }
 
-    /** 종목 검색. q가 비어 있으면 전체를 이름순으로 */
+    /** 종목 검색. q가 비어 있으면 전체를 이름순으로. 같은 순위끼리는 최근 7일 많이 언급된 종목 먼저 */
     public ListResponse<StockResponse> getStocks(String q, PageQuery pageQuery) {
         String keyword = SearchKeyword.normalize(q);
         String likeKeyword = SearchKeyword.escapeLike(keyword);
+        // DB 시간대 설정에 기대지 않게 앱에서 한국 시간으로 계산해 넘김 (이슈 순위와 같은 방식)
+        LocalDateTime mentionFrom = LocalDateTime.now(TimeUtils.KST).minusDays(SEARCH_MENTION_DAYS);
 
         long totalCount = stockMapper.countSearch(keyword, likeKeyword);
         return new ListResponse<>(
-                stockMapper.search(keyword, likeKeyword, pageQuery.limit(), pageQuery.offset()),
+                stockMapper.search(keyword, likeKeyword, mentionFrom, pageQuery.limit(), pageQuery.offset()),
                 totalCount);
     }
 

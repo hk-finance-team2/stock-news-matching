@@ -50,6 +50,22 @@ class StockApiTest extends ApiTestSupport {
     }
 
     @Test
+    void 같은_순위면_최근_많이_언급된_종목이_먼저() throws Exception {
+        // 글이 없으면 이름 길이·이름순: "삼성"으로 시작하는 4글자 중 삼성공조가 삼성전자보다 앞
+        mvc.perform(get("/api/stocks").param("q", "삼성"))
+                .andExpect(jsonPath("$.items[0].stockName").value("삼성공조"));
+
+        link(insertArticle("삼성전자 오늘", "NEWS", "DONE", today(1)), "005930", 0.9);
+        link(insertArticle("분석 중", "NEWS", "SUMMARIZED", today(2)), "006660", 0.9);   // DONE만 셈 (삼성공조)
+        mvc.perform(get("/api/stocks").param("q", "삼성"))
+                .andExpect(jsonPath("$.items[0].stockCode").value("005930"));
+
+        // 이름이 딱 맞는 순위가 더 우선: 언급이 없어도 "삼성공조"는 삼성공조가 1위
+        mvc.perform(get("/api/stocks").param("q", "삼성공조"))
+                .andExpect(jsonPath("$.items[0].stockName").value("삼성공조"));
+    }
+
+    @Test
     void 없는_종목은_404() throws Exception {
         mvc.perform(get("/api/stocks/{code}", "999999"))
                 .andExpect(status().isNotFound())
