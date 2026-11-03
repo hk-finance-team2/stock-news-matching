@@ -14,6 +14,8 @@ import {
   normalizeMentionTrends,
   normalizeComments,
 } from '../mocks/mockData';
+import { stockApi } from '../api';
+import { toUiStock } from '../api/adapters';
 import '../styles/dashboard.css';
 
 // 왼쪽 사이드바 네비게이션 메뉴
@@ -758,105 +760,17 @@ function ArticleDetailPanel({
 
 export default function DashboardPage() {
   // 양방향 정규화된 초기 데이터
-  // const allStocks = useMemo(
-  //   () => normalizeStocks(STOCKS_DATA, STOCK_SUMMARIES_DATA, MENTION_TRENDS_DATA),
-  //   []
-  // );
-  // const allArticles = useMemo(() => normalizeArticles(ARTICLES_DATA), []);
-  // const initialSummaries = useMemo(() => normalizeSummaries(STOCK_SUMMARIES_DATA), []);
-  // const initialTrends = useMemo(() => normalizeMentionTrends(MENTION_TRENDS_DATA), []);
-
-// 1. useState로 변경 (백엔드에서 데이터가 도착하면 실데이터로 자동 렌더링)
-const [allStocks, setAllStocks] = useState(() =>
-  normalizeStocks(STOCKS_DATA, STOCK_SUMMARIES_DATA, MENTION_TRENDS_DATA)
-);
-const [allArticles, setAllArticles] = useState(() => normalizeArticles(ARTICLES_DATA));
-const initialSummaries = useMemo(() => normalizeSummaries(STOCK_SUMMARIES_DATA), []);
-const initialTrends = useMemo(() => normalizeMentionTrends(MENTION_TRENDS_DATA), []);
-
-// 2. 백엔드 종목 사전 API 연동 (items 감싸기 및 필드명 stockCode, stockName 매핑)
-// 백엔드 전체 종목 목록 가져오기
-useEffect(() => {
-  const fetchAllStocks = async () => {
-    try {
-      const pageSize = 100;
-
-      // 첫 페이지 조회
-      const firstResponse = await fetch(
-        `http://localhost:8080/api/stocks?q=&page=1&size=${pageSize}`
-      );
-
-      if (!firstResponse.ok) {
-        throw new Error(`API 오류: ${firstResponse.status}`);
-      }
-
-      const firstData = await firstResponse.json();
-
-      const totalCount = firstData.totalCount;
-      const totalPages = Math.ceil(totalCount / pageSize);
-
-      let allItems = [...firstData.items];
-
-      // 나머지 페이지 조회
-      for (let page = 2; page <= totalPages; page++) {
-        const response = await fetch(
-          `http://localhost:8080/api/stocks?q=&page=${page}&size=${pageSize}`
-        );
-
-        if (!response.ok) {
-          throw new Error(`${page}페이지 조회 실패`);
-        }
-
-        const data = await response.json();
-        allItems = [...allItems, ...data.items];
-      }
-
-      // 백엔드 데이터를 React UI 형식으로 변환
-      const stocks = allItems.map((item) => ({
-        code: item.stockCode,
-        name: item.stockName,
-        market: item.market || 'KOSPI',
-        sector: item.sector || '기타',
-        price: null,
-        changeRate: null,
-        todayMatchedCount: 0,
-        sentimentRatio: {
-          positive: 50,
-          neutral: 30,
-          negative: 20,
-        },
-        aliases: [],
-        themes: [],
-      }));
-
-      setAllStocks(stocks);
-
-      console.log('전체 종목 연동 성공:', stocks.length, '개');
-
-    } catch (error) {
-      console.error('전체 종목 API 연결 실패:', error);
-    }
-  };
-
-  fetchAllStocks();
-}, []);
-// 3. 백엔드 기사 목록 API 연동 (DB에 적재된 예시/실제 기사)
-useEffect(() => {
-  fetch('http://localhost:8080/api/articles')
-    .then((res) => {
-      if (!res.ok) throw new Error('기사 API 응답 실패');
-      return res.json();
-    })
-    .then((data) => {
-      const articleList = data.articles || (Array.isArray(data) ? data : []);
-      if (articleList.length > 0) {
-        console.log('✅ [백엔드 연동 성공] 실제 기사 수신:', articleList.length, '개');
-        setAllArticles(normalizeArticles(articleList));
-      }
-    })
-    .catch((err) => console.warn('백엔드 기사 API 미연결 (목업 데이터 유지):', err));
-}, []);
-
+  // 화면 연결 진행 상황은 src/api/README.md 참고. 아직 연결하지 않은 화면은 가짜 데이터(mockData)를 씀
+  const mockStocks = useMemo(
+    () => normalizeStocks(STOCKS_DATA, STOCK_SUMMARIES_DATA, MENTION_TRENDS_DATA),
+    []
+  );
+  // 백엔드 종목 검색으로 고른 종목 중 가짜 데이터에 없는 것 (시세·요약은 아직 없음 → analysisReady: false)
+  const [apiStocks, setApiStocks] = useState([]);
+  const allStocks = useMemo(() => [...mockStocks, ...apiStocks], [mockStocks, apiStocks]);
+  const allArticles = useMemo(() => normalizeArticles(ARTICLES_DATA), []);
+  const initialSummaries = useMemo(() => normalizeSummaries(STOCK_SUMMARIES_DATA), []);
+  const initialTrends = useMemo(() => normalizeMentionTrends(MENTION_TRENDS_DATA), []);
 
   const [activeView, setActiveView] = useState('home'); // home | news | sns | mention | ranking
   const [watchlistCodes, setWatchlistCodes] = useState(INITIAL_WATCHLIST_CODES);
@@ -977,30 +891,38 @@ useEffect(() => {
     stock.themes.some((th) => th.toLowerCase().includes(q));
 
   // 통합 검색 2단 자동완성 결과: ① 매칭 종목 + ② 매칭 뉴스·SNS 글 (F-12)
+  // 백엔드 종목 검색 결과 (검색어를 멈추고 0.25초 뒤 한 번, 이전 요청은 취소). null이면 서버 연결 안 됨
+  const [remoteStockResult, setRemoteStockResult] = useState(null);
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (!q) return undefined;
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      stockApi
+        .search(q, { size: 5 }, { signal: controller.signal })
+        .then((res) => setRemoteStockResult({ q, items: res.items }))
+        .catch((err) => {
+          if (err.name !== 'AbortError') setRemoteStockResult(null);
+        });
+    }, 250);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [searchQuery]);
+
   const integratedSearchResults = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return { matchedStocks: [], matchedArticles: [] };
 
-    // const matchedStocks = allStocks.filter((s) => matchStockByQuery(s, q)).slice(0, 5);
-    const priorityStocks = ['005930', '000660', '005380', '035420', '035720'];
+    // 서버가 답하면 서버 순서 그대로 (별칭 "삼전"·"현대차", 최근 많이 언급된 종목 먼저 등은 백엔드가 처리)
+    // 가짜 데이터에 있는 종목은 그 정보(시세 등)를 그대로 보여 줌
+    const remote =
+      remoteStockResult && remoteStockResult.q.toLowerCase() === q ? remoteStockResult.items : null;
+    const matchedStocks = remote
+      ? remote.map((item) => allStocks.find((st) => st.code === item.stockCode) || toUiStock(item))
+      : allStocks.filter((st) => matchStockByQuery(st, q)).slice(0, 5);
 
-const matchedStocks = allStocks
-  .filter((s) => matchStockByQuery(s, q))
-  .sort((a, b) => {
-    const getScore = (stock) => {
-      const name = stock.name.toLowerCase();
-
-      if (name === q || stock.code === q) return 100;
-      if (priorityStocks.includes(stock.code)) return 80;
-      if (name.startsWith(q)) return 60;
-
-      return 10;
-    };
-
-    return getScore(b) - getScore(a) || a.name.localeCompare(b.name, 'ko');
-  })
-  .slice(0, 5);
-  
     const matchedArticles = allArticles
       .filter((art) => {
         if (searchSource !== 'ALL' && art.sourceType !== searchSource) return false;
@@ -1022,7 +944,7 @@ const matchedStocks = allStocks
       .slice(0, 5);
 
     return { matchedStocks, matchedArticles };
-  }, [searchQuery, searchPeriod, searchSource, allStocks, allArticles]);
+  }, [searchQuery, searchPeriod, searchSource, allStocks, allArticles, remoteStockResult]);
 
   // 관심종목 추가 검색 후보
   const watchAddCandidates = useMemo(() => {
@@ -1032,8 +954,18 @@ const matchedStocks = allStocks
   }, [watchAddQuery, allStocks]);
 
   // 현재 선택 종목의 요약 데이터 (F-06)
+  // 백엔드에서 고른 종목은 아직 요약이 없으므로 가짜 기본 요약(default) 대신 "준비 중"
+  const notReadySummary = {
+    updatedAt: '-',
+    headline: `${selectedStock.name} AI 요약 준비 중`,
+    summary: '이 종목은 아직 AI 요약이 연결되지 않았습니다. (종목 요약 API 연결 후 표시)',
+    newsSummary: '',
+    snsSummary: '',
+    sentimentRatio: selectedStock.sentimentRatio,
+  };
   const currentSummary =
     summariesByStock[selectedStockCode] ||
+    (selectedStock.analysisReady === false ? notReadySummary : null) ||
     summariesByStock.default || {
       updatedAt: sysStatus.lastUpdated.summary,
       headline: `${selectedStock.name} 당일 매칭 뉴스·SNS 종합 요약`,
@@ -1044,7 +976,9 @@ const matchedStocks = allStocks
     };
 
   // 현재 선택 종목의 언급량 추이 데이터 (F-13)
-  const currentTrend = initialTrends[selectedStockCode] || initialTrends.default;
+  const currentTrend =
+    initialTrends[selectedStockCode] ||
+    (selectedStock.analysisReady === false ? { today: [], '7d': [], '30d': [] } : initialTrends.default);
   const trendSeries = currentTrend[trendPeriod] || currentTrend.today;
 
   // 오늘 뉴스·SNS 매칭 건수
@@ -1183,12 +1117,12 @@ const matchedStocks = allStocks
   };
 
   // 관심종목 추가·삭제·토글
-  const handleAddWatchlist = (code) => {
+  const handleAddWatchlist = (code, candidate = null) => {
     if (!user) {
       requireLogin('🔒 관심종목 추가는 로그인이 필요합니다.');
       return false;
     }
-    const stock = stockByCode(code);
+    const stock = stockByCode(code) || candidate;
     if (!stock) return false;
     if (watchlistCodes.includes(code)) {
       triggerToast(`이미 관심종목에 등록된 종목입니다: ${stock.name}`);
@@ -1209,11 +1143,11 @@ const matchedStocks = allStocks
     triggerToast(`☆ ${stock?.name ?? code} 종목을 관심종목에서 삭제했습니다.`);
   };
 
-  const handleToggleWatchlist = (code) => {
+  const handleToggleWatchlist = (code, candidate = null) => {
     if (isInWatchlist(code)) {
       handleRemoveWatchlist(code);
-    } else {
-      handleAddWatchlist(code);
+    } else if (handleAddWatchlist(code, candidate) && candidate) {
+      ensureStock(candidate);
     }
   };
 
@@ -1236,7 +1170,13 @@ const matchedStocks = allStocks
   };
 
   // 통합 검색 결과 선택 핸들러
+  // 가짜 데이터에 없는 실제 종목이면 목록에 더해 둠 (선택·관심 종목 추가가 되게)
+  const ensureStock = (stock) => {
+    if (!stockByCode(stock.code)) setApiStocks((prev) => [...prev, stock]);
+  };
+
   const handleSelectSearchStock = (stock) => {
+    ensureStock(stock);
     handleSelectStock(stock.code, false);
     setSearchQuery('');
     setShowAutocomplete(false);
@@ -1455,6 +1395,8 @@ const matchedStocks = allStocks
                     <span className={rateTone(s.changeRate)}>
                       {s.price.toLocaleString()}원 ({formatRate(s.changeRate)})
                     </span>
+                  ) : s.analysisReady === false ? (
+                    <span className="auto-action">{s.sector}</span>
                   ) : (
                     <span className="auto-action">매칭 {s.todayMatchedCount}건</span>
                   )}
@@ -1466,7 +1408,7 @@ const matchedStocks = allStocks
                 title={isInWatchlist(s.code) ? '관심종목 해제' : '관심종목 추가'}
                 aria-label={`${s.name} ${isInWatchlist(s.code) ? '관심종목 해제' : '관심종목 추가'
                   }`}
-                onClick={() => handleToggleWatchlist(s.code)}
+                onClick={() => handleToggleWatchlist(s.code, s)}
               >
                 {isInWatchlist(s.code) ? '★' : '☆'}
               </button>
