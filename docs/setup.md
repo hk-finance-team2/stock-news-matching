@@ -176,6 +176,7 @@ cd backend
 |---|---|
 | http://localhost:8080/swagger-ui.html | API 목록 화면. `GET /api/stocks` → **Try it out** → **Execute** |
 | http://localhost:8080/api/stocks?q=삼성 | 종목 검색 결과 JSON (`{items, totalCount}`). `q` 없이 부르면 전체 2,655개 중 1쪽(20개) |
+| http://localhost:8080/demo.html | **백엔드 확인용 테스트 화면.** 팀 통합 목업 디자인에 실제 API를 붙인 것. 글 목록(출처·관련도·정렬·더 보기), 오늘의 이슈 종목, 통합 검색, 갱신 시각을 직접 눌러 볼 수 있음. 글이 안 보이면 2절의 예시 기사를 켜기. **진짜 서비스 화면은 `frontend/`(React)** |
 
 터미널에서 확인하려면 (PowerShell에서는 `curl`이 아니라 `curl.exe`):
 
