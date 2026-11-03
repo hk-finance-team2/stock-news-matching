@@ -314,7 +314,6 @@ AI 파트가 채웁니다. (Python 버전, 가상환경, 패키지 설치, 실�
 
 프론트 파트가 채웁니다. (Node.js 버전, 패키지 설치, 실행 방법)
 
-<<<<<<< HEAD
 ### 11-1. 실행 방법
 
 저장소 최상위 폴더에서:
@@ -332,7 +331,8 @@ npm run dev
 | 3. 실행 | `npm run dev` | 개발 서버 실행 → http://localhost:5173 접속 |
 
 - 끄기: `Ctrl + C`
-=======
+- 백엔드와 같이 켜면 `/api` 요청이 백엔드(8080)로 넘어감 (`vite.config.js` 프록시). 화면별 연결 현황은 `frontend/src/api/README.md`
+
 ## 12. 백엔드 자동 테스트와 CI
 
 ### 내 PC에서 테스트 돌리기 (백엔드 코드를 고친 사람)
@@ -355,7 +355,8 @@ DB를 켠 상태(3절)에서 `backend` 폴더에서:
 - ❌면 **Details** → 실패한 테스트 이름 확인 → 고쳐서 다시 push하면 다시 돌아감
 - PR 코드만이 아니라 **"PR + 최신 main을 합친 모습"**으로 돌림
 - `ai/`, `frontend/`, `docs/`만 바꾼 PR은 돌리지 않음
->>>>>>> 8b2f83c69f4d3acb319d3c2d3f9f874dfa85fc8f
+- **프론트:** `frontend/`를 바꾼 PR은 `frontend-ci`가 `npm ci` → 검사(`npm run lint`) → 빌드(`npm run build`)를 돌림 (`.github/workflows/frontend-ci.yml`). 내 PC에서도 같은 명령으로 미리 확인 가능
+- **모든 PR:** `repo-check`가 merge 충돌을 풀다 남은 표시(`<<<<<<<`, `>>>>>>>`)를 찾으면 ❌ (`.github/workflows/repo-check.yml`)
 
 ## 13. 실시간 시세 (확장 ①②, 선택 · 키가 있는 PC만)
 

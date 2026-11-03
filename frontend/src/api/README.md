@@ -13,7 +13,7 @@
 
 ## 실행
 
-1. 백엔드 켜기 (`docs/setup.md`). 글이 필요하면 예시 기사도 켜기
+1. 백엔드 켜기 (`docs/setup.md`). 진짜 뉴스·공시·종목 연결(AI 데이터, 본문 없음)이 기본으로 들어감 (setup.md 2절)
 2. `cd frontend && npm run dev` → <http://localhost:5173>
 3. `/api` 요청은 `vite.config.js` 프록시가 `localhost:8080`으로 넘김 (코드에 서버 주소를 쓰지 않음)
    - 배포할 때만 `frontend/.env`에 `VITE_API_BASE_URL=https://백엔드주소`
@@ -49,3 +49,5 @@
 - 목록 응답은 `{ items, totalCount }`입니다 (`docs/api.md` 1절).
 - 화면 파일은 서준님(프론트) 담당입니다. 화면을 바꾸는 PR은 서준님 리뷰를 받고 합칩니다.
 - 실제로 눌러 보고 올립니다. 예: "삼전" → 삼성전자, "현대차" → 현대자동차, 이슈 순위가 그대로인지.
+- 올리기 전에 `npm run lint`, `npm run build`. PR에서도 `frontend-ci`가 같은 검사를 돌려 ✅/❌를 보여 줍니다.
+- 서버 주소(`http://localhost:8080`)를 코드에 쓰지 않습니다. `/api/...`로 부르면 개발 땐 프록시가, 배포 땐 `VITE_API_BASE_URL`이 맞춰 줍니다.
