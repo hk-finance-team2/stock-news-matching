@@ -68,10 +68,8 @@ public class QuoteService {
      */
     public QuoteResponse price(String stockCode) {
         QuoteSnapshotRow s = mapper.findSnapshot(stockCode);
-        if (s != null && s.updatedAt().isAfter(LocalDateTime.now(clock).minus(LIVE_FRESH))) {
-            return new QuoteResponse(s.stockCode(), s.price(), s.changeAmount(), s.changeRate(),
-                    direction(s.changeSign()), s.openPrice(), s.highPrice(), s.lowPrice(), s.accVolume(),
-                    TimeUtils.toKst(s.tradedAt()), true);
+        if (isLive(s)) {
+            return fromSnapshot(s);
         }
         return cache.get("price:" + stockCode, PRICE_TTL, () -> {
             KisPrice p = kis.inquirePrice(stockCode);
@@ -118,6 +116,18 @@ public class QuoteService {
                             t.changeRate(), direction(t.changeSign()), t.volume(), t.strength()))
                     .toList();
         });
+    }
+
+    /** 실시간 현재가 줄이 최근(15초 안)에 갱신됐는지 = 지금 생중계로 받고 있는지 */
+    boolean isLive(QuoteSnapshotRow s) {
+        return s != null && s.updatedAt().isAfter(LocalDateTime.now(clock).minus(LIVE_FRESH));
+    }
+
+    /** DB 현재가 줄 → API 응답 (live=true) */
+    static QuoteResponse fromSnapshot(QuoteSnapshotRow s) {
+        return new QuoteResponse(s.stockCode(), s.price(), s.changeAmount(), s.changeRate(),
+                direction(s.changeSign()), s.openPrice(), s.highPrice(), s.lowPrice(), s.accVolume(),
+                TimeUtils.toKst(s.tradedAt()), true);
     }
 
     /** 실시간 수집 상태 */

@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import com.hkteam2.stocknews.common.ListResponse;
 import com.hkteam2.stocknews.common.error.BusinessException;
@@ -33,13 +34,35 @@ public class QuoteController {
 
     private static final Logger log = LoggerFactory.getLogger(QuoteController.class);
     private static final int MAX_CODES = 10;
+    private static final int MAX_STREAM_CODES = 5;
 
     private final ObjectProvider<QuoteService> quoteService;
+    private final ObjectProvider<QuoteStreamHub> streamHub;
     private final StockMapper stockMapper;
 
-    public QuoteController(ObjectProvider<QuoteService> quoteService, StockMapper stockMapper) {
+    public QuoteController(ObjectProvider<QuoteService> quoteService, ObjectProvider<QuoteStreamHub> streamHub,
+                           StockMapper stockMapper) {
         this.quoteService = quoteService;
+        this.streamHub = streamHub;
         this.stockMapper = stockMapper;
+    }
+
+    @Operation(summary = "실시간 방송 (SSE)",
+            description = "codes=005930,000660 (최대 5개). 연결을 열어 두면 서버가 이벤트를 밀어 줌."
+                    + " quote: 현재가 (QuoteResponse, 연결하자마자 한 번 + 바뀔 때마다), tick: 새 체결 (생중계 종목만)."
+                    + " 브라우저 EventSource로 듣기. Swagger에서는 끝나지 않는 요청으로 보임")
+    @GetMapping("/stream")
+    public SseEmitter stream(@RequestParam String codes) {
+        QuoteStreamHub hub = streamHub.getIfAvailable();
+        if (hub == null) {
+            throw new QuoteDisabledException();
+        }
+        List<String> list = Arrays.stream(codes.split(",")).map(String::strip).filter(s -> !s.isEmpty())
+                .distinct().limit(MAX_STREAM_CODES).filter(stockMapper::existsByCode).toList();
+        if (list.isEmpty()) {
+            throw new BusinessException(ErrorCode.STOCK_NOT_FOUND);
+        }
+        return hub.subscribe(list);
     }
 
     @Operation(summary = "실시간 수집 상태", description = "웹소켓 연결, 구독 종목, 받은·저장한·버린 체결 수, 오늘 저장된 체결 수")

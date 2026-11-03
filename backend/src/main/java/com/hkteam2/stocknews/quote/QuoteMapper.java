@@ -22,6 +22,16 @@ public interface QuoteMapper {
 
     QuoteSnapshotRow findSnapshot(@Param("stockCode") String stockCode);
 
+    /** 여러 종목의 현재가 줄 (방송국이 1초마다 "바뀐 것"을 고를 때) */
+    List<QuoteSnapshotRow> findSnapshots(@Param("codes") java.util.Collection<String> codes);
+
+    /** afterId 보다 나중에 저장된 체결 (방송국이 새 체결만 보낼 때). tick_id 순 */
+    List<TickRow> findTicksAfter(@Param("codes") java.util.Collection<String> codes,
+                                 @Param("afterId") long afterId, @Param("limit") int limit);
+
+    /** 지금까지 저장된 가장 큰 체결 ID (없으면 0) */
+    long maxTickId();
+
     /** 그날 저장된 체결 수 */
     long countTicks(@Param("tradeDate") LocalDate tradeDate);
 

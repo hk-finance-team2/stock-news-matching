@@ -73,6 +73,40 @@
         WHERE stock_code = #{stockCode}
     </select>
 
+    <select id="findSnapshots" resultMap="snapshotRow">
+        SELECT stock_code, price, change_sign, change_amount, change_rate, open_price, high_price, low_price,
+               acc_volume, traded_at, updated_at
+        FROM quote_snapshot
+        WHERE stock_code IN
+        <foreach collection="codes" item="c" open="(" separator="," close=")">#{c}</foreach>
+    </select>
+
+    <resultMap id="tickRow" type="com.hkteam2.stocknews.quote.TickRow">
+        <constructor>
+            <arg column="tick_id" javaType="_long"/>
+            <arg column="stock_code" javaType="String"/>
+            <arg column="traded_at" javaType="java.time.LocalDateTime"/>
+            <arg column="price" javaType="_long"/>
+            <arg column="volume" javaType="_long"/>
+            <arg column="change_rate" javaType="java.math.BigDecimal"/>
+        </constructor>
+    </resultMap>
+
+    <!-- 새 체결만: 기본키(tick_id)가 afterId 보다 큰 것. 기본키라 인덱스로 바로 찾음 -->
+    <select id="findTicksAfter" resultMap="tickRow">
+        SELECT tick_id, stock_code, traded_at, price, volume, change_rate
+        FROM quote_tick
+        WHERE tick_id &gt; #{afterId}
+          AND stock_code IN
+          <foreach collection="codes" item="c" open="(" separator="," close=")">#{c}</foreach>
+        ORDER BY tick_id
+        LIMIT #{limit}
+    </select>
+
+    <select id="maxTickId" resultType="long">
+        SELECT COALESCE(MAX(tick_id), 0) FROM quote_tick
+    </select>
+
     <select id="countTicks" resultType="long">
         SELECT COUNT(*) FROM quote_tick WHERE trade_date = #{tradeDate}
     </select>

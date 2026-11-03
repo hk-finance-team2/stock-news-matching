@@ -9,6 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 
 import com.hkteam2.stocknews.common.error.ErrorResponse;
 
@@ -44,6 +45,15 @@ public class QuoteExceptionHandler {
         }
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
                 .body(new ErrorResponse("QUOTE_UPSTREAM_ERROR", "시세를 받아 오지 못했습니다. (KIS " + e.code() + ")"));
+    }
+
+    /**
+     * 방송(SSE) 중 브라우저가 떠나 응답을 더 쓸 수 없음 → 정상적인 끊김이라 아무것도 하지 않음
+     * (공통 처리로 가면 text/event-stream 응답에 JSON 오류를 쓰려다 경고가 한 번 더 남)
+     */
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    public void streamClosed(AsyncRequestNotUsableException e) {
+        log.debug("방송 연결 끊김: {}", e.getMessage());
     }
 
     @ExceptionHandler(RestClientException.class)
