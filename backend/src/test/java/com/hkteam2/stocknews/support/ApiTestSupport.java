@@ -31,8 +31,10 @@ import com.hkteam2.stocknews.common.TimeUtils;
  *
  * MockMvc: 서버를 진짜로 켜지 않고 Controller부터 DB까지 같은 길로 요청을 흘려 보내는 도구.
  * 같은 스레드에서 돌아서 테스트의 트랜잭션 안에서 실행됨 (그래서 넣은 데이터가 보이고, 끝나면 같이 되돌려짐)
+ *
+ * KIS 시세는 끔: 내 PC .env 에 KIS_ENABLED=true 가 있어도 테스트는 실제 KIS를 부르지 않음 (키 없는 CI와 같은 조건)
  */
-@SpringBootTest
+@SpringBootTest(properties = "KIS_ENABLED=false")
 @AutoConfigureMockMvc
 @Transactional
 public abstract class ApiTestSupport {

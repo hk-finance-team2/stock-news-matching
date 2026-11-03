@@ -24,6 +24,9 @@
 | `article_stock` | 기사 × 종목 연결 (감성, 이유, 관련도) | AI | 백엔드 | V5 | ✅ |
 | `collect_run` | 수집·요약 실행 기록 | AI | 백엔드 | V5 | ✅ |
 | `stock_daily_summary` | 종목별 하루 종합 요약 | AI | 백엔드 | V5 | ✅ (AI가 나중에 채움) |
+| `quote_snapshot` | 실시간 현재가 (종목당 1줄) — 확장 ①② | 백엔드 | 백엔드 | V10 | ✅ (KIS를 켠 서버만 채움) |
+| `quote_tick` | 실시간 체결 이력 (녹화본) — 확장 ①② | 백엔드 | 백엔드 | V10 | ✅ (KIS를 켠 서버만 채움) |
+| `quote_quarantine` | 해석하지 못한 실시간 메시지 원문 — 확장 ①② | 백엔드 | 백엔드 | V10 | ✅ |
 
 AI 테이블(V5)은 AI 파트 제안서(`ai/docs/AI테이블_제안.md`)를 그대로 바탕으로 하고, 요구사항에 있지만 아직 정해지지 않은 칸을 **[확장]**으로 덧붙였습니다. [확장] 칸은 비워 둘 수 있어서 AI 코드가 몰라도 저장되고, 쓰지 않게 되면 나중에 지웁니다.
 
@@ -431,6 +434,59 @@ erDiagram
 - UK① `uk_stock_daily_summary (stock_code, summary_date)`: 종목당 하루 한 줄. 다시 생성하면 덮어씀
 - 감성은 개수로 저장하고 비율(%)은 백엔드가 계산 (F-08)
 
+### quote_snapshot · 실시간 현재가 (V10, 확장 ①②)
+
+KIS 웹소켓 실시간 체결(H0STCNT0)로 종목마다 "지금 상태" 1줄을 덮어씀. `KIS_ENABLED=true`인 서버만 채움.
+KIS 시세는 재배포 금지라 이 표의 데이터는 Git·외부에 내보내지 않음 (교육용 시연만).
+
+| # | Column Name | Data Type | Key | Not Null | Default | Comments |
+|---|---|---|---|---|---|---|
+| 1 | stock_code | CHAR(6) | PK, FK → stock_info | Y | | 종목코드 |
+| 2 | price | INT | | Y | | 현재가(마지막 체결가, 원) |
+| 3 | change_sign | CHAR(1) | | Y | | KIS 전일 대비 부호 (1 상한 2 상승 3 보합 4 하한 5 하락) |
+| 4 | change_amount | INT | | Y | | 전일 대비 (원, 하락이면 음수) |
+| 5 | change_rate | DECIMAL(7,2) | | Y | | 전일 대비율 (%) |
+| 6 | open_price / high_price / low_price | INT | | Y | | 시가·고가·저가 |
+| 7 | acc_volume | BIGINT | | Y | | 누적 거래량 |
+| 8 | acc_amount | BIGINT | | Y | | 누적 거래대금 (원) |
+| 9 | trade_date | DATE | | Y | | 영업일자 |
+| 10 | traded_at | DATETIME | | Y | | 마지막 체결 시각 (거래소) |
+| 11 | updated_at | DATETIME(3) | IDX | Y | | 이 줄을 고친 시각 (방송할 "바뀐 종목"을 고를 때) |
+
+- 덮어쓰기는 **누적 거래량이 더 큰(= 더 나중) 체결일 때만** (늦게 도착한 옛 체결이 새 값을 덮지 않음)
+- 최근 15초 안에 갱신된 종목은 현재가 API가 KIS에 묻지 않고 이 줄로 답함 (`live: true`)
+
+### quote_tick · 실시간 체결 이력 = 녹화본 (V10, 확장 ①②)
+
+| # | Column Name | Data Type | Key | Not Null | Default | Comments |
+|---|---|---|---|---|---|---|
+| 1 | tick_id | BIGINT | PK | Y | AUTO_INCREMENT | 체결 ID (받은 순서) |
+| 2 | stock_code | CHAR(6) | UK①, IDX | Y | | 종목코드 (빠르게 쌓으려고 FK 없음) |
+| 3 | trade_date | DATE | UK① | Y | | 영업일자 |
+| 4 | traded_at | DATETIME | IDX | Y | | 체결 시각 (거래소, 초 단위) |
+| 5 | price | INT | | Y | | 체결가 |
+| 6 | volume | INT | | Y | | 이번 체결 수량 |
+| 7 | acc_volume | BIGINT | UK① | Y | | 누적 거래량 (체결마다 커짐 → 체결 하나를 가리킴) |
+| 8 | change_rate | DECIMAL(7,2) | | Y | | 전일 대비율 (%) |
+| 9 | trade_side | VARCHAR(2) | | N | | KIS 체결 구분 |
+| 10 | received_at | DATETIME(3) | | Y | | 우리 서버가 받은 시각 (지연 = received_at − traded_at) |
+
+- UK① `uk_quote_tick (stock_code, trade_date, acc_volume)` + `INSERT IGNORE`: 재접속 후 같은 체결이 또 와도 한 번만 저장 (Idempotent Write)
+- IDX `idx_quote_tick_time (stock_code, traded_at)`: 다시 보기·녹화된 날 목록
+- 1초마다 모아서 트랜잭션 한 번에 저장 (체결 이력 + 현재가). 쓰는 곳: 다시 보기, 수집 점검(누적 거래량으로 빠진 비율 계산)
+- 용량: 생중계 종목 수 × 하루 수만 건. 보관 기간은 실제 양을 보고 정함 (2026-11-03 삼성전자 약 1시간 반에 5천 건)
+
+### quote_quarantine · 해석하지 못한 실시간 메시지 (V10, 확장 ①②)
+
+| # | Column Name | Data Type | Key | Not Null | Default | Comments |
+|---|---|---|---|---|---|---|
+| 1 | quarantine_id | BIGINT | PK | Y | AUTO_INCREMENT | ID |
+| 2 | raw | TEXT | | Y | | 받은 원문 (최대 5,000자) |
+| 3 | reason | VARCHAR(200) | | Y | | 격리 이유 (칸 개수가 다름, 숫자가 아님 등) |
+| 4 | received_at | DATETIME(3) | | Y | | 받은 시각 |
+
+- 형식이 틀린 메시지는 버리지 않고 원문 그대로 보관 → 원인 확인 (Quarantine)
+
 ## 변경 이력
 
 | 날짜 | Flyway | 내용 |
@@ -446,3 +502,4 @@ erDiagram
 | 2026-11-02 | R__stock_alias, R__stock_theme | 별칭 99개, 테마 34개·연결 198개 (반복 지시서: 파일을 고치면 다시 실행) |
 | 2026-11-02 | V9 | stock_group, stock_alias_context (아이디어: 임호현 PR #33) |
 | 2026-11-02 | R__ 4개 | 별칭 496개(헷갈림은 후보마다 한 줄), 테마 37개·연결 1,114개(업종·이름 규칙 포함), 그룹 84개·연결 374개, 문맥 키워드 122개 |
+| 2026-11-03 | V10 | quote_snapshot, quote_tick, quote_quarantine (실시간 시세 확장 ①②, KIS를 켠 서버만 채움) |

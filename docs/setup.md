@@ -344,3 +344,25 @@ DB를 켠 상태(3절)에서 `backend` 폴더에서:
 - PR 코드만이 아니라 **"PR + 최신 main을 합친 모습"**으로 돌림
 - `ai/`, `frontend/`, `docs/`만 바꾼 PR은 돌리지 않음
 >>>>>>> 8b2f83c69f4d3acb319d3c2d3f9f874dfa85fc8f
+
+## 13. 실시간 시세 (확장 ①②, 선택 · 키가 있는 PC만)
+
+1차 시연 범위가 아닌 확장 기능입니다. **키가 없으면 아무것도 하지 않아도 됩니다** (스위치 기본 OFF → 서버는 지금과 똑같이 켜지고, 시세 API는 `503 QUOTE_DISABLED`).
+
+켜는 법 (본인 한국투자증권 KIS Developers 앱키가 있을 때):
+
+1. `.env`에 본인 키와 스위치 (키는 절대 커밋·공유하지 않음)
+   ```
+   KIS_APP_KEY=본인_앱키
+   KIS_APP_SECRET=본인_앱시크릿
+   KIS_ENABLED=true
+   ```
+2. `./gradlew bootRun` → 로그에 `KIS 연결 확인 성공`, `KIS 실시간 005930: SUBSCRIBE SUCCESS`
+3. `http://localhost:8080/demo.html` → 종목 화면 "시세" 칸 (장중에는 1초마다 바뀜), 수집 상태 `http://localhost:8080/api/quotes/status`
+
+알아 둘 것:
+- 처음 토큰을 받을 때 KIS 카카오 알림톡이 옴 (정상). 토큰은 `backend/data/kis/`(Git 제외)에 보관해 재시작해도 다시 씀
+- **신규 신청 키는 3일 동안 초당 3건** (KIS 공지) → 그동안은 생중계 종목 3개, 여러 종목 조회가 느림. 해지 후 재신청하면 다시 3일
+- 실시간 체결은 장중(평일 09:00~15:30)에만 들어옴. 장 밖에는 다시 보기(녹화본)로 확인
+- 테스트(`./gradlew test`)는 `.env`와 상관없이 항상 시세를 끈 채로 돌아감 (KIS를 부르지 않음)
+- 그 밖의 설정: `KIS_FIXED_CODES`(항상 생중계, 기본 `005930`), `KIS_MAX_SUBSCRIPTIONS`(기본 41), `KIS_REST_MIN_INTERVAL_MS`(KIS 호출 간격, 기본 500), `KIS_MODE`(`real`/`paper`)

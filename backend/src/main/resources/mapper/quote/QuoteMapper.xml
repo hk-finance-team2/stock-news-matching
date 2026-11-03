@@ -1,0 +1,196 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.hkteam2.stocknews.quote.QuoteMapper">
+
+    <!--
+        체결 묶음 저장 (Batch): 여러 건을 INSERT 한 문장으로. 저장하는 쪽(TickWriter)이 1초마다 모아서 부름
+        INSERT IGNORE: uk_quote_tick (stock_code, trade_date, acc_volume)이 겹치는 줄은 조용히 건너뜀
+        → 웹소켓이 끊겼다 다시 붙어 같은 체결이 또 와도 한 번만 저장 (Idempotent Write)
+    -->
+    <insert id="insertTicks">
+        INSERT IGNORE INTO quote_tick
+            (stock_code, trade_date, traded_at, price, volume, acc_volume, change_rate, trade_side, received_at)
+        VALUES
+        <foreach collection="ticks" item="t" separator=",">
+            (#{t.stockCode}, #{t.tradeDate}, #{t.tradedAt}, #{t.price}, #{t.volume}, #{t.accVolume},
+             #{t.changeRate}, #{t.tradeSide}, #{t.receivedAt})
+        </foreach>
+    </insert>
+
+    <!--
+        현재가 넣기·덮어쓰기 (종목당 1줄)
+        이미 있으면: 새 체결의 누적 거래량이 더 클 때만 값을 바꿈 (늦게 도착한 옛 체결이 새 값을 덮지 않게)
+        IF(조건, 새 값, 옛 값)은 위에서부터 차례로 계산되므로, acc_volume은 맨 마지막에 바꿈
+    -->
+    <insert id="upsertSnapshots">
+        INSERT INTO quote_snapshot
+            (stock_code, price, change_sign, change_amount, change_rate, open_price, high_price, low_price,
+             acc_volume, acc_amount, trade_date, traded_at, updated_at)
+        VALUES
+        <foreach collection="ticks" item="t" separator=",">
+            (#{t.stockCode}, #{t.price}, #{t.changeSign}, #{t.changeAmount}, #{t.changeRate}, #{t.open}, #{t.high},
+             #{t.low}, #{t.accVolume}, #{t.accAmount}, #{t.tradeDate}, #{t.tradedAt}, #{now})
+        </foreach>
+        ON DUPLICATE KEY UPDATE
+            price         = IF(VALUES(acc_volume) >= acc_volume OR VALUES(trade_date) > trade_date, VALUES(price), price),
+            change_sign   = IF(VALUES(acc_volume) >= acc_volume OR VALUES(trade_date) > trade_date, VALUES(change_sign), change_sign),
+            change_amount = IF(VALUES(acc_volume) >= acc_volume OR VALUES(trade_date) > trade_date, VALUES(change_amount), change_amount),
+            change_rate   = IF(VALUES(acc_volume) >= acc_volume OR VALUES(trade_date) > trade_date, VALUES(change_rate), change_rate),
+            open_price    = IF(VALUES(acc_volume) >= acc_volume OR VALUES(trade_date) > trade_date, VALUES(open_price), open_price),
+            high_price    = IF(VALUES(acc_volume) >= acc_volume OR VALUES(trade_date) > trade_date, VALUES(high_price), high_price),
+            low_price     = IF(VALUES(acc_volume) >= acc_volume OR VALUES(trade_date) > trade_date, VALUES(low_price), low_price),
+            acc_amount    = IF(VALUES(acc_volume) >= acc_volume OR VALUES(trade_date) > trade_date, VALUES(acc_amount), acc_amount),
+            traded_at     = IF(VALUES(acc_volume) >= acc_volume OR VALUES(trade_date) > trade_date, VALUES(traded_at), traded_at),
+            updated_at    = IF(VALUES(acc_volume) >= acc_volume OR VALUES(trade_date) > trade_date, VALUES(updated_at), updated_at),
+            trade_date    = IF(VALUES(acc_volume) >= acc_volume OR VALUES(trade_date) > trade_date, VALUES(trade_date), trade_date),
+            acc_volume    = IF(VALUES(acc_volume) >= acc_volume OR VALUES(trade_date) > trade_date, VALUES(acc_volume), acc_volume)
+    </insert>
+
+    <insert id="insertQuarantine">
+        INSERT INTO quote_quarantine (raw, reason, received_at) VALUES (#{raw}, #{reason}, #{receivedAt})
+    </insert>
+
+    <resultMap id="snapshotRow" type="com.hkteam2.stocknews.quote.QuoteSnapshotRow">
+        <constructor>
+            <arg column="stock_code" javaType="String"/>
+            <arg column="price" javaType="_long"/>
+            <arg column="change_sign" javaType="String"/>
+            <arg column="change_amount" javaType="_long"/>
+            <arg column="change_rate" javaType="java.math.BigDecimal"/>
+            <arg column="open_price" javaType="_long"/>
+            <arg column="high_price" javaType="_long"/>
+            <arg column="low_price" javaType="_long"/>
+            <arg column="acc_volume" javaType="_long"/>
+            <arg column="traded_at" javaType="java.time.LocalDateTime"/>
+            <arg column="updated_at" javaType="java.time.LocalDateTime"/>
+        </constructor>
+    </resultMap>
+
+    <select id="findSnapshot" resultMap="snapshotRow">
+        SELECT stock_code, price, change_sign, change_amount, change_rate, open_price, high_price, low_price,
+               acc_volume, traded_at, updated_at
+        FROM quote_snapshot
+        WHERE stock_code = #{stockCode}
+    </select>
+
+    <select id="findSnapshots" resultMap="snapshotRow">
+        SELECT stock_code, price, change_sign, change_amount, change_rate, open_price, high_price, low_price,
+               acc_volume, traded_at, updated_at
+        FROM quote_snapshot
+        WHERE stock_code IN
+        <foreach collection="codes" item="c" open="(" separator="," close=")">#{c}</foreach>
+    </select>
+
+    <resultMap id="tickRow" type="com.hkteam2.stocknews.quote.TickRow">
+        <constructor>
+            <arg column="tick_id" javaType="_long"/>
+            <arg column="stock_code" javaType="String"/>
+            <arg column="traded_at" javaType="java.time.LocalDateTime"/>
+            <arg column="price" javaType="_long"/>
+            <arg column="volume" javaType="_long"/>
+            <arg column="change_rate" javaType="java.math.BigDecimal"/>
+            <arg column="acc_volume" javaType="_long"/>
+        </constructor>
+    </resultMap>
+
+    <!-- 새 체결만: 기본키(tick_id)가 afterId 보다 큰 것. 기본키라 인덱스로 바로 찾음 -->
+    <select id="findTicksAfter" resultMap="tickRow">
+        SELECT tick_id, stock_code, traded_at, price, volume, change_rate, acc_volume
+        FROM quote_tick
+        WHERE tick_id &gt; #{afterId}
+          AND stock_code IN
+          <foreach collection="codes" item="c" open="(" separator="," close=")">#{c}</foreach>
+        ORDER BY tick_id
+        LIMIT #{limit}
+    </select>
+
+    <select id="maxTickId" resultType="long">
+        SELECT COALESCE(MAX(tick_id), 0) FROM quote_tick
+    </select>
+
+    <!-- ===== 다시 보기 ===== -->
+
+    <resultMap id="recordingRow" type="com.hkteam2.stocknews.quote.RecordingRow">
+        <constructor>
+            <arg column="trade_date" javaType="java.time.LocalDate"/>
+            <arg column="tick_count" javaType="_long"/>
+            <arg column="first_at" javaType="java.time.LocalDateTime"/>
+            <arg column="last_at" javaType="java.time.LocalDateTime"/>
+        </constructor>
+    </resultMap>
+
+    <!-- 녹화된 날: 체결을 날짜로 묶음. idx_quote_tick_time (stock_code, traded_at) 를 씀 -->
+    <select id="findRecordings" resultMap="recordingRow">
+        SELECT trade_date, COUNT(*) AS tick_count, MIN(traded_at) AS first_at, MAX(traded_at) AS last_at
+        FROM quote_tick
+        WHERE stock_code = #{stockCode}
+        GROUP BY trade_date
+        ORDER BY trade_date DESC
+    </select>
+
+    <!-- 다시 보기: from 시각 이후 체결을 받은 순서(tick_id)대로 limit건씩. afterId로 다음 쪽 -->
+    <select id="findReplayTicks" resultMap="tickRow">
+        SELECT tick_id, stock_code, traded_at, price, volume, change_rate, acc_volume
+        FROM quote_tick
+        WHERE stock_code = #{stockCode}
+          AND trade_date = #{tradeDate}
+          AND traded_at &gt;= #{from}
+          AND tick_id &gt; #{afterId}
+        ORDER BY tick_id
+        LIMIT #{limit}
+    </select>
+
+    <select id="countReplayTicks" resultType="long">
+        SELECT COUNT(*) FROM quote_tick
+        WHERE stock_code = #{stockCode} AND trade_date = #{tradeDate} AND traded_at &gt;= #{from}
+    </select>
+
+    <!-- ===== 수집 점검 (장 마감 뒤 "빠진 체결이 있나") =====
+        누적 거래량은 체결마다 그 체결량만큼 커짐
+        → 처음~마지막 체결 사이에 실제로 거래된 양 = 마지막 누적 − 첫 누적 + 첫 체결량
+        → 우리가 저장한 체결량 합과 비교하면 빠진 비율을 알 수 있음
+        첫 체결량: 누적 거래량 순으로 이어 붙인 체결량 목록의 첫 값 (GROUP_CONCAT … ORDER BY)
+        지연: 받은 시각 − 체결 시각 (체결 시각이 초 단위라 최대 1초는 반올림 오차) -->
+    <resultMap id="collectCheckRow" type="com.hkteam2.stocknews.quote.CollectCheckRow">
+        <constructor>
+            <arg column="stock_code" javaType="String"/>
+            <arg column="stock_name" javaType="String"/>
+            <arg column="tick_count" javaType="_long"/>
+            <arg column="saved_volume" javaType="_long"/>
+            <arg column="first_acc" javaType="_long"/>
+            <arg column="first_volume" javaType="_long"/>
+            <arg column="last_acc" javaType="_long"/>
+            <arg column="first_at" javaType="java.time.LocalDateTime"/>
+            <arg column="last_at" javaType="java.time.LocalDateTime"/>
+            <arg column="avg_delay_ms" javaType="_long"/>
+            <arg column="max_delay_ms" javaType="_long"/>
+        </constructor>
+    </resultMap>
+
+    <select id="checkCollection" resultMap="collectCheckRow">
+        SELECT t.stock_code, i.stock_name,
+               COUNT(*)                     AS tick_count,
+               SUM(t.volume)                AS saved_volume,
+               MIN(t.acc_volume)            AS first_acc,
+               CAST(SUBSTRING_INDEX(GROUP_CONCAT(t.volume ORDER BY t.acc_volume), ',', 1) AS UNSIGNED) AS first_volume,
+               MAX(t.acc_volume)            AS last_acc,
+               MIN(t.traded_at)             AS first_at,
+               MAX(t.traded_at)             AS last_at,
+               ROUND(AVG(TIMESTAMPDIFF(MICROSECOND, t.traded_at, t.received_at)) / 1000) AS avg_delay_ms,
+               ROUND(MAX(TIMESTAMPDIFF(MICROSECOND, t.traded_at, t.received_at)) / 1000) AS max_delay_ms
+        FROM quote_tick t
+        JOIN stock_info i ON i.stock_code = t.stock_code
+        WHERE t.trade_date = #{tradeDate}
+        GROUP BY t.stock_code, i.stock_name
+        ORDER BY tick_count DESC
+    </select>
+
+    <select id="countTicks" resultType="long">
+        SELECT COUNT(*) FROM quote_tick WHERE trade_date = #{tradeDate}
+    </select>
+
+    <select id="countQuarantine" resultType="long">
+        SELECT COUNT(*) FROM quote_quarantine
+    </select>
+
+</mapper>

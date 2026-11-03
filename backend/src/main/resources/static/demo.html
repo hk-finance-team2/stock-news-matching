@@ -179,6 +179,17 @@ textarea { min-height: 70px; resize: vertical; }
 .msg { font-size: 13px; color: var(--neg); min-height: 18px; }
 .msg.ok { color: var(--pos); }
 
+/* 시세 (주제 ①②, KIS) — 상승 빨강, 하락 파랑 (국내 증권 앱 관례) */
+.up { color: #C81E1E; } .down { color: #1D4ED8; } .flat { color: var(--text-3); }
+.qprice { font-size: 24px; font-weight: 700; }
+.quote-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; }
+.quote-head small { color: var(--muted); }
+table.ticks { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.ticks th, table.ticks td { text-align: right; padding: 5px 6px; border-top: 1px solid var(--line-soft); }
+table.ticks th { color: var(--muted); font-weight: 500; border-top: none; }
+table.ticks td:first-child, table.ticks th:first-child { text-align: left; }
+.chart-meta { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-top: 4px; }
+
 /* 4단계: 로그인·관심 종목 */
 .auth-box { max-width: 420px; margin: 24px auto; }
 table.watch { width: 100%; border-collapse: collapse; font-size: 14px; }
@@ -390,7 +401,7 @@ function renderHome() {
   document.getElementById('more').addEventListener('click', function () { loadArticles(false); });
   syncSeg();
   loadArticles(true);
-  loadIssues();
+  loadIssues(true);   // 홈에서만 이슈 종목 시세를 방송으로 받음
   loadStatus();
   loadWatchBox();
 }
@@ -429,7 +440,7 @@ async function loadArticles(reset) {
   }
 }
 
-async function loadIssues() {
+async function loadIssues(withStream) {
   var ol = document.getElementById('ranks');
   try {
     var data = await api('/api/stocks/issues' + qs({ limit: 5 }));
@@ -438,9 +449,10 @@ async function loadIssues() {
       var sub = r.avgRelevance === null ? '최근 ' + fmtTime(r.lastPublishedAt) : '평균 관련도 ' + r.avgRelevance + '% · 최근 ' + fmtTime(r.lastPublishedAt);
       return '<li><a href="#/stock/' + encodeURIComponent(r.stockCode) + '">'
         + '<span class="rank-no">' + r.rank + '</span>'
-        + '<span class="rank-name"><b>' + esc(r.stockName) + '</b><small>' + esc(sub) + '</small></span>'
+        + '<span class="rank-name"><b>' + esc(r.stockName) + '</b><small class="rq" data-code="' + esc(r.stockCode) + '"></small><small>' + esc(sub) + '</small></span>'
         + '<span class="rank-cnt">' + r.articleCount + '건</span></a></li>';
     }).join('');
+    fillRankQuotes(data.items.map(function (r) { return r.stockCode; }), withStream);
   } catch (e) {
     ol.innerHTML = '<li class="none" style="padding:12px 0">불러오지 못했어요: ' + esc(e.message) + '</li>';
   }
@@ -699,6 +711,13 @@ async function renderStock(code) {
   view.innerHTML = '<a class="back" href="javascript:history.back()">← 뒤로</a>'
     + '<div class="stock-head" id="sHead"><h1>불러오는 중…</h1></div>'
     + '<div class="cols"><main class="list">'
+    + '<section class="box"><div class="box-head"><h2>시세 <small style="font-weight:400;color:var(--muted)">(KIS · 확장 기능)</small></h2>'
+    + segHtml('chartUnit', [['minute', '오늘 분봉'], ['day', '일봉']], 'minute') + '</div>'
+    + '<div id="quoteHead" class="quote-head"><small>불러오는 중…</small></div>'
+    + '<div id="replayBar" class="row-gap" style="margin-top:8px;font-size:13px"></div>'
+    + '<div id="sChart" style="margin-top:10px"></div>'
+    + '<h3 class="sec" style="margin-top:14px">최근 체결</h3><div id="sTicks"></div>'
+    + '<h3 class="sec" style="margin-top:14px">수집 점검 <small style="font-weight:400;color:var(--muted)">(오늘, 빠진 체결 비율·지연)</small></h3><div id="sCheck" style="font-size:13px;color:var(--text-3)"></div></section>'
     + '<section class="box"><div class="box-head"><h2>오늘의 종합 요약</h2><span id="sumAt"></span></div><div id="sSum"></div>'
     + '<h3 class="sec" style="margin-top:16px">감성 비율 <small id="sentiCnt" style="font-weight:400;color:var(--muted)"></small></h3>'
     + segHtml('sentiSrc', [['', '전체'], ['NEWS', '뉴스'], ['SNS', 'SNS']], '') + '<div id="sSenti"></div>'
@@ -710,7 +729,7 @@ async function renderStock(code) {
     + '<div id="sArts" class="list"></div><button type="button" class="more" id="sArtsMore" hidden style="width:100%;margin-top:10px">더 보기</button></section>'
     + '<section class="box"><div class="box-head"><h2>종목 토론</h2><span>글·댓글·공감</span></div><div id="sBoard"></div></section>'
     + '</main><aside class="side-panel"><section class="box"><div class="box-head"><h2>오늘의 이슈 종목</h2><span>매칭 기사 수</span></div><ol class="ranks" id="ranks"></ol></section>'
-    + '<p class="notice">감성 비율·언급량은 분석이 끝난 글을 지금 센 값이에요. 현재가는 1차 범위(시세 제외)가 아니라 없어요.</p></aside></div>';
+    + '<p class="notice">감성 비율·언급량은 분석이 끝난 글을 지금 센 값이에요. 시세는 확장 기능(주제 ①②)이라 서버에서 켠 경우에만 나와요. 지금은 몇 초마다 조회한 값이고, 실시간은 다음 단계예요.</p></aside></div>';
 
   var head = document.getElementById('sHead');
   try {
@@ -720,6 +739,12 @@ async function renderStock(code) {
   } catch (e) { showError(head, e); return; }
 
   loadWatchButton(code);
+  loadQuoteHead(code);
+  loadReplayBar(code);
+  loadCheck(code);
+  loadChart(code, 'minute');
+  bindSeg('chartUnit', function (v) { loadChart(code, v); });
+  loadTicks(code);
   loadSummary(code, '');
   bindSeg('sentiSrc', function (v) { loadSummary(code, v); });
   loadMentions(code, 'today');
@@ -875,6 +900,231 @@ async function openPost(code, postId) {
   });
 }
 
+// ===== 시세 (주제 ①②, KIS 확장 기능): GET /api/quotes/... =====
+// 서버 .env 에 KIS_ENABLED=true 일 때만 값이 나옴. 꺼져 있으면 503 QUOTE_DISABLED → "시세 꺼짐" 안내만
+
+function won(n) { return Number(n).toLocaleString('ko-KR'); }
+function dirClass(d) { return d === 'UP' ? 'up' : (d === 'DOWN' ? 'down' : 'flat'); }
+function signedWon(n) { return (Number(n) > 0 ? '+' : '') + won(n); }
+function signedRate(r) { return (Number(r) > 0 ? '+' : '') + Number(r) + '%'; }
+function hms(iso) { var d = new Date(iso); return pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()); }
+function quoteMsg(e) {
+  return e.code === 'QUOTE_DISABLED' ? '시세 꺼짐 (서버 .env 의 KIS_ENABLED)' : '시세를 불러오지 못했어요: ' + e.message;
+}
+
+// ----- 실시간 방송 듣기 (SSE): 서버가 바뀐 것을 밀어 줌. 화면을 떠나면 끊음 -----
+var liveStream = null;
+function closeStream() {
+  if (liveStream) { liveStream.close(); liveStream = null; }
+}
+/** codes의 방송을 듣고, 이벤트가 오면 onQuote / onTick 호출. 끊기면 브라우저(EventSource)가 알아서 다시 연결 */
+function openStream(codes, onQuote, onTick) {
+  closeStream();
+  liveStream = new EventSource('/api/quotes/stream' + qs({ codes: codes.join(',') }));
+  liveStream.addEventListener('quote', function (e) { onQuote(JSON.parse(e.data)); });
+  if (onTick) liveStream.addEventListener('tick', function (e) { onTick(JSON.parse(e.data)); });
+}
+
+/** 종목 화면 위쪽 현재가. 처음엔 REST로 한 번, 그 뒤로는 방송으로 */
+async function loadQuoteHead(code) {
+  var el = document.getElementById('quoteHead');
+  if (!el) return;
+  try {
+    renderQuoteHead(await api('/api/quotes/' + encodeURIComponent(code)));
+    openStream([code], renderQuoteHead, prependTick);   // 시세가 켜져 있을 때만 방송을 들음
+  } catch (e) {
+    el.innerHTML = '<small>' + esc(quoteMsg(e)) + '</small>';
+  }
+}
+
+function renderQuoteHead(q) {
+  var el = document.getElementById('quoteHead');
+  if (!el) return;
+  var c = dirClass(q.direction);
+  var badge = q.live
+    ? '<small class="up">● 실시간 · ' + esc(hms(q.fetchedAt)) + ' 체결</small>'
+    : '<small>' + esc(hms(q.fetchedAt)) + ' 기준 (몇 초마다 조회)</small>';
+  el.innerHTML = '<span class="qprice ' + c + '">' + won(q.price) + '원</span>'
+    + '<span class="' + c + '">' + signedWon(q.changeAmount) + ' (' + signedRate(q.changeRate) + ')</span>'
+    + '<small>시가 ' + won(q.open) + ' · 고가 ' + won(q.high) + ' · 저가 ' + won(q.low) + ' · 거래량 ' + won(q.accVolume) + '</small>'
+    + badge;
+}
+
+/** 차트: 종가 선 + 아래 거래량 막대 (SVG 직접). 마지막 종가가 첫 시가보다 높으면 빨강 */
+async function loadChart(code, unit) {
+  var box = document.getElementById('sChart');
+  if (!box) return;
+  box.innerHTML = '<p class="none">차트 불러오는 중…</p>';
+  try {
+    var c = await api('/api/quotes/' + encodeURIComponent(code) + '/chart' + qs({ unit: unit }));
+    box.innerHTML = chartSvg(c);
+  } catch (e) {
+    box.innerHTML = '<p class="none">' + esc(quoteMsg(e)) + '</p>';
+  }
+}
+
+function chartSvg(c) {
+  var items = c.items;
+  if (!items.length) return '<p class="none">차트 데이터가 없어요</p>';
+  var W = 600, H = 170, VH = 40, P = 6;
+  var hi = Math.max.apply(null, items.map(function (x) { return x.high; }));
+  var lo = Math.min.apply(null, items.map(function (x) { return x.low; }));
+  if (hi === lo) { hi += 1; lo -= 1; }
+  var vmax = Math.max.apply(null, [1].concat(items.map(function (x) { return x.volume; })));
+  var step = W / items.length;
+  function y(v) { return P + (hi - v) / (hi - lo) * (H - 2 * P); }
+  var pts = items.map(function (it, i) { return (i * step + step / 2).toFixed(1) + ',' + y(it.close).toFixed(1); }).join(' ');
+  var color = items[items.length - 1].close >= items[0].open ? '#C81E1E' : '#1D4ED8';
+  var vols = items.map(function (it, i) {
+    var h = it.volume / vmax * VH;
+    return '<rect x="' + (i * step + step * 0.15).toFixed(1) + '" y="' + (H + VH - h).toFixed(1) + '" width="' + Math.max(0.5, step * 0.7).toFixed(1) + '" height="' + h.toFixed(1) + '" fill="#CBD5E1"/>';
+  }).join('');
+  function label(iso) {
+    var d = new Date(iso);
+    return c.unit === 'MINUTE' ? pad(d.getHours()) + ':' + pad(d.getMinutes()) : pad(d.getMonth() + 1) + '/' + pad(d.getDate());
+  }
+  return '<svg viewBox="0 0 ' + W + ' ' + (H + VH) + '" width="100%" role="img" aria-label="' + (c.unit === 'MINUTE' ? '오늘 1분봉' : '일봉') + ' 종가 차트">'
+    + vols + '<polyline fill="none" stroke="' + color + '" stroke-width="1.8" points="' + pts + '"/></svg>'
+    + '<div class="chart-meta"><span>' + esc(label(items[0].time)) + '</span>'
+    + '<span>고가 ' + won(hi) + ' · 저가 ' + won(lo) + ' · ' + items.length + (c.unit === 'MINUTE' ? '분' : '일') + '</span>'
+    + '<span>' + esc(label(items[items.length - 1].time)) + '</span></div>';
+}
+
+/** 최근 체결 10건 */
+async function loadTicks(code) {
+  var box = document.getElementById('sTicks');
+  if (!box) return;
+  try {
+    var d = await api('/api/quotes/' + encodeURIComponent(code) + '/ticks');
+    box.innerHTML = '<table class="ticks"><thead><tr><th>시각</th><th>체결가</th><th>전일 대비</th><th>수량</th><th>체결 강도</th></tr></thead>'
+      + '<tbody id="tickBody">' + d.items.slice(0, 10).map(function (t) {
+            var c = dirClass(t.direction);
+            return '<tr><td>' + esc(hms(t.time)) + '</td><td class="' + c + '">' + won(t.price) + '</td>'
+              + '<td class="' + c + '">' + signedRate(t.changeRate) + '</td><td>' + won(t.volume) + '</td><td>' + Number(t.strength) + '</td></tr>';
+          }).join('') + '</tbody></table>'
+      + (d.items.length ? '' : '<p class="none">체결이 없어요</p>');
+  } catch (e) {
+    box.innerHTML = '<p class="none">' + esc(quoteMsg(e)) + '</p>';
+  }
+}
+
+// ----- 다시 보기 (녹화본 재생): GET /api/quotes/{code}/replay (SSE). KIS가 꺼져 있어도 녹화본만 있으면 됨 -----
+var replayStream = null;
+function stopReplay() {
+  if (replayStream) { replayStream.close(); replayStream = null; }
+}
+
+async function loadReplayBar(code) {
+  var bar = document.getElementById('replayBar');
+  if (!bar) return;
+  var d;
+  try { d = await api('/api/quotes/' + encodeURIComponent(code) + '/recordings'); } catch (e) { bar.innerHTML = ''; return; }
+  if (!d.items.length) {
+    bar.innerHTML = '<small class="none">다시 보기: 녹화된 날이 없어요 (생중계로 받은 종목만 녹화돼요)</small>';
+    return;
+  }
+  function hm(iso) { var t = new Date(iso); return pad(t.getHours()) + ':' + pad(t.getMinutes()); }
+  bar.innerHTML = '<b style="font-size:13px">다시 보기</b>'
+    + '<select id="rpDate" style="height:34px">' + d.items.map(function (r, i) {
+        return '<option value="' + esc(r.date) + '" data-from="' + esc(hm(r.firstAt)) + '">' + esc(r.date) + ' (' + won(r.tickCount) + '건, ' + esc(hm(r.firstAt)) + '~' + esc(hm(r.lastAt)) + ')</option>';
+      }).join('') + '</select>'
+    + '<input id="rpFrom" type="time" style="height:34px;border:1px solid var(--input);border-radius:8px;padding:0 6px" value="' + esc(hm(d.items[0].firstAt)) + '">'
+    + '<select id="rpSpeed" style="height:34px"><option value="1">1배</option><option value="5">5배</option><option value="10" selected>10배</option><option value="30">30배</option><option value="60">60배</option></select>'
+    + '<button type="button" class="btn-sm primary" id="rpPlay">▶ 재생</button>'
+    + '<button type="button" class="btn-sm" id="rpLive">■ 실시간으로</button><small id="rpInfo" style="color:var(--muted)"></small>';
+  var dateSel = document.getElementById('rpDate');
+  dateSel.addEventListener('change', function () {
+    document.getElementById('rpFrom').value = dateSel.selectedOptions[0].dataset.from;
+  });
+  document.getElementById('rpPlay').addEventListener('click', function () {
+    startReplay(code, dateSel.value, document.getElementById('rpFrom').value, document.getElementById('rpSpeed').value);
+  });
+  document.getElementById('rpLive').addEventListener('click', function () {
+    stopReplay();
+    document.getElementById('rpInfo').textContent = '';
+    loadQuoteHead(code);
+    loadTicks(code);
+  });
+}
+
+/** 재생: 생중계 방송을 끊고 녹화본 방송을 들음. 현재가 칸과 체결 표를 녹화 값으로 바꿈 */
+function startReplay(code, date, from, speed) {
+  stopReplay();
+  closeStream();
+  var body = document.getElementById('tickBody');
+  if (body) body.innerHTML = '';
+  var info = document.getElementById('rpInfo'), head = document.getElementById('quoteHead');
+  var total = 0, hi = null, lo = null;
+  replayStream = new EventSource('/api/quotes/' + encodeURIComponent(code) + '/replay' + qs({ date: date, from: from, speed: speed }));
+  replayStream.addEventListener('start', function (e) {
+    total = JSON.parse(e.data).total;
+    info.textContent = total ? '총 ' + won(total) + '건 재생 시작' : '그 시각 이후 녹화가 없어요';
+  });
+  replayStream.addEventListener('replay', function (e) {
+    var t = JSON.parse(e.data), c = dirClass(t.direction);
+    hi = hi === null ? t.price : Math.max(hi, t.price);
+    lo = lo === null ? t.price : Math.min(lo, t.price);
+    head.innerHTML = '<span class="qprice ' + c + '">' + won(t.price) + '원</span>'
+      + '<span class="' + c + '">' + signedRate(t.changeRate) + '</span>'
+      + '<small>재생 구간 고가 ' + won(hi) + ' · 저가 ' + won(lo) + ' · 누적 거래량 ' + won(t.accVolume) + '</small>'
+      + '<small style="color:#7C3AED">◀ 다시 보기 · ' + esc(date) + ' ' + esc(hms(t.time)) + ' (' + esc(speed) + '배속)</small>';
+    prependTick(t);
+    info.textContent = won(t.seq) + ' / ' + won(total) + '건';
+  });
+  replayStream.addEventListener('end', function () {
+    info.textContent = '재생 끝 (' + won(total) + '건)';
+    stopReplay();   // 끝나면 닫음 (안 닫으면 브라우저가 처음부터 다시 연결함)
+  });
+  replayStream.onerror = function () { stopReplay(); };
+}
+
+/** 수집 점검: 오늘 이 종목을 얼마나 빠짐없이 받았나 */
+async function loadCheck(code) {
+  var box = document.getElementById('sCheck');
+  if (!box) return;
+  try {
+    var d = await api('/api/quotes/check');
+    var it = d.items.find(function (x) { return x.stockCode === code; });
+    box.innerHTML = it
+      ? '저장 체결 <b>' + won(it.tickCount) + '건</b> · 실제 거래량 대비 <b>' + Number(it.coverageRate) + '%</b>'
+        + ' (' + won(it.savedVolume) + ' / ' + won(it.expectedVolume) + '주, ' + esc(hms(it.firstAt)) + '~' + esc(hms(it.lastAt)) + ')'
+        + ' · 지연 평균 ' + won(it.avgDelayMs) + 'ms, 최대 ' + won(it.maxDelayMs) + 'ms'
+        + '<br><small>서버가 꺼져 있던 시간·생중계 자리가 없던 시간도 "빠진 것"으로 셉니다. 계속 받은 날은 100%에 가까워야 정상</small>'
+      : '오늘 이 종목은 생중계로 받은 체결이 없어요';
+  } catch (e) {
+    box.textContent = '점검을 불러오지 못했어요: ' + e.message;
+  }
+}
+
+/** 방송으로 온 새 체결을 표 맨 위에 넣고 10줄만 남김 (새 줄은 잠깐 노랗게) */
+function prependTick(t) {
+  var body = document.getElementById('tickBody');
+  if (!body) return;
+  var c = dirClass(t.direction);
+  var tr = document.createElement('tr');
+  tr.innerHTML = '<td>' + esc(hms(t.time)) + '</td><td class="' + c + '">' + won(t.price) + '</td>'
+    + '<td class="' + c + '">' + signedRate(t.changeRate) + '</td><td>' + won(t.volume) + '</td><td>-</td>';
+  tr.style.background = '#FEF9C3';
+  body.insertBefore(tr, body.firstChild);
+  setTimeout(function () { tr.style.background = ''; }, 600);
+  while (body.rows.length > 10) body.deleteRow(body.rows.length - 1);
+}
+
+/** 이슈 종목 순위 옆 현재가: 처음엔 여러 종목 한 번에(REST), 그 뒤로는 방송. 시세가 꺼져 있으면 안 보임 */
+async function fillRankQuotes(codes, withStream) {
+  if (!codes.length) return;
+  function show(q) {
+    document.querySelectorAll('.rq[data-code="' + q.stockCode + '"]').forEach(function (el) {
+      el.innerHTML = '<span class="' + dirClass(q.direction) + '">' + (q.live ? '● ' : '') + won(q.price) + '원 ' + signedRate(q.changeRate) + '</span>';
+    });
+  }
+  try {
+    var d = await api('/api/quotes' + qs({ codes: codes.join(',') }));
+    d.items.forEach(show);
+    if (withStream) openStream(codes.slice(0, 5), show);   // 종목 화면에서는 그 종목 방송만 들음 (방송은 화면당 하나)
+  } catch (e) { /* 시세 꺼짐·실패: 표시만 안 함 */ }
+}
+
 // ===== 4단계: 로그인·회원가입 (F-18) =====
 
 function renderLogin(params) {
@@ -977,6 +1227,8 @@ function route() {
   var path = hash.split('?')[0], params = new URLSearchParams(hash.split('?')[1] || '');
   var parts = path.split('/').filter(Boolean);
   var nav = 'main';
+  closeStream();   // 다른 화면으로 가면 방송 듣기를 끊음 (서버의 "보는 사람 수"도 줄어듦)
+  stopReplay();
   if (parts[0] === 'logout') { logout(); return; }
   if (parts[0] === 'search' && params.get('q')) renderSearch(params);
   else if (parts[0] === 'article' && parts[1]) renderArticle(parts[1]);
