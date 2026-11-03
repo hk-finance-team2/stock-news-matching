@@ -16,7 +16,7 @@ class QuoteApiTest extends ApiTestSupport {
 
     @Test
     void 시세가_꺼져_있으면_503_QUOTE_DISABLED() throws Exception {
-        for (String url : new String[] {"/api/quotes/005930", "/api/quotes?codes=005930,000660",
+        for (String url : new String[] {"/api/quotes/status", "/api/quotes/005930", "/api/quotes?codes=005930,000660",
                 "/api/quotes/005930/chart?unit=minute", "/api/quotes/005930/ticks"}) {
             mvc.perform(get(url))
                     .andExpect(status().isServiceUnavailable())
