@@ -111,9 +111,11 @@ def check(s, title, body):
     return s
 
 
-def summarize_articles(engine=None, limit=BATCH, model=MODEL):
+def summarize_articles(engine=None, limit=BATCH, model=MODEL, since=None):
+    """FETCHED 기사 요약. since 가 없으면 어제 이후만 (쌓인 옛 기사에 비용을 쓰지 않음, 2026-11-02 결정)
+    지난 기사 채우기(backfill.py)는 since 로 그 기간을 넘김"""
     engine = engine or get_engine()
-    since = datetime.now(KST).date() - timedelta(days=1)  # 어제 이후 기사만. 쌓인 옛 기사에 비용을 쓰지 않음 (2026-11-02 결정)
+    since = since or datetime.now(KST).date() - timedelta(days=1)
     with engine.connect() as conn:
         rows = conn.execute(text("""SELECT article_id, title, body, retry_count FROM article
                                     WHERE status = 'FETCHED' AND published_at >= :since
