@@ -141,19 +141,27 @@ public class QuoteController {
 
     @Operation(summary = "차트 (봉)",
             description = "unit=1m·5m·10m·30m: date 하루(없으면 오늘)의 09:00~15:30 분봉. KIS 1분봉을 서버가 n분씩 묶음, 최대 1년 전까지"
-                    + " (오늘 60초·지난 날 1시간 캐시). unit=day·week·month·year: 최근 100개, 년봉은 상장 이후 (10분 캐시)."
+                    + " (오늘 60초·지난 날 1시간 캐시). unit=day: 최근 1년, week·month: 최근 100개, year: 상장 이후 (10분 캐시)."
+                    + " to(day·week·month만): 그 날짜(포함)까지 거꾸로 100개 이내 = 왼쪽으로 끌 때 이어 받기 (1시간 캐시)."
                     + " 옛 값 minute = 1m. items는 오래된 것부터, 수정주가")
     @GetMapping("/{stockCode}/chart")
     public ChartResponse getChart(@PathVariable String stockCode, @RequestParam(defaultValue = "1m") String unit,
-                                  @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+                                  @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+                                  @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
         ChartUnit u = ChartUnit.of(unit).orElseThrow(() -> new BusinessException(ErrorCode.INVALID_REQUEST));
         if (date != null && !u.isMinute()) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST);   // 날짜는 분봉에서만
         }
+        if (to != null && (u.isMinute() || u == ChartUnit.YEAR)) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);   // 분봉은 date로 하루씩, 년봉은 이미 상장 이후 전체
+        }
         QuoteService service = service();
         String code = checkStock(stockCode);
         if (!u.isMinute()) {
-            return service.periodChart(code, u);
+            if (to != null && to.isAfter(service.today())) {
+                throw new BusinessException(ErrorCode.INVALID_REQUEST);   // 미래
+            }
+            return service.periodChart(code, u, to);
         }
         LocalDate today = service.today();
         LocalDate day = date != null ? date : today;
