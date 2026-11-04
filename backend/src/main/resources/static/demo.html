@@ -343,18 +343,25 @@ function chipHtml(s) {
   return '<a class="chip plain" href="' + href + '"><b>' + esc(s.stockName) + '</b>' + (rel ? '<small>' + rel + '</small>' : '') + '</a>';
 }
 
+/** SNS 글 링크: 네이버 검색 결과는 고치지 않고 원문으로 바로 보냄 (약관 특약 2.1). 주소가 이상하면 링크 없이 */
+function snsLink(a, inner) {
+  return /^https?:\/\//.test(a.url || '')
+    ? '<a href="' + esc(a.url) + '" target="_blank" rel="noopener noreferrer">' + inner + ' ↗</a>' : inner;
+}
+
 function cardHtml(a) {
   var isSns = a.sourceType === 'SNS';
   var badge = isSns
     ? '<span class="badge sns">SNS</span><span class="unverified">확인되지 않은 정보</span>'
     : '<span class="badge news">뉴스</span>';
+  // SNS 카드에는 우리 판단(관련도·직접/간접)을 끼워 넣지 않고 어느 종목 검색에서 나왔는지만
   var stocks = a.stocks && a.stocks.length
-    ? a.stocks.map(chipHtml).join('')
+    ? a.stocks.map(isSns ? function (s) { return chipHtml({ stockCode: s.stockCode, stockName: s.stockName }); } : chipHtml).join('')
     : '<span class="none">관련 종목 없음</span>';
   return '<article class="card">'
     + '<div class="meta">' + badge + '<span>' + esc(a.press || a.channel) + '</span><span aria-hidden="true">·</span>'
     + '<span>' + esc(fmtTime(a.publishedAt)) + '</span></div>'
-    + '<h2><a href="#/article/' + encodeURIComponent(a.articleId) + '">' + esc(a.title) + '</a></h2>'
+    + '<h2>' + (isSns ? snsLink(a, esc(a.title)) : '<a href="#/article/' + encodeURIComponent(a.articleId) + '">' + esc(a.title) + '</a>') + '</h2>'
     + '<p>' + esc(a.summary) + '</p>'
     + '<div class="chips">' + stocks + '</div>'
     + '</article>';
@@ -689,6 +696,9 @@ async function renderArticle(id) {
   var keywords = (a.keywords || []).map(function (k) { return '<span class="kw">' + esc(k) + '</span>'; }).join('');
 
   var stocks = (a.stocks || []).map(function (s) {
+    if (isSns) {   // 목록에서는 원문으로 바로 가지만, 주소로 직접 열었을 때도 우리 판단은 붙이지 않음
+      return '<div class="stock-row"><div class="stock-row-head"><a href="#/stock/' + encodeURIComponent(s.stockCode) + '">' + esc(s.stockName) + '</a></div></div>';
+    }
     var rel = s.relevance === null || s.relevance === undefined ? null : Number(s.relevance);
     return '<div class="stock-row"><div class="stock-row-head">'
       + '<a href="#/stock/' + encodeURIComponent(s.stockCode) + '">' + esc(s.stockName) + '</a>'
@@ -705,7 +715,7 @@ async function renderArticle(id) {
 
   var sns = isSns ? '' : '<section class="box"><div class="box-head"><h2>같은 종목 SNS 반응</h2><span>앞뒤 24시간 · 최대 5개</span></div>'
     + ((a.relatedSns || []).length ? a.relatedSns.map(function (r) {
-        return '<div class="sns-mini"><a href="#/article/' + encodeURIComponent(r.articleId) + '"><b>' + esc(r.title) + '</b></a><br>'
+        return '<div class="sns-mini">' + snsLink(r, '<b>' + esc(r.title) + '</b>') + '<br>'
           + '<small>' + esc(r.press || r.channel) + ' · ' + esc(fmtTime(r.publishedAt)) + ' · 확인되지 않은 정보</small></div>';
       }).join('') : '<p class="none">가까운 시각의 SNS 글이 없어요</p>')
     + '</section>';
@@ -715,9 +725,9 @@ async function renderArticle(id) {
     + '<div class="meta">' + badge + '<span>' + esc(a.press || a.channel) + '</span>'
     + (a.reporter ? '<span>' + esc(a.reporter) + '</span>' : '')
     + '<span aria-hidden="true">·</span><span>' + esc(fmtTime(a.publishedAt)) + '</span>'
-    + '<span style="margin-left:auto">' + sentiHtml(a.sentiment) + '</span></div>'
+    + '<span style="margin-left:auto">' + (isSns ? '' : sentiHtml(a.sentiment)) + '</span></div>'
     + '<h1>' + esc(a.title) + '</h1>'
-    + '<div class="ai-sum"><b>AI 3줄 요약</b>' + esc(a.summary) + '</div>'
+    + '<div class="ai-sum"><b>' + (isSns ? '네이버 검색 미리보기 (원문 그대로)' : 'AI 3줄 요약') + '</b>' + esc(a.summary) + '</div>'
     + (keywords ? '<div>' + keywords + '</div>' : '')
     + '<div class="row-gap">' + original + '</div>'
     + '<p class="notice">AI(' + esc(a.model || '-') + ')가 ' + esc(fmtTime(a.summarizedAt)) + '에 만든 요약이에요. 틀릴 수 있으니 원문으로 확인하세요. 기사 본문은 보여 주지 않아요.</p>'
@@ -759,7 +769,7 @@ async function renderStock(code) {
     + '<div id="sMoves"></div></section>'
     + '<section class="box"><div class="box-head"><h2>오늘의 종합 요약</h2><span id="sumAt"></span></div><div id="sSum"></div>'
     + '<h3 class="sec" style="margin-top:16px">감성 비율 <small id="sentiCnt" style="font-weight:400;color:var(--muted)"></small></h3>'
-    + segHtml('sentiSrc', [['', '전체'], ['NEWS', '뉴스'], ['SNS', 'SNS']], '') + '<div id="sSenti"></div>'
+    + segHtml('sentiSrc', [['NEWS', '뉴스'], ['SNS', 'SNS'], ['', '전체']], 'NEWS') + '<div id="sSenti"></div>'
     + '<div class="row-gap" id="regenRow" style="margin-top:12px;font-size:13px"></div>'
     + '<p class="notice" style="margin-top:10px">요약은 AI가 1시간마다 만들어요. "다시 생성"(F-08)은 백엔드가 AI 서버에 지금 기사로 새로 만들어 달라고 부탁해요 (같은 종목은 10분에 한 번).</p></section>'
     + '<section class="box"><div class="box-head"><h2>언급량 추이</h2>' + segHtml('period', [['today', '오늘'], ['7d', '7일'], ['30d', '30일']], 'today') + '</div><div id="sMent"></div></section>'
@@ -798,7 +808,7 @@ async function renderStock(code) {
   loadBigMoves(code, moveOpt);
   bindSeg('movePeriod', function (v) { moveOpt.period = v; loadBigMoves(code, moveOpt); });
   bindSeg('moveTh', function (v) { moveOpt.threshold = v; loadBigMoves(code, moveOpt); });
-  var sentiSrc = '';
+  var sentiSrc = 'NEWS';
   loadSummary(code, sentiSrc);
   bindSeg('sentiSrc', function (v) { sentiSrc = v; loadSummary(code, v); });
   loadRegenButton(code, function () { return sentiSrc; });
