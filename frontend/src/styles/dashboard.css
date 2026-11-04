@@ -1310,6 +1310,28 @@ textarea:focus-visible,
     line-height: 1.42;
 }
 
+/* 글 카드 요약 한 줄 (F-10). 길면 두 줄에서 말줄임 */
+.article-summary-line {
+    margin: 0;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--text-sub);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* 칩 3개를 넘는 종목 수 (+N). 마우스를 올리면 이름 */
+.more-stock-count {
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--text-muted);
+    padding: 2px 4px;
+    cursor: default;
+}
+
 .article-stock-tags {
     display: flex;
     align-items: center;

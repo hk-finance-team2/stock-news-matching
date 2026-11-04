@@ -322,9 +322,10 @@ function ArticleList({ articles, selectedId, onSelect, onSelectStock, feed }) {
     <div className="article-list">
       {articles.map((art) => {
         const isSns = art.sourceType !== 'NEWS';
-        const topStocks = [...(art.relatedStocks || [])]
-          .sort((a, b) => (b.relevance ?? -1) - (a.relevance ?? -1))
-          .slice(0, 3);
+        const allStocks = [...(art.relatedStocks || [])].sort((a, b) => (b.relevance ?? -1) - (a.relevance ?? -1));
+        const topStocks = allStocks.slice(0, 3);
+        // 칩은 3개까지만. 나머지는 "+N"으로 있다는 것만 알림 (상세에서 전부 보임) (QA #5)
+        const hiddenStocks = allStocks.slice(3);
         // SNS는 상세 대신 원문으로 바로 (우리 분석을 검색 결과에 붙이지 않음)
         const open = () => (isSns ? openOriginal(art.url) : onSelect(art.id));
 
@@ -360,6 +361,9 @@ function ArticleList({ articles, selectedId, onSelect, onSelectStock, feed }) {
               {isSns && ' ↗'}
             </h4>
 
+            {/* F-10 목록 칸: 요약. AI 요약 첫 문장만 두 줄까지 (QA #4) */}
+            {art.summary?.[0] && <p className="article-summary-line">{art.summary[0]}</p>}
+
             <div className="article-stock-tags">
               {topStocks.map((rel) => (
                 <button
@@ -376,6 +380,11 @@ function ArticleList({ articles, selectedId, onSelect, onSelectStock, feed }) {
                   {!isSns && rel.relevance !== null && <span>{rel.relevance}%</span>}
                 </button>
               ))}
+              {hiddenStocks.length > 0 && (
+                <span className="more-stock-count num" title={hiddenStocks.map((s) => s.name).join(', ')}>
+                  +{hiddenStocks.length}
+                </span>
+              )}
               {isSns && <span className="sns-mini-tag">⚠️ 참고용 · 확인되지 않은 정보</span>}
             </div>
           </article>
