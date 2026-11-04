@@ -141,6 +141,15 @@ def test_sns_db():
         sns.save_result(engine, code, [item], opinion, day)
         with engine.connect() as conn:
             assert conn.execute(summary_sql, {"c": code, "d": date(2000, 1, 1)}).scalar() == "기대 의견", "버린 요약은 덮어쓰지 않음"
+
+        old_spam = SimpleNamespace(article_id=old.article_id, title="제목", description="abc.com 으로 오세요")
+        with engine.begin() as conn:
+            conn.execute(text("UPDATE article SET status = 'FETCHED', description = :d WHERE article_id = :i"), {"d": old_spam.description, "i": old.article_id})
+        opinion = sns.Opinion(posts=[sns.Post(id=old.article_id, sentiment="NEUTRAL", reason="의견")], summary="")
+        assert sns.save_result(engine, code, [old_spam], opinion, day) == 0
+        with engine.connect() as conn:
+            hidden = row(99, conn)
+        assert hidden.status == "SKIPPED" and hidden.description is None and hidden.summary is None, "원문이 화면에 나가면 안 됨"
     finally:
         with engine.begin() as conn:
             conn.execute(text("DELETE s FROM article_stock s JOIN article a USING (article_id) WHERE a.url_key LIKE :k"), {"k": prefix + "%"})

@@ -68,7 +68,7 @@ def test_dart_not_ready():
 def test_sns_rules():
     from hk_llm.core.config import KST
     from hk_llm.steps import sns
-    from hk_llm.steps.sns import Opinion, Post, cafe_marks, check, clean, is_new_cafe_post, keep, published
+    from hk_llm.steps.sns import Opinion, Post, cafe_marks, check, clean, is_new_cafe_post, is_spam, keep, published
 
     names = ["HLB", "HLB제약", "삼성전자"]
     assert clean("<b>HLB</b> &quot;주가&quot;   전망") == 'HLB "주가" 전망'
@@ -83,6 +83,14 @@ def test_sns_rules():
     now = datetime(2026, 11, 3, 15, 0, tzinfo=KST)
     assert published(None, now) == now and published("20261103", now) == now
     assert published("20261102", now).day == 2 and published("20261101", now) is None
+    for spam in ("HTTP://X.CO", "ｈｔｔｐ：／／x", "t.me/abc", "open.kakao.com/o/a", "abc . com 에서", "naver.com에서", "오픈\u200b채팅",
+                 "010.1234.5678", "010 1234 5678", "(010)1234-5678", "카카오톡 아이디 abc"):
+        assert is_spam(spam), f"광고를 통과시킴: {spam}"
+    for fine in ("카카오톡 개편 기대", "목표가 3.5만원", "1,010억 3,456만 7,890원", "2010-11-30 실적", "삼성전자 주가 전망", None):
+        assert not is_spam(fine), f"정상 글을 막음: {fine}"
+    assert not keep("삼성전자", "삼성전자 주가 오픈 채팅", "상승", None, names), "공백으로 우회"
+    assert not keep("삼성전자", "삼성전자 주가", "상승 abc.com", None, names), "주소만 있는 글"
+    assert not keep("삼성전자", "삼성전자 주가", "상담 받으세요", None, names), "글에는 광고 단어도 막음"
     for fine in ("리딩뱅크 경쟁과 유상증자 모집 의견", "목표가 30100원 의견", "2010-11 실적 비교"):
         assert check(Opinion(posts=[], summary=fine)).summary == fine, "금융 표현은 통과"
     for bad in ("오픈 채팅으로 오세요", "자세한 건 https://x.co", "010 1234 5678 로 연락"):

@@ -12,6 +12,7 @@ import html
 import os
 import re
 import sys
+import unicodedata
 from datetime import datetime, timedelta
 from typing import Literal
 
@@ -34,10 +35,13 @@ DISPLAY = 20
 MAX_POSTS = 20  # 종목당 LLM 1번에 넣는 글 수 (비용 상한)
 BLOG_PRESS = "네이버 블로그"  # 블로거 이름은 저장하지 않음
 WORD = re.compile("주가|주식|매수|매도|종목|증시|실적|목표가|배당|급등|급락|투자")
-AD = re.compile(r"리딩|무료 ?추천|문의|카톡|오픈채팅|텔레그램|https?://|모집|수익 ?인증|상담|010[- ]?\d")
+AD = re.compile(r"리딩|문의|모집|상담")  # 글에만 씀. 리딩뱅크·공모주 모집처럼 금융 표현일 수 있어 LLM 답에는 안 씀
 BRIEF = re.compile(r"마감|시황|브리핑|뉴스|상한가|\[일간|\[검색|정리|일정|TOP")
 FIN_CAFE = re.compile("주식|증시|재테크|투자|종목|차트|트레이더|트레이딩|매매|금융|경제|ETF", re.I)
-REJECT = re.compile(r"https?://|www\.|카톡|오픈채팅|텔레그램|무료추천|수익인증|01[016]-?\d{3,4}-?\d{4}")  # LLM 답 검사용, 공백을 지운 글에 씀. 리딩뱅크·모집 같은 금융 표현은 막지 않음
+REJECT = re.compile(  # 글과 LLM 답에 같이 씀. normalize 한 글 기준. 카카오톡만 나오는 글은 카카오 종목 이야기일 수 있어 막지 않음
+    r"https?://|www\.|닷컴|t\.me|open\.kakao|kakaotalk|telegram|카톡|카카오톡(?:방|아이디|친구|문의|으로|오픈)|오픈채팅|텔레그램|무료추천|수익인증"
+    r"|[a-z0-9-]+\.(?:com|net|org|kr|co|me|ly|io)(?![a-z0-9])"
+    r"|(?<!\d)01[016-9][.\-()/·]*\d{3,4}[.\-()/·]*\d{4}(?!\d)")
 CAFE_POST = re.compile(r"cafe\.naver\.com/([^/?#]+)/(\d+)")
 UPSERT = text("""INSERT INTO stock_daily_summary (stock_code, summary_date, sns_summary) VALUES (:code, :d, :text)
                  ON DUPLICATE KEY UPDATE sns_summary = :text""")  # 뉴스 요약·generated_at 은 건드리지 않음
@@ -73,10 +77,21 @@ def clean(value):
     return " ".join(html.unescape(re.sub(r"<[^>]+>", "", value or "")).split())
 
 
+def normalize(value):
+    """우회 막기: 전각 문자를 보통 문자로, 보이지 않는 문자·공백 제거, 소문자"""
+    value = unicodedata.normalize("NFKC", value or "")
+    return "".join(c for c in value if unicodedata.category(c) != "Cf" and not c.isspace()).lower()
+
+
+def is_spam(value):
+    """링크·연락처·메신저 표현이 있나"""
+    return bool(REJECT.search(normalize(value)))
+
+
 def keep(name, title, preview, cafe, all_names):
     """쓸 글인가: 제목에 종목명(더 긴 다른 종목명 안에 든 경우 제외), 주식 이야기, 광고·시황 모음 아님, 카페는 금융 카페만"""
     text_ = title + " " + preview
-    if AD.search(text_) or BRIEF.search(title) or not WORD.search(text_):
+    if AD.search(normalize(text_)) or is_spam(text_) or BRIEF.search(title) or not WORD.search(text_):
         return False
     if cafe is not None and not FIN_CAFE.search(cafe):
         return False
@@ -183,13 +198,10 @@ def collect(engine, stocks):
 
 def check(result):
     """LLM 답 검사: 글 속 광고·연락처가 옮겨 온 부분만 버림. 이유는 바꾸고, 요약은 비워서 저장하지 않음 (글 묶음과 감성은 살림)"""
-    def bad(value):
-        return REJECT.search(re.sub(r"\s+", "", value))
-
     for p in result.posts:
-        if bad(p.reason):
+        if is_spam(p.reason):
             p.reason = "이유 표시 안 함"
-    if bad(result.summary):
+    if is_spam(result.summary):
         log.warning("SNS 요약에 광고·연락처 표현이 있어 버림")
         result.summary = ""
     return result
@@ -199,7 +211,7 @@ def analyze(stock, previous, rows):
     posts = "\n".join(f"[{r.article_id}] {_strip_tag(r.title)} / {_strip_tag(r.description or '')[:300]}" for r in rows)
     llm = ChatOpenAI(model=MODEL, timeout=60, max_retries=2, max_tokens=2000)
     return check((PROMPT | llm.with_structured_output(Opinion)).invoke(
-        {"stock": _strip_tag(stock), "previous": _strip_tag(previous or ""), "posts": posts}))
+        {"stock": _strip_tag(stock), "previous": "" if is_spam(previous) else _strip_tag(previous or ""), "posts": posts}))
 
 
 def save_result(engine, code, items, result, now):
@@ -208,6 +220,9 @@ def save_result(engine, code, items, result, now):
     done = 0
     with engine.begin() as conn:
         for r in items:
+            if is_spam(r.title + " " + (r.description or "")):  # 필터를 고치기 전에 수집한 글도 원문이 화면에 안 나가게
+                conn.execute(text("UPDATE article SET status = 'SKIPPED', description = NULL WHERE article_id = :id"), {"id": r.article_id})
+                continue
             p = answers.get(r.article_id)
             if not p:  # LLM 이 빠뜨린 글은 다음 실행에서 다시
                 conn.execute(FAIL, {"err": "LLM 답에 없음", "max": MAX_TRIES, "id": r.article_id})
