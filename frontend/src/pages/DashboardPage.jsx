@@ -9,12 +9,10 @@ import {
   INITIAL_STOCK_COMMENTS,
   normalizeStocks,
   normalizeArticles,
-  normalizeSummaries,
-  normalizeMentionTrends,
   normalizeComments,
 } from '../mocks/mockData';
-import { articleApi, quoteApi, statusApi, stockApi } from '../api';
-import { toClock, toUiStock } from '../api/adapters';
+import { articleApi, quoteApi, statusApi, stockApi, tokenStore } from '../api';
+import { toClock, toUiMentionSeries, toUiStock, toUiSummary } from '../api/adapters';
 import { useApi } from '../hooks/useApi';
 import { toArticleParams, useArticleDetail, usePagedArticles } from '../hooks/useArticles';
 import '../styles/dashboard.css';
@@ -161,10 +159,14 @@ function SentimentBadge({ sentiment }) {
   return <span className="trend-badge trend-neutral">중립</span>;
 }
 
-function SentimentBar({ ratio }) {
-  const pos = Number(ratio?.positive ?? 60);
-  const neu = Number(ratio?.neutral ?? 25);
-  const neg = Number(ratio?.negative ?? 15);
+/** 감성 비율 막대. count(센 글 수)가 0이면 막대 대신 안내 (값이 없으면 지어내지 않음) */
+function SentimentBar({ ratio, count }) {
+  if (!ratio || count === 0) {
+    return <div className="empty-text">오늘 이 종목이 나온 글이 없어 감성 비율이 없습니다.</div>;
+  }
+  const pos = Number(ratio.positive);
+  const neu = Number(ratio.neutral);
+  const neg = Number(ratio.negative);
   return (
     <div className="sentiment">
       <div className="sentiment-bar" role="img" aria-label={`긍정 ${pos}%, 중립 ${neu}%, 부정 ${neg}%`}>
@@ -938,8 +940,6 @@ const allStocks = useMemo(
 // }, [selectedStockCode, watchlistCodes]);
 
   const allArticles = useMemo(() => normalizeArticles(ARTICLES_DATA), []);
-  const initialSummaries = useMemo(() => normalizeSummaries(STOCK_SUMMARIES_DATA), []);
-  const initialTrends = useMemo(() => normalizeMentionTrends(MENTION_TRENDS_DATA), []);
 
   // 1계층: 왼쪽 사이드바 장소 상태 ('home' | 'stock' | 'watchlist') & 접기/펴기 상태
   const [activeNav, setActiveNav] = useState('home');
@@ -1046,7 +1046,6 @@ useEffect(() => {
     { refreshMs: 60_000 }
   );
 
-  const [summariesByStock, setSummariesByStock] = useState(initialSummaries);
   const [regenerating, setRegenerating] = useState(false);
 
   // 회원가입·로그인 상태 (F-16, N-03: localStorage 연동)
@@ -1240,43 +1239,39 @@ useEffect(() => {
     return allStocks.filter((s) => matchStockByQuery(s, q)).slice(0, 8);
   }, [watchAddQuery, allStocks]);
 
-  // 현재 선택 종목의 요약 데이터 (F-06)
-  // 백엔드에서 고른 종목은 아직 요약이 없으므로 가짜 기본 요약(default) 대신 "준비 중"
-  const notReadySummary = {
-    updatedAt: '-',
-    headline: `${selectedStock.name} AI 요약 준비 중`,
-    summary: '이 종목은 아직 AI 요약이 연결되지 않았습니다. (종목 요약 API 연결 후 표시)',
-    newsSummary: '',
-    snsSummary: '',
-    sentimentRatio: selectedStock.sentimentRatio,
-  };
-  const currentSummary =
-    summariesByStock[selectedStockCode] ||
-    (selectedStock.analysisReady === false ? notReadySummary : null) ||
-    summariesByStock.default || {
-      updatedAt: toClock(status.data?.summaryGeneratedAt) || '-',
-      headline: `${selectedStock.name} 당일 매칭 뉴스·SNS 종합 요약`,
-      summary: selectedStock.summary,
-      newsSummary: selectedStock.newsSummary,
-      snsSummary: selectedStock.snsSummary,
-      sentimentRatio: selectedStock.sentimentRatio,
-    };
+  // [화면 B] 종목 화면 데이터: 종목 화면을 볼 때만 부름
+  const onStockDetail = activeNav === 'stock' && stockViewMode === 'detail';
 
-  // 현재 선택 종목의 언급량 추이 데이터 (F-13)
-  const currentTrend =
-    initialTrends[selectedStockCode] ||
-    (selectedStock.analysisReady === false ? { today: [], '7d': [], '30d': [] } : initialTrends.default);
-  const trendSeries = currentTrend[trendPeriod] || currentTrend.today;
-
-  // 오늘 뉴스·SNS 매칭 건수
-  const todayCounts = useMemo(
-    () =>
-      (currentTrend.today || []).reduce(
-        (acc, pt) => ({ news: acc.news + (pt.news || 0), sns: acc.sns + (pt.sns || 0) }),
-        { news: 0, sns: 0 }
-      ),
-    [currentTrend]
+  // 오늘의 종합 요약·감성 비율 (F-08·F-12). 감성은 뉴스 기준 (데모 화면과 같음)
+  const stockSummary = useApi(
+    (signal) => stockApi.summary(selectedStockCode, { source: 'NEWS' }, { signal }),
+    [selectedStockCode],
+    { enabled: onStockDetail }
   );
+  // 종목을 바꾼 직후에는 이전 종목 요약이 남아 있으므로 종목코드가 같을 때만 씀
+  const currentSummary =
+    stockSummary.data?.stockCode === selectedStockCode ? toUiSummary(stockSummary.data) : null;
+
+  // 언급량 추이 (F-14). 오늘 수(뉴스·SNS)는 기간을 바꿔도 머리말에 계속 쓰므로 오늘 것은 따로 받음
+  const mentionsToday = useApi(
+    (signal) => stockApi.mentions(selectedStockCode, 'today', { signal }),
+    [selectedStockCode],
+    { enabled: onStockDetail }
+  );
+  const mentionsPeriod = useApi(
+    (signal) => stockApi.mentions(selectedStockCode, trendPeriod, { signal }),
+    [selectedStockCode, trendPeriod],
+    { enabled: onStockDetail && trendPeriod !== 'today' }
+  );
+  const mentionData = trendPeriod === 'today' ? mentionsToday.data : mentionsPeriod.data;
+  const trendSeries =
+    mentionData?.stockCode === selectedStockCode ? toUiMentionSeries(mentionData) : [];
+  const todayCounts = (
+    mentionsToday.data?.stockCode === selectedStockCode ? mentionsToday.data.items : []
+  ).reduce((acc, pt) => ({ news: acc.news + pt.newsCount, sns: acc.sns + pt.snsCount }), {
+    news: 0,
+    sns: 0,
+  });
 
   // [화면 A] 홈 뉴스·SNS 목록: 조건은 서버가 걸러 한 쪽(20개)씩 줌 (GET /api/articles)
   const homeFeed = usePagedArticles(
@@ -1290,36 +1285,25 @@ useEffect(() => {
   );
   const homeFeedArticles = homeFeed.items;
 
+  // 종목 화면 뉴스·SNS 탭 목록: 홈과 같은 도구에 종목코드만 더함. 감성·관련도는 그 종목 기준
+  const stockFeed = usePagedArticles(
+    toArticleParams({
+      channel: stockTab === 'sns' ? 'SNS' : 'NEWS',
+      stockCode: selectedStockCode,
+      sentiment: sentimentFilter,
+      period: articlePeriod,
+      minRelevance,
+      sort: articleSort,
+    }),
+    { enabled: onStockDetail && (stockTab === 'news' || stockTab === 'sns') }
+  );
+  const stockFeedArticles = stockFeed.items;
+
   // 고른 글의 상세 (연결 이유·근거 문장·가까운 SNS는 상세 API에만 있음). 받는 동안은 목록의 값으로 먼저 보여 줌
-  const articleDetail = useArticleDetail(selectedArticleId);
-
-  // [화면 B] 개별 종목 상세(news / sns 탭) 전용 소식 필터링
-  const stockFeedArticles = useMemo(() => {
-    const targetSource = stockTab === 'sns' ? 'SNS' : 'NEWS';
-    const relevanceOf = (art) =>
-      art.relatedStocks.find((r) => r.code === selectedStockCode)?.relevance ??
-      Math.max(...art.relatedStocks.map((r) => r.relevance), 0);
-
-    return allArticles
-      .filter((art) => art.sourceType === targetSource)
-      .filter((art) => art.relatedStocks.some((r) => r.code === selectedStockCode))
-      .filter((art) => sentimentFilter === 'ALL' || art.sentiment === sentimentFilter)
-      .filter((art) => articlePeriod === 'ALL' || art.daysAgo <= Number(articlePeriod))
-      .filter((art) => relevanceOf(art) >= minRelevance)
-      .sort((a, b) =>
-        articleSort === 'relevance'
-          ? relevanceOf(b) - relevanceOf(a)
-          : b.publishedAt.localeCompare(a.publishedAt)
-      );
-  }, [
-    allArticles,
-    stockTab,
-    selectedStockCode,
-    sentimentFilter,
-    articlePeriod,
-    minRelevance,
-    articleSort,
-  ]);
+  // 종목 뉴스 탭은 고른 글이 없으면 첫 글을 펼쳐 둠
+  const detailId =
+    selectedArticleId || (onStockDetail && stockTab === 'news' ? stockFeedArticles[0]?.id : null);
+  const articleDetail = useArticleDetail(detailId);
 
   // [화면 C] 관심 종목 뉴스·SNS 모아보기 필터링
   const watchlistFeedArticles = useMemo(() => {
@@ -1396,23 +1380,36 @@ useEffect(() => {
     triggerToast(`🔄 최신 뉴스·순위를 다시 불러왔습니다 (${nowTimeShort()})`);
   };
 
-  // 당일 AI 종합 요약 다시 생성
+  // 오늘 종합 요약 다시 생성 (F-08, 로그인 필요). 백엔드가 AI 서버를 대신 부름, 최대 30초
   const handleRegenerateSummary = () => {
     if (regenerating) return;
+    if (!tokenStore.get()) {
+      requireLogin('🔒 요약 다시 생성은 로그인이 필요합니다.');
+      return;
+    }
     setRegenerating(true);
-    setTimeout(() => {
-      const nowStr = nowTimeShort();
-      setSummariesByStock((prev) => ({
-        ...prev,
-        [selectedStockCode]: {
-          ...(prev[selectedStockCode] || currentSummary),
-          updatedAt: nowStr,
-          generatedAt: nowStr,
-        },
-      }));
-      setRegenerating(false);
-      triggerToast(`🤖 AI 요약 및 감성 분석이 최신 상태로 재생성되었습니다 (${nowStr})`);
-    }, 500);
+    stockApi
+      .regenerate(selectedStockCode)
+      .then((res) => {
+        stockSummary.reload();
+        triggerToast(
+          res.regenerated
+            ? '🤖 오늘 기사로 요약을 새로 만들었습니다.'
+            : '최근 10분 안에 만든 요약이거나 오늘 기사가 없어 저장된 요약 그대로입니다.'
+        );
+      })
+      .catch((err) => {
+        if (err.status === 401) {
+          requireLogin('🔒 로그인이 만료되었습니다. 다시 로그인해 주세요.');
+        } else {
+          triggerToast(
+            err.code === 'AI_BUSY'
+              ? '요청이 많아요. 잠시 후 다시 눌러 주세요.'
+              : 'AI 서버가 응답하지 않아요. 지금 요약은 그대로입니다.'
+          );
+        }
+      })
+      .finally(() => setRegenerating(false));
   };
 
   // 관심종목 추가·삭제·토글
@@ -2357,7 +2354,7 @@ useEffect(() => {
     const hasPrice = selectedStock.price !== null && selectedStock.price !== undefined;
     const selTone = rateTone(selectedStock.changeRate);
     const activeStockArticle =
-      stockFeedArticles.find((a) => a.id === selectedArticleId) || stockFeedArticles[0] || null;
+      articleDetail.article || stockFeedArticles.find((a) => a.id === detailId) || null;
 
     const totalNews = trendSeries.reduce((sum, pt) => sum + (pt.news || 0), 0);
     const totalSns = trendSeries.reduce((sum, pt) => sum + (pt.sns || 0), 0);
@@ -2414,7 +2411,7 @@ useEffect(() => {
                   </>
                 ) : (
                   <span className="price-large">
-                    오늘 매칭 {selectedStock.todayMatchedCount}건
+                    오늘 매칭 {todayCounts.news + todayCounts.sns}건
                   </span>
                 )}
               </div>
@@ -2423,7 +2420,7 @@ useEffect(() => {
                 <span>·</span>
                 <span>SNS {todayCounts.sns}건</span>
                 <span>·</span>
-                <span>최근 매칭 {selectedStock.lastMatchedAt}</span>
+                <span>AI 요약 {currentSummary?.updatedAt || '-'}</span>
                 <button
                   type="button"
                   className={`more-link2 ${isInWatchlist(selectedStock.code) ? 'active' : ''}`}
@@ -2468,22 +2465,32 @@ useEffect(() => {
                   🤖 {selectedStock.name} 오늘의 AI 종합 요약 & 감성 비율 (F-06)
                 </div>
                 <div className="header-btn-group">
-                  <span className="stock-meta num">생성 시각 {currentSummary.updatedAt}</span>
+                  <span className="stock-meta num">생성 시각 {currentSummary?.updatedAt || '-'}</span>
                   <button
                     type="button"
                     className="more-link2"
                     onClick={handleRegenerateSummary}
                     disabled={regenerating}
+                    title="오늘 기사로 요약을 새로 만듭니다 (로그인 필요, 같은 종목은 10분에 한 번)"
                   >
-                    {regenerating ? '⏳ 재생성 중...' : '🔄 요약 재생성'}
+                    {regenerating ? '⏳ 만드는 중… (최대 30초)' : '🔄 요약 다시 생성'}
                   </button>
                 </div>
               </div>
 
+              {/* 감성 비율 (요약 문장은 아래 뉴스·SNS 비교 칸에. 같은 문장을 두 번 보여 주지 않음) */}
               <div className="ai-card">
-                <p className="ai-card-headline">{currentSummary.headline}</p>
-                <p className="ai-card-body">{currentSummary.summary}</p>
-                <SentimentBar ratio={currentSummary.sentimentRatio} />
+                <p className="ai-card-headline">
+                  오늘 뉴스 감성 비율
+                  {currentSummary?.sentimentCount > 0 && (
+                    <span className="stock-meta num"> · 뉴스 {currentSummary.sentimentCount}건 기준</span>
+                  )}
+                </p>
+                {currentSummary ? (
+                  <SentimentBar ratio={currentSummary.sentimentRatio} count={currentSummary.sentimentCount} />
+                ) : (
+                  <div className="empty-text">{stockSummary.error ? '요약을 불러오지 못했습니다.' : '불러오는 중…'}</div>
+                )}
                 <div className="llm-notice">
                   🤖 안내(N-05): AI(LLM)가 생성한 요약 및 감성 분석 결과는 원문과 차이가 있거나 오류가 있을 수 있습니다.
                 </div>
@@ -2502,7 +2509,7 @@ useEffect(() => {
                       뉴스 모아보기 ({todayCounts.news}건) &gt;
                     </button>
                   </div>
-                  <p>{currentSummary.newsSummary || '당일 뉴스 요약 준비 중입니다.'}</p>
+                  <p>{currentSummary?.newsSummary || '오늘 뉴스 요약 준비 중입니다. AI가 1시간마다 만듭니다.'}</p>
                 </div>
 
                 <div className="summary-compare-box">
@@ -2518,7 +2525,7 @@ useEffect(() => {
                       SNS 모아보기 ({todayCounts.sns}건) &gt;
                     </button>
                   </div>
-                  <p>{currentSummary.snsSummary || '당일 SNS 반응 요약 준비 중입니다.'}</p>
+                  <p>{currentSummary?.snsSummary || '오늘 SNS 반응 요약이 없습니다.'}</p>
                 </div>
               </div>
             </div>
@@ -2616,7 +2623,7 @@ useEffect(() => {
                     {stockTab === 'news'
                       ? `📰 ${selectedStock.name} 매칭 뉴스 모아보기`
                       : `💬 ${selectedStock.name} 매칭 SNS 모아보기`}{' '}
-                    <span className="count-badge num">{stockFeedArticles.length}</span>
+                    <span className="count-badge num">{stockFeed.totalCount.toLocaleString()}</span>
                   </div>
                 </div>
                 <ArticleList
@@ -2624,19 +2631,31 @@ useEffect(() => {
                   selectedId={activeStockArticle?.id}
                   onSelect={setSelectedArticleId}
                   onSelectStock={(code) => navigateToStockDetail(code, stockTab)}
+                  feed={stockFeed}
                 />
               </div>
 
               <aside className="panel sticky-detail-panel" aria-label="종목 기사 상세 패널">
-                <ArticleDetail
-                  {...detailSharedProps}
-                  article={activeStockArticle}
-                  onSelectStock={(code) => navigateToStockDetail(code, 'summary')}
-                  onSelectArticle={(artId) => {
-                    setStockTab('sns');
-                    setSelectedArticleId(artId);
-                  }}
-                />
+                {stockTab === 'sns' ? (
+                  // SNS 글에는 우리 분석을 붙이지 않음 (약관 특약 2.1) → 글 상세 대신 오늘 SNS 반응 요약
+                  <div className="ai-card">
+                    <div className="ai-card-header">
+                      <span className="ai-card-badge">💬 오늘 SNS 반응 요약 (⚠️ 참고용)</span>
+                    </div>
+                    <p className="ai-card-body">
+                      {currentSummary?.snsSummary || '오늘 SNS 반응 요약이 없습니다.'}
+                    </p>
+                    <div className="llm-notice">
+                      목록의 글을 누르면 네이버 원문이 새 창으로 열립니다. 블로그·카페 글은 사실 여부가 확인되지 않은 정보입니다.
+                    </div>
+                  </div>
+                ) : (
+                  <ArticleDetail
+                    {...detailSharedProps}
+                    article={activeStockArticle}
+                    onSelectStock={(code) => navigateToStockDetail(code, 'summary')}
+                  />
+                )}
               </aside>
             </div>
           </>
@@ -2736,9 +2755,12 @@ useEffect(() => {
                   <div className="card-title">종목 이슈 요약 & 감성 비율</div>
                 </div>
                 <div className="ai-card">
-                  <p className="ai-card-headline">{currentSummary.headline}</p>
-                  <p className="ai-card-body">{currentSummary.summary}</p>
-                  <SentimentBar ratio={currentSummary.sentimentRatio} />
+                  <p className="ai-card-body">
+                    {currentSummary?.newsSummary || '오늘 뉴스 요약 준비 중입니다. AI가 1시간마다 만듭니다.'}
+                  </p>
+                  {currentSummary && (
+                    <SentimentBar ratio={currentSummary.sentimentRatio} count={currentSummary.sentimentCount} />
+                  )}
                 </div>
               </div>
             </div>

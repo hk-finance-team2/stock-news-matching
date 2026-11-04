@@ -17,6 +17,8 @@ export const stockApi = {
   /** 오늘의 종합 요약·감성 비율 (요약이 아직 없으면 newsSummary·snsSummary 가 null) */
   summary: (stockCode, { source } = {}, options) =>
     apiGet(`/api/stocks/${stockCode}/summary`, { source }, options),
+  /** 종합 요약 다시 생성 (로그인 필요). AI 서버가 같은 종목은 10분에 1번만 새로 만듦 → { regenerated, summary } */
+  regenerate: (stockCode) => apiPost(`/api/stocks/${stockCode}/summary`),
   /** 언급량 추이. period: today | 7d | 30d → { unit, items: [{ time, newsCount, snsCount, totalCount }] } */
   mentions: (stockCode, period = 'today', options) =>
     apiGet(`/api/stocks/${stockCode}/mentions`, { period }, options),

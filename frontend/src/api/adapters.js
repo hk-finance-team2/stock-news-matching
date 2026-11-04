@@ -121,6 +121,8 @@ export function toUiSummary(res) {
     snsSummary: res?.snsSummary || '',
     sentimentRatio: ratio,
     sentiment: ratio,
+    // 감성 비율을 센 글 수. 0이면 비율이 없으므로 화면에서 "오늘 글 없음"
+    sentimentCount: s?.articleCount ?? 0,
   };
 }
 
