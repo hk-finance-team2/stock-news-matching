@@ -1319,6 +1319,18 @@ useEffect(() => {
   const mentionData = trendPeriod === 'today' ? mentionsToday.data : mentionsPeriod.data;
   const trendSeries =
     mentionData?.stockCode === selectedStockCode ? toUiMentionSeries(mentionData) : [];
+  // 받는 중·실패를 빈 그래프와 구분해서 보여 줌 (예전엔 셋 다 빈 그래프. 호현님 #65에서 가져온 방식)
+  // 이미 그린 값이 있으면 다시 받는 동안에도 그대로 둠
+  const mentionState = trendPeriod === 'today' ? mentionsToday : mentionsPeriod;
+  const renderMentionChart = (plotHeight) => {
+    if (trendSeries.length === 0 && mentionState.loading) {
+      return <div className="empty-text">언급량 데이터를 불러오는 중…</div>;
+    }
+    if (trendSeries.length === 0 && mentionState.error) {
+      return <div className="empty-text">언급량 데이터를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.</div>;
+    }
+    return <MentionTrendChart series={trendSeries} plotHeight={plotHeight} />;
+  };
   const todayCounts = (
     mentionsToday.data?.stockCode === selectedStockCode ? mentionsToday.data.items : []
   ).reduce((acc, pt) => ({ news: acc.news + pt.newsCount, sns: acc.sns + pt.snsCount }), {
@@ -1486,7 +1498,9 @@ useEffect(() => {
   };
 
   // 관심종목 추가·삭제·토글 (서버에 저장, 끝나면 목록을 다시 받음)
-  const handleAddWatchlist = (code, candidate = null) => {
+  // 추가는 서버 답을 기다려 성공 여부(true/false)를 돌려줌 → 실패하면 입력칸을 비우지 않음
+  // (예전엔 보내자마자 true라 실패해도 입력칸이 비워졌음. 호현님 #65에서 가져온 방식)
+  const handleAddWatchlist = async (code, candidate = null) => {
     if (!user) {
       requireLogin('🔒 관심종목 추가는 로그인이 필요합니다.');
       return false;
@@ -1496,18 +1510,23 @@ useEffect(() => {
       triggerToast(`이미 관심종목에 등록된 종목입니다: ${name}`);
       return false;
     }
-    watchlistApi
-      .add(code)
-      .then(() => {
-        watchlist.reload();
-        triggerToast(`★ ${name}(${code}) 종목을 관심종목에 추가했습니다.`);
-      })
-      .catch((err) => {
-        if (err.status === 401) handleAuthExpired();
-        else if (err.code === 'ALREADY_IN_WATCHLIST') watchlist.reload();
-        else triggerToast(`관심종목에 추가하지 못했습니다 (${err.message})`);
-      });
-    return true;
+    try {
+      await watchlistApi.add(code);
+      watchlist.reload();
+      triggerToast(`★ ${name}(${code}) 종목을 관심종목에 추가했습니다.`);
+      return true;
+    } catch (err) {
+      if (err.status === 401) {
+        handleAuthExpired();
+        return false;
+      }
+      if (err.code === 'ALREADY_IN_WATCHLIST') {
+        watchlist.reload(); // 다른 창에서 이미 넣음 → 목록만 맞춤 (결과는 "들어 있음")
+        return true;
+      }
+      triggerToast(`관심종목에 추가하지 못했습니다 (${err.message})`);
+      return false;
+    }
   };
 
   const handleRemoveWatchlist = (code) => {
@@ -1531,8 +1550,10 @@ useEffect(() => {
   const handleToggleWatchlist = (code, candidate = null) => {
     if (isInWatchlist(code)) {
       handleRemoveWatchlist(code);
-    } else if (handleAddWatchlist(code, candidate) && candidate) {
-      ensureStock(candidate);
+    } else {
+      handleAddWatchlist(code, candidate).then((added) => {
+        if (added && candidate) ensureStock(candidate);
+      });
     }
   };
 
@@ -1551,7 +1572,9 @@ useEffect(() => {
       );
       return;
     }
-    if (handleAddWatchlist(target.code)) setWatchAddQuery('');
+    handleAddWatchlist(target.code).then((added) => {
+      if (added) setWatchAddQuery('');
+    });
   };
 
   // 통합 검색 자동완성 선택 핸들러
@@ -2650,7 +2673,7 @@ useEffect(() => {
                     </button>
                   </div>
                 </div>
-                <MentionTrendChart series={trendSeries} plotHeight={190} />
+                {renderMentionChart(190)}
               </div>
 
               {/* 우측: 최근 실시간 토론 미리보기 */}
@@ -2777,7 +2800,7 @@ useEffect(() => {
                   ))}
                 </div>
               </div>
-              <MentionTrendChart series={trendSeries} plotHeight={250} />
+              {renderMentionChart(250)}
             </div>
 
             <div className="dashboard-grid">
