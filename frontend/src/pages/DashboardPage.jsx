@@ -1577,6 +1577,52 @@ useEffect(() => {
   // 언급량 추이 기간 (F-13)
   const [trendPeriod, setTrendPeriod] = useState('today'); // today | 7d | 30d
 
+  // 백엔드 뉴스·SNS 언급량 데이터
+const [mentionSeries, setMentionSeries] = useState([]);
+const [mentionLoading, setMentionLoading] = useState(false);
+const [mentionError, setMentionError] = useState(false);
+
+useEffect(() => {
+  if (!selectedStockCode) return undefined;
+
+  const controller = new AbortController();
+
+  setMentionSeries([]);
+  setMentionLoading(true);
+  setMentionError(false);
+
+  stockApi.mentions(selectedStockCode, trendPeriod, {
+    signal: controller.signal,
+  })
+    .then((res) => {
+      if (controller.signal.aborted) return;
+
+      const series = (res.items || []).map((item) => ({
+        label:
+          trendPeriod === 'today'
+            ? item.time.slice(11, 16)
+            : item.time.slice(5, 10),
+        news: Number(item.newsCount || 0),
+        sns: Number(item.snsCount || 0),
+      }));
+
+      setMentionSeries(series);
+    })
+    .catch((err) => {
+      if (controller.signal.aborted) return;
+
+      console.error('언급량 API 조회 실패:', err);
+      setMentionError(true);
+    })
+    .finally(() => {
+      if (!controller.signal.aborted) {
+        setMentionLoading(false);
+      }
+    });
+
+  return () => controller.abort();
+}, [selectedStockCode, trendPeriod]);
+
   // 뉴스·SNS 필터 및 정렬
   const [channelFilter, setChannelFilter] = useState('ALL'); // ALL | NEWS | SNS
   const [sentimentFilter, setSentimentFilter] = useState('ALL'); // ALL | POSITIVE | NEGATIVE | NEUTRAL
@@ -1857,7 +1903,8 @@ useEffect(() => {
   const currentTrend =
     initialTrends[selectedStockCode] ||
     (selectedStock.analysisReady === false ? { today: [], '7d': [], '30d': [] } : initialTrends.default);
-  const trendSeries = currentTrend[trendPeriod] || currentTrend.today;
+  // const trendSeries = currentTrend[trendPeriod] || currentTrend.today;
+  const trendSeries = mentionSeries;
 
   // 오늘 뉴스·SNS 매칭 건수
   const todayCounts = useMemo(
