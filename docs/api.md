@@ -183,7 +183,7 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 | 🔒 | DELETE | `/api/watchlist/{stockCode}` | 삭제 |
 
 - `todayArticleCount`: 오늘(한국 시간 0시~) 이 종목이 나온 글 수, `lastMatchedAt`: 이 종목이 나온 가장 최근 글 시각 (오늘이 아니어도, 한 번도 없으면 `null`)
-- `/api/watchlist/articles`: 조건(`source`, `sort`, `minRelevance`, `page`, `size`)과 응답 모양은 `GET /api/articles`와 같음 (`stockCode`만 없음). 관심 종목 두 개에 걸친 글도 **한 번만** 나옴. 관심 종목이 없으면 `items: []`
+- `/api/watchlist/articles`: 조건(`source`, `sort`, `minRelevance`, `sentiment`, `period`, `page`, `size`)과 응답 모양은 `GET /api/articles`와 같음 (`stockCode`만 없음). 관심 종목 두 개에 걸친 글도 **한 번만** 나옴. 관심 종목이 없으면 `items: []`
 
 ### 종목 토론 게시판
 

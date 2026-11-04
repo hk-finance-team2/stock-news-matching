@@ -103,4 +103,19 @@ class WatchlistApiTest extends ApiTestSupport {
                 .andExpect(jsonPath("$.totalCount").value(1))
                 .andExpect(jsonPath("$.items[*].title", contains("기아·네이버 함께")));
     }
+
+    @Test
+    void 관심_종목_글도_기간과_감성으로_거른다() throws Exception {
+        String token = tokenOf("zzwatch07");
+        long good = insertArticle("기아 오늘 호재", "NEWS", "DONE", today(1));
+        link(good, KIA, "POSITIVE", new java.math.BigDecimal("0.90"), true);
+        long old = insertArticle("기아 어제 글", "NEWS", "DONE", yesterday());
+        link(old, KIA, "POSITIVE", new java.math.BigDecimal("0.90"), true);
+        add(token, KIA);
+
+        mvc.perform(get("/api/watchlist/articles").param("period", "today").header("Authorization", bearer(token)))
+                .andExpect(jsonPath("$.items[*].title", contains("기아 오늘 호재")));
+        mvc.perform(get("/api/watchlist/articles").param("sentiment", "NEGATIVE").header("Authorization", bearer(token)))
+                .andExpect(jsonPath("$.totalCount").value(0));
+    }
 }
