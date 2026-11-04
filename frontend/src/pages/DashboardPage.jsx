@@ -1267,6 +1267,8 @@ useEffect(() => {
       ? {
           matchedStocks: searchResult.res.stocks.items.map((it) => ({
             ...(stockByCode(it.stockCode) || toUiStock(it)),
+            // 이름·코드·별칭이 아니라 테마로만 찾은 종목이면 그 테마 (QA #11, "반도체" → 삼성전자)
+            matchedTheme: it.matchedTheme ?? null,
             price: liveQuotes[it.stockCode]?.price ?? null,
             changeRate: liveQuotes[it.stockCode]?.changeRate ?? null,
           })),
@@ -1772,6 +1774,11 @@ useEffect(() => {
                   <span className="stock-code num">
                     ({s.code} · {s.market})
                   </span>
+                  {s.matchedTheme && (
+                    <span className="theme-match-tag" title="종목 이름이 아니라 테마로 찾은 종목">
+                      테마: {s.matchedTheme}
+                    </span>
+                  )}
                 </span>
                 <span className="num">
                   {s.price !== null ? (

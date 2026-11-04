@@ -2255,3 +2255,14 @@ textarea:focus-visible,
         margin-left: 0;
     }
 }
+
+/* 통합 검색 자동완성: 테마로 찾은 종목 표시 (QA #11) */
+.theme-match-tag {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--text-sub, #64748b);
+  background: var(--bg-subtle, #f1f5f9);
+  white-space: nowrap;
+}
