@@ -1,7 +1,6 @@
 // src/pages/DashboardPage.jsx
 import { useState, useMemo, useEffect, useRef } from 'react';
 import {
-  INITIAL_WATCHLIST_CODES,
   STOCKS_DATA,
   ARTICLES_DATA,
   STOCK_SUMMARIES_DATA,
@@ -11,8 +10,8 @@ import {
   normalizeArticles,
   normalizeComments,
 } from '../mocks/mockData';
-import { articleApi, quoteApi, statusApi, stockApi, tokenStore } from '../api';
-import { toClock, toUiMentionSeries, toUiStock, toUiSummary } from '../api/adapters';
+import { articleApi, authApi, quoteApi, statusApi, stockApi, tokenStore, watchlistApi } from '../api';
+import { toClock, toDisplayTime, toUiMentionSeries, toUiStock, toUiSummary } from '../api/adapters';
 import { useApi } from '../hooks/useApi';
 import { toArticleParams, useArticleDetail, usePagedArticles } from '../hooks/useArticles';
 import '../styles/dashboard.css';
@@ -75,11 +74,10 @@ const COMMENT_TAGS = {
 const COMMENT_TAG_PATTERN = /^\[(뉴스|SNS|언급량)\]\s*/;
 const COMMENT_MAX_LENGTH = 1000;
 
-const DEFAULT_USERS_DB = {
-  tester01: 'password123',
-  seojun: '1234',
-  admin: '1234',
-};
+// 회원가입 규칙 (서버와 같게: docs/api.md 2절)
+const LOGIN_ID_PATTERN = /^[a-z0-9]{4,20}$/;
+const PASSWORD_MIN = 8;
+const PASSWORD_MAX = 64;
 
 const formatRate = (rate) => {
   if (rate === null || rate === undefined || Number.isNaN(Number(rate))) return '0.00%';
@@ -961,10 +959,27 @@ const allStocks = useMemo(
   const [stockListMarket, setStockListMarket] = useState('ALL'); // 'ALL' | 'KOSPI' | 'KOSDAQ'
   const [stockListSort, setStockListSort] = useState('issue'); // 'issue' | 'up' | 'down' | 'name'
 
-  const [watchlistCodes, setWatchlistCodes] = useState(INITIAL_WATCHLIST_CODES);
-  const [selectedStockCode, setSelectedStockCode] = useState(
-    INITIAL_WATCHLIST_CODES[0] || allStocks[0]?.code || '005930'
-  );
+  // 로그인한 회원 { userId, username }. 처음에 저장된 토큰이 있으면 /api/auth/me 로 확인 (F-18)
+  const [user, setUser] = useState(null);
+  useEffect(() => {
+    if (!tokenStore.get()) return undefined;
+    const controller = new AbortController();
+    authApi
+      .me({ signal: controller.signal })
+      .then((me) => setUser({ userId: me.userId, username: me.loginId }))
+      .catch(() => {}); // 만료된 토큰이면 client.js 가 지움 → 로그아웃 상태 그대로
+    return () => controller.abort();
+  }, []);
+
+  // 내 관심 종목 (F-19, 최근 추가 순). 로그인 전에는 빈 목록
+  const watchlist = useApi((signal) => watchlistApi.list({ signal }), [user?.userId], {
+    enabled: Boolean(user),
+  });
+  const watchlistItems = user ? watchlist.data?.items ?? [] : [];
+  const watchlistCodes = watchlistItems.map((it) => it.stockCode);
+  const watchlistKey = watchlistCodes.join(',');
+
+  const [selectedStockCode, setSelectedStockCode] = useState('005930');
   // 오늘의 이슈 종목 순위 (뉴스 기준, 1분마다 다시)
   const issues = useApi((signal) => stockApi.issues({ limit: ISSUE_LIMIT }, { signal }), [], {
     refreshMs: 60_000,
@@ -975,7 +990,7 @@ const allStocks = useMemo(
   // 현재 선택한 종목·관심종목·이슈 종목의 실제 시세 조회 (시세가 꺼진 서버면 503 → 그냥 비워 둠)
 useEffect(() => {
   const codes = [
-    ...new Set([selectedStockCode, ...watchlistCodes, ...issueCodesKey.split(',')].filter(Boolean)),
+    ...new Set([selectedStockCode, ...watchlistKey.split(','), ...issueCodesKey.split(',')].filter(Boolean)),
   ];
   let cancelled = false;
 
@@ -998,7 +1013,7 @@ useEffect(() => {
   return () => {
     cancelled = true;
   };
-}, [selectedStockCode, watchlistCodes, issueCodesKey]);
+}, [selectedStockCode, watchlistKey, issueCodesKey]);
 
   const [selectedArticleId, setSelectedArticleId] = useState(null);
 
@@ -1048,24 +1063,9 @@ useEffect(() => {
 
   const [regenerating, setRegenerating] = useState(false);
 
-  // 회원가입·로그인 상태 (F-16, N-03: localStorage 연동)
-  const [usersDb, setUsersDb] = useState(() => {
-    try {
-      const saved = localStorage.getItem('snm_users_db');
-      return saved ? { ...DEFAULT_USERS_DB, ...JSON.parse(saved) } : DEFAULT_USERS_DB;
-    } catch {
-      return DEFAULT_USERS_DB;
-    }
-  });
-  const [user, setUser] = useState(() => {
-    try {
-      const savedUser = localStorage.getItem('snm_current_user');
-      return savedUser ? { username: savedUser } : null;
-    } catch {
-      return null;
-    }
-  });
+  // 로그인·회원가입 창 (회원 정보는 서버에. 브라우저에는 로그인 토큰만 저장)
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authSubmitting, setAuthSubmitting] = useState(false);
   const [authMode, setAuthMode] = useState('login'); // 'login' | 'signup'
   const [authForm, setAuthForm] = useState({
     username: '',
@@ -1144,10 +1144,15 @@ useEffect(() => {
     toUiStock({ stockCode: selectedStockCode, stockName: '불러오는 중…', market: '', sector: '' });
   const isInWatchlist = (code) => watchlistCodes.includes(code);
 
-  const watchlistStocks = useMemo(
-    () => watchlistCodes.map(stockByCode).filter(Boolean),
-    [watchlistCodes, allStocks]
-  );
+  // 관심 종목 행: 서버 목록(오늘 글 수·최근 매칭) + 받아 둔 시세. 화면 종목 목록에 없어도 서버 값으로 그림
+  const watchlistStocks = watchlistItems.map((it) => ({
+    ...(stockByCode(it.stockCode) || toUiStock(it)),
+    todayMatchedCount: it.todayArticleCount,
+    todayArticleCount: it.todayArticleCount,
+    lastMatchedAt: toDisplayTime(it.lastMatchedAt) || '-',
+    price: liveQuotes[it.stockCode]?.price ?? null,
+    changeRate: liveQuotes[it.stockCode]?.changeRate ?? null,
+  }));
 
   // 종목명·종목 행·#종목칩 클릭 시 즉시 종목 상세 대시보드(activeNav='stock', stockViewMode='detail')로 전환
   const navigateToStockDetail = (code, initialTab = 'summary', showFeedback = true) => {
@@ -1233,11 +1238,16 @@ useEffect(() => {
   }, [searchQuery, searchPeriod, searchSource, allStocks, allArticles, remoteStockResult]);
 
   // 관심종목 추가 검색 후보
-  const watchAddCandidates = useMemo(() => {
-    const q = watchAddQuery.trim().toLowerCase();
-    if (!q) return allStocks.slice(0, 8);
-    return allStocks.filter((s) => matchStockByQuery(s, q)).slice(0, 8);
-  }, [watchAddQuery, allStocks]);
+  // 관심 종목 추가 후보: 전 종목(2,655개)에서 서버 검색 (이름·코드·별칭 "삼전"). 검색어가 없으면 이슈 종목
+  const watchAddQ = watchAddQuery.trim();
+  const watchSearch = useApi(
+    (signal) => stockApi.search(watchAddQ, { size: 8 }, { signal }),
+    [watchAddQ],
+    { enabled: watchAddQ.length > 0 }
+  );
+  const watchAddCandidates = watchAddQ
+    ? (watchSearch.data?.items ?? []).map((it) => stockByCode(it.stockCode) || toUiStock(it))
+    : issueItems.map((it) => stockByCode(it.stockCode) || toUiStock(it));
 
   // [화면 B] 종목 화면 데이터: 종목 화면을 볼 때만 부름
   const onStockDetail = activeNav === 'stock' && stockViewMode === 'detail';
@@ -1274,6 +1284,8 @@ useEffect(() => {
   });
 
   // [화면 A] 홈 뉴스·SNS 목록: 조건은 서버가 걸러 한 쪽(20개)씩 줌 (GET /api/articles)
+  // "관심종목 글만"을 켜면 같은 조건으로 관심 종목 글 API (로그인했을 때만)
+  const homeWatchOnly = onlyWatchlistArticles && Boolean(user);
   const homeFeed = usePagedArticles(
     toArticleParams({
       channel: channelFilter,
@@ -1281,7 +1293,11 @@ useEffect(() => {
       period: articlePeriod,
       minRelevance,
       sort: articleSort,
-    })
+    }),
+    {
+      fetchPage: homeWatchOnly ? watchlistApi.articles : articleApi.list,
+      resetKey: homeWatchOnly ? `watch:${watchlistKey}` : 'all',
+    }
   );
   const homeFeedArticles = homeFeed.items;
 
@@ -1299,42 +1315,36 @@ useEffect(() => {
   );
   const stockFeedArticles = stockFeed.items;
 
-  // 고른 글의 상세 (연결 이유·근거 문장·가까운 SNS는 상세 API에만 있음). 받는 동안은 목록의 값으로 먼저 보여 줌
-  // 종목 뉴스 탭은 고른 글이 없으면 첫 글을 펼쳐 둠
-  const detailId =
-    selectedArticleId || (onStockDetail && stockTab === 'news' ? stockFeedArticles[0]?.id : null);
-  const articleDetail = useArticleDetail(detailId);
 
   // [화면 C] 관심 종목 뉴스·SNS 모아보기 필터링
-  const watchlistFeedArticles = useMemo(() => {
-    const relevanceOf = (art) =>
-      Math.max(
-        ...art.relatedStocks
-          .filter((r) => watchlistCodes.includes(r.code))
-          .map((r) => r.relevance),
-        0
-      );
+  // [화면 C] 관심 종목 글 모아 보기 (GET /api/watchlist/articles, 로그인 필요). 관심 종목을 바꾸면 다시 받음
+  const watchlistFeed = usePagedArticles(
+    toArticleParams({
+      channel: channelFilter,
+      sentiment: sentimentFilter,
+      period: articlePeriod,
+      minRelevance,
+      sort: articleSort,
+    }),
+    {
+      fetchPage: watchlistApi.articles,
+      enabled: Boolean(user) && activeNav === 'watchlist',
+      resetKey: watchlistKey,
+    }
+  );
+  const watchlistFeedArticles = watchlistFeed.items;
 
-    return allArticles
-      .filter((art) => art.relatedStocks.some((r) => watchlistCodes.includes(r.code)))
-      .filter((art) => channelFilter === 'ALL' || art.sourceType === channelFilter)
-      .filter((art) => sentimentFilter === 'ALL' || art.sentiment === sentimentFilter)
-      .filter((art) => articlePeriod === 'ALL' || art.daysAgo <= Number(articlePeriod))
-      .filter((art) => relevanceOf(art) >= minRelevance)
-      .sort((a, b) =>
-        articleSort === 'relevance'
-          ? relevanceOf(b) - relevanceOf(a)
-          : b.publishedAt.localeCompare(a.publishedAt)
-      );
-  }, [
-    allArticles,
-    watchlistCodes,
-    channelFilter,
-    sentimentFilter,
-    articlePeriod,
-    minRelevance,
-    articleSort,
-  ]);
+  // 고른 글의 상세 (연결 이유·근거 문장·가까운 SNS는 상세 API에만 있음). 받는 동안은 목록의 값으로 먼저 보여 줌
+  // 종목 뉴스 탭·관심 종목 화면은 고른 글이 없으면 첫 뉴스를 펼쳐 둠 (SNS는 원문으로만 열어서 제외)
+  const firstNewsId = (items) => items.find((a) => a.sourceType === 'NEWS')?.id ?? null;
+  const detailId =
+    selectedArticleId ||
+    (onStockDetail && stockTab === 'news'
+      ? firstNewsId(stockFeedArticles)
+      : activeNav === 'watchlist'
+        ? firstNewsId(watchlistFeedArticles)
+        : null);
+  const articleDetail = useArticleDetail(detailId);
 
   // 종목 찾기(stockViewMode === 'list') 필터링·정렬 목록
   const filteredStockList = useMemo(() => {
@@ -1412,20 +1422,34 @@ useEffect(() => {
       .finally(() => setRegenerating(false));
   };
 
-  // 관심종목 추가·삭제·토글
+  // 서버가 401(토큰 만료)이면 로그아웃 상태로 돌리고 로그인 창
+  const handleAuthExpired = () => {
+    setUser(null);
+    requireLogin('🔒 로그인이 만료되었습니다. 다시 로그인해 주세요.');
+  };
+
+  // 관심종목 추가·삭제·토글 (서버에 저장, 끝나면 목록을 다시 받음)
   const handleAddWatchlist = (code, candidate = null) => {
     if (!user) {
       requireLogin('🔒 관심종목 추가는 로그인이 필요합니다.');
       return false;
     }
-    const stock = stockByCode(code) || candidate;
-    if (!stock) return false;
+    const name = stockByCode(code)?.name || candidate?.name || code;
     if (watchlistCodes.includes(code)) {
-      triggerToast(`이미 관심종목에 등록된 종목입니다: ${stock.name}`);
+      triggerToast(`이미 관심종목에 등록된 종목입니다: ${name}`);
       return false;
     }
-    setWatchlistCodes((prev) => [code, ...prev]);
-    triggerToast(`★ ${stock.name}(${stock.code}) 종목을 관심종목에 추가했습니다.`);
+    watchlistApi
+      .add(code)
+      .then(() => {
+        watchlist.reload();
+        triggerToast(`★ ${name}(${code}) 종목을 관심종목에 추가했습니다.`);
+      })
+      .catch((err) => {
+        if (err.status === 401) handleAuthExpired();
+        else if (err.code === 'ALREADY_IN_WATCHLIST') watchlist.reload();
+        else triggerToast(`관심종목에 추가하지 못했습니다 (${err.message})`);
+      });
     return true;
   };
 
@@ -1434,9 +1458,17 @@ useEffect(() => {
       requireLogin('🔒 관심종목 삭제는 로그인이 필요합니다.');
       return;
     }
-    const stock = stockByCode(code);
-    setWatchlistCodes((prev) => prev.filter((c) => c !== code));
-    triggerToast(`☆ ${stock?.name ?? code} 종목을 관심종목에서 삭제했습니다.`);
+    const name = watchlistStocks.find((s) => s.code === code)?.name ?? code;
+    watchlistApi
+      .remove(code)
+      .then(() => {
+        watchlist.reload();
+        triggerToast(`☆ ${name} 종목을 관심종목에서 삭제했습니다.`);
+      })
+      .catch((err) => {
+        if (err.status === 401) handleAuthExpired();
+        else triggerToast(`관심종목에서 삭제하지 못했습니다 (${err.message})`);
+      });
   };
 
   const handleToggleWatchlist = (code, candidate = null) => {
@@ -1487,75 +1519,62 @@ useEffect(() => {
     );
   };
 
-  // 회원가입·로그인 제출 핸들러
-  const handleAuthSubmit = (e) => {
+  // 회원가입·로그인 제출 (F-18). 가입 응답에는 토큰이 없어서 가입 직후 같은 값으로 로그인
+  const handleAuthSubmit = async (e) => {
     e.preventDefault();
+    if (authSubmitting) return;
     const id = authForm.username.trim();
-    const pw = authForm.password.trim();
+    const pw = authForm.password; // 비밀번호는 공백도 그대로 (서버와 같게)
 
     if (!id || !pw) {
       setAuthError('아이디와 비밀번호를 모두 입력해 주세요.');
       return;
     }
-
     if (authMode === 'signup') {
-      if (id.length < 3 || id.length > 20) {
-        setAuthError('아이디는 3~20자로 입력해 주세요.');
+      if (!LOGIN_ID_PATTERN.test(id)) {
+        setAuthError('아이디는 영문 소문자·숫자 4~20자로 입력해 주세요.');
         return;
       }
-      if (pw.length < 4) {
-        setAuthError('비밀번호는 4자 이상으로 입력해 주세요.');
+      if (pw.length < PASSWORD_MIN || pw.length > PASSWORD_MAX) {
+        setAuthError(`비밀번호는 ${PASSWORD_MIN}~${PASSWORD_MAX}자로 입력해 주세요.`);
         return;
       }
-      if (pw !== authForm.passwordConfirm.trim()) {
+      if (pw !== authForm.passwordConfirm) {
         setAuthError('비밀번호 확인이 일치하지 않습니다.');
         return;
       }
-      if (usersDb[id]) {
-        setAuthError('이미 사용 중인 아이디입니다. 다른 아이디를 입력해 주세요.');
-        return;
-      }
-      const nextDb = { ...usersDb, [id]: pw };
-      setUsersDb(nextDb);
-      try {
-        localStorage.setItem('snm_users_db', JSON.stringify(nextDb));
-        localStorage.setItem('snm_current_user', id);
-      } catch {
-        // ignore storage error
-      }
-      setUser({ username: id });
+    }
+
+    setAuthSubmitting(true);
+    try {
+      if (authMode === 'signup') await authApi.signup(id, pw);
+      await authApi.login(id, pw);
+      const me = await authApi.me();
+      setUser({ userId: me.userId, username: me.loginId });
       setShowAuthModal(false);
       setAuthForm({ username: '', password: '', passwordConfirm: '' });
       setAuthError('');
-      triggerToast(`🎉 회원가입 완료! 환영합니다, ${id}님!`);
-      return;
-    }
-
-    if (!usersDb[id] || usersDb[id] !== pw) {
-      setAuthError(
-        '아이디 또는 비밀번호가 일치하지 않습니다. (계정이 없다면 회원가입 탭을 이용해 주세요)'
+      triggerToast(
+        authMode === 'signup' ? `🎉 회원가입 완료! 환영합니다, ${me.loginId}님!` : `👋 환영합니다, ${me.loginId}님!`
       );
-      return;
+    } catch (err) {
+      setAuthError(
+        err.code === 'DUPLICATE_LOGIN_ID'
+          ? '이미 사용 중인 아이디입니다. 다른 아이디를 입력해 주세요.'
+          : err.code === 'INVALID_CREDENTIALS'
+            ? '아이디 또는 비밀번호가 일치하지 않습니다. (계정이 없다면 회원가입 탭을 이용해 주세요)'
+            : err.message || '요청을 처리하지 못했습니다.'
+      );
+    } finally {
+      setAuthSubmitting(false);
     }
-    try {
-      localStorage.setItem('snm_current_user', id);
-    } catch {
-      // ignore storage error
-    }
-    setUser({ username: id });
-    setShowAuthModal(false);
-    setAuthForm({ username: '', password: '', passwordConfirm: '' });
-    setAuthError('');
-    triggerToast(`👋 환영합니다, ${id}님!`);
   };
 
+  // 로그아웃: JWT는 서버가 기억하지 않으므로 브라우저의 토큰만 지우면 됨
   const handleLogout = () => {
-    try {
-      localStorage.removeItem('snm_current_user');
-    } catch {
-      // ignore storage error
-    }
+    authApi.logout();
     setUser(null);
+    setOnlyWatchlistArticles(false);
     triggerToast('로그아웃되었습니다.');
   };
 
@@ -1856,8 +1875,12 @@ useEffect(() => {
           {showWatchToggle && (
             <button
               type="button"
-              className={`more-link2 ${onlyWatchlistArticles ? 'active' : ''}`}
-              onClick={() => setOnlyWatchlistArticles((prev) => !prev)}
+              className={`more-link2 ${homeWatchOnly ? 'active' : ''}`}
+              onClick={() =>
+                user
+                  ? setOnlyWatchlistArticles((prev) => !prev)
+                  : requireLogin('🔒 관심종목 글만 보기는 로그인이 필요합니다.')
+              }
             >
               ★ 관심종목 글만
             </button>
@@ -1971,8 +1994,8 @@ useEffect(() => {
           ))}
         </section>
 
-        {/* 3. 통합 필터 컨트롤 바 (관심종목 글만 보기는 로그인 연결 뒤에 다시 켬) */}
-        {renderFilterControlBar({ showChannel: true, showWatchToggle: false })}
+        {/* 3. 통합 필터 컨트롤 바 */}
+        {renderFilterControlBar({ showChannel: true, showWatchToggle: true })}
 
         {/* 4. 하단 2단 분할 레이아웃 (.split-layout) */}
         <div className="split-layout">
@@ -2011,7 +2034,6 @@ useEffect(() => {
                   {...detailSharedProps}
                   article={selectedHomeArticle}
                   onSelectStock={(code) => navigateToStockDetail(code, 'summary')}
-                  onSelectArticle={(artId) => setSelectedArticleId(artId)}
                   onClose={() => setSelectedArticleId(null)}
                 />
               </div>
@@ -2780,9 +2802,7 @@ useEffect(() => {
   // ============================================================================
   const renderWatchlistView = () => {
     const activeWatchArticle =
-      watchlistFeedArticles.find((a) => a.id === selectedArticleId) ||
-      watchlistFeedArticles[0] ||
-      null;
+      articleDetail.article || watchlistFeedArticles.find((a) => a.id === detailId) || null;
 
     return (
       <div className="wrapper">
@@ -2918,19 +2938,29 @@ useEffect(() => {
             <div className="card-header">
               <div className="card-title">
                 📰 내 관심 종목 뉴스·SNS 모아보기{' '}
-                <span className="count-badge num">{watchlistFeedArticles.length}</span>
+                <span className="count-badge num">{watchlistFeed.totalCount.toLocaleString()}</span>
               </div>
               <span className="card-caption">
                 관심 종목과 매칭된 뉴스·SNS 소식을 선택하면 우측에서 요약·근거 확인 및 댓글 작성이 가능합니다
               </span>
             </div>
 
-            <ArticleList
-              articles={watchlistFeedArticles}
-              selectedId={activeWatchArticle?.id}
-              onSelect={setSelectedArticleId}
-              onSelectStock={(code) => navigateToStockDetail(code, 'summary')}
-            />
+            {user ? (
+              <ArticleList
+                articles={watchlistFeedArticles}
+                selectedId={activeWatchArticle?.id}
+                onSelect={setSelectedArticleId}
+                onSelectStock={(code) => navigateToStockDetail(code, 'summary')}
+                feed={watchlistFeed}
+              />
+            ) : (
+              <div className="empty-text">
+                로그인하면 내 관심 종목의 뉴스·SNS를 모아 볼 수 있습니다.{' '}
+                <button type="button" className="more-link2" onClick={() => requireLogin('로그인해 주세요.')}>
+                  로그인
+                </button>
+              </div>
+            )}
           </div>
 
           <aside className="panel sticky-detail-panel" aria-label="관심종목 기사 상세 및 댓글 패널">
@@ -2938,7 +2968,6 @@ useEffect(() => {
               {...detailSharedProps}
               article={activeWatchArticle}
               onSelectStock={(code) => navigateToStockDetail(code, 'summary')}
-              onSelectArticle={(artId) => setSelectedArticleId(artId)}
             />
           </aside>
         </div>
@@ -3247,8 +3276,9 @@ useEffect(() => {
               <input
                 type="text"
                 className="watch-inline-input"
-                placeholder="아이디 (예: tester01)"
+                placeholder={authMode === 'signup' ? '아이디 (영문 소문자·숫자 4~20자)' : '아이디'}
                 aria-label="아이디"
+                autoComplete="username"
                 value={authForm.username}
                 onChange={(e) => setAuthForm({ ...authForm, username: e.target.value })}
                 required
@@ -3256,8 +3286,9 @@ useEffect(() => {
               <input
                 type="password"
                 className="watch-inline-input"
-                placeholder="비밀번호"
+                placeholder={authMode === 'signup' ? `비밀번호 (${PASSWORD_MIN}~${PASSWORD_MAX}자)` : '비밀번호'}
                 aria-label="비밀번호"
+                autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'}
                 value={authForm.password}
                 onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })}
                 required
@@ -3283,8 +3314,8 @@ useEffect(() => {
                 >
                   취소
                 </button>
-                <button type="submit" className="btn-primary">
-                  {authMode === 'login' ? '로그인' : '가입 완료 및 로그인'}
+                <button type="submit" className="btn-primary" disabled={authSubmitting}>
+                  {authSubmitting ? '처리 중…' : authMode === 'login' ? '로그인' : '가입 완료 및 로그인'}
                 </button>
               </div>
             </form>

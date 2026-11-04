@@ -27,9 +27,10 @@ export function toArticleParams({ channel, sentiment, period, minRelevance, sort
  * 글 목록을 한 쪽(20개)씩. params가 바뀌면 처음부터 다시 받고, 진행 중이던 요청은 취소
  * fetchPage(params, signal)을 바꿔 끼우면 관심 종목 글(watchlistApi.articles)에도 씀
  * enabled가 false면 부르지 않음 (예: 로그인 전 관심 종목 글)
+ * resetKey: 서버에 보내지는 않지만 바뀌면 처음부터 다시 받을 값 (예: 관심 종목 목록)
  */
-export function usePagedArticles(params, { fetchPage = articleApi.list, enabled = true } = {}) {
-  const key = JSON.stringify(params);
+export function usePagedArticles(params, { fetchPage = articleApi.list, enabled = true, resetKey = '' } = {}) {
+  const key = JSON.stringify({ params, resetKey });
   const [state, setState] = useState({ key: null, items: [], totalCount: 0, page: 0, loading: false, error: null });
   const controllerRef = useRef(null);
 
@@ -44,7 +45,7 @@ export function usePagedArticles(params, { fetchPage = articleApi.list, enabled 
           ? { key, items: [], totalCount: 0, page: 0, loading: true, error: null }
           : { ...prev, loading: true, error: null }
       );
-      fetchPage({ ...JSON.parse(key), page, size: PAGE_SIZE }, { signal: controller.signal })
+      fetchPage({ ...JSON.parse(key).params, page, size: PAGE_SIZE }, { signal: controller.signal })
         .then((res) => {
           const items = res.items.map(toUiArticle);
           setState((prev) => ({
