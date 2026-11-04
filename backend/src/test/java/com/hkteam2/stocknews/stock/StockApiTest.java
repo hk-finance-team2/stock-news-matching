@@ -1,6 +1,9 @@
 package com.hkteam2.stocknews.stock;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.everyItem;
+import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
@@ -11,8 +14,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
+
+import com.jayway.jsonpath.JsonPath;
 
 import com.hkteam2.stocknews.common.TimeUtils;
 import com.hkteam2.stocknews.support.ApiTestSupport;
@@ -63,6 +70,49 @@ class StockApiTest extends ApiTestSupport {
         // 이름이 딱 맞는 순위가 더 우선: 언급이 없어도 "삼성공조"는 삼성공조가 1위
         mvc.perform(get("/api/stocks").param("q", "삼성공조"))
                 .andExpect(jsonPath("$.items[0].stockName").value("삼성공조"));
+    }
+
+    @Test
+    void 테마_이름과_딱_같으면_그_테마_종목도_나오고_글자로_맞은_종목_뒤에_온다() throws Exception {
+        // 이름에 "반도체"가 든 종목(한미반도체 등)이 먼저, matchedTheme 없음
+        String body = mvc.perform(get("/api/stocks").param("q", "반도체").param("size", "100"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].stockName", containsString("반도체")))
+                .andExpect(jsonPath("$.items[0].matchedTheme", nullValue()))
+                .andExpect(jsonPath("$.items[?(@.stockCode == '005930')].matchedTheme", hasItem("반도체")))
+                .andReturn().getResponse().getContentAsString();
+        List<Map<String, Object>> items = JsonPath.read(body, "$.items");
+        int firstTheme = -1;
+        for (int i = 0; i < items.size(); i++) {
+            boolean byTheme = items.get(i).get("matchedTheme") != null;
+            if (byTheme && firstTheme < 0) {
+                firstTheme = i;
+            }
+            // 테마로만 찾은 종목이 나온 뒤에 글자로 찾은 종목이 다시 나오면 안 됨
+            assertThat(byTheme || firstTheme < 0).as("%d번째 %s", i, items.get(i).get("stockName")).isTrue();
+        }
+        assertThat(firstTheme).isPositive();
+
+        // 테마 종목끼리는 최근 언급 순: SK하이닉스 글이 생기면 테마 종목 중 맨 앞
+        link(insertArticle("SK하이닉스 오늘", "NEWS", "DONE", today(1)), "000660", 0.9);
+        String after = mvc.perform(get("/api/stocks").param("q", "반도체").param("size", "100"))
+                .andReturn().getResponse().getContentAsString();
+        List<String> themeCodes = JsonPath.read(after, "$.items[?(@.matchedTheme == '반도체')].stockCode");
+        assertThat(themeCodes.get(0)).isEqualTo("000660");
+
+        // 통합 검색 종목 칸에도 같은 칸
+        mvc.perform(get("/api/search").param("q", "반도체"))
+                .andExpect(jsonPath("$.stocks.totalCount", greaterThanOrEqualTo(100)))
+                .andExpect(jsonPath("$.stocks.items[0].matchedTheme", nullValue()));
+    }
+
+    @Test
+    void 테마는_딱_같을_때만_찾고_종목_상세에는_matchedTheme_칸이_없다() throws Exception {
+        // "반도" 는 테마 "반도체"와 딱 같지 않음 → 테마로 찾은 종목 없음 (바이 → 바이오 160종목이 쏟아지지 않게)
+        mvc.perform(get("/api/stocks").param("q", "반도").param("size", "100"))
+                .andExpect(jsonPath("$.items[*].matchedTheme", everyItem(nullValue())));
+        mvc.perform(get("/api/stocks/{code}", "005930"))
+                .andExpect(jsonPath("$.matchedTheme").doesNotExist());
     }
 
     @Test
