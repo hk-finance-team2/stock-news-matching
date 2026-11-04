@@ -3,7 +3,7 @@
     python -m hk_llm.steps.sns 3     종목 3개만 실제 실행 (LLM 비용 발생, 종목당 약 $0.001)
 
 - 수집처: 공식 API 만 (조사/SNS_조사.md "수집처 기준 확정"). 대상은 최근 24시간 뉴스가 많은 종목
-- 저장: 제목·미리보기·출처 이름만. 닉네임과 글 본문은 안 받음. 거른 글은 저장하지 않음
+- 저장: 제목·미리보기·출처 이름만, 모은 지 7일 지나면 지움(purge_old_sns). 닉네임과 글 본문은 안 받음. 거른 글은 저장하지 않음
 - ponytail: 카페 응답에는 작성 시각이 없어 수집 시각으로 저장, 블로그는 날짜만. 시각 칸이 있는 API 로 바꾸면 수정
 - ponytail: 카페 글이 새 글인지는 글 번호로 판단 (카페별로 이미 본 번호보다 커야 함). 처음 보는 카페의 글은 기준점으로만 저장
 - ponytail: 한 글은 처음 찾은 종목 1개에만 연결. 글 수가 많아지면 제목의 다른 종목도 연결
@@ -34,6 +34,7 @@ TOP = 50  # 종목 50개 x 2경로 x 24시간 = 하루 2,400번 (문서상 한�
 DISPLAY = 20
 MAX_POSTS = 20  # 종목당 LLM 1번에 넣는 글 수 (비용 상한)
 SNS_RELEVANCE = 0.50  # 측정값이 아니라 규칙: 확인되지 않은 개인 글이라 뉴스(최대 1.00)보다 낮게 (요구사항 F-05)
+KEEP_DAYS = 7  # 네이버 검색 결과를 별도 DB 로 쌓아 두지 않으려고 (약관 7.3) 모은 지 7일 지나면 글을 지움. 하루 요약(sns_summary)은 남음
 BLOG_PRESS = "네이버 블로그"  # 블로거 이름은 저장하지 않음
 WORD = re.compile("주가|주식|매수|매도|종목|증시|실적|목표가|배당|급등|급락|투자")
 AD = re.compile(r"리딩|문의|모집|상담")  # 글에만 씀. 리딩뱅크·공모주 모집처럼 금융 표현일 수 있어 LLM 답에는 안 씀
@@ -288,6 +289,17 @@ def summarize(engine):
         done += save_result(engine, code, items, result, now)
     log.info("SNS 분석: %d건, 종목 %d개", done, len(by))
     return done
+
+
+def purge_old_sns(engine=None):
+    """모은 지 7일 지난 SNS 글을 종목 연결과 함께 지움. 지운 글 수. 키가 없어도 5분마다 돎 (run.py)"""
+    old = "a.source_type = 'SNS' AND a.collected_at < NOW() - INTERVAL :d DAY"
+    with (engine or get_engine()).begin() as conn:
+        conn.execute(text(f"DELETE s FROM article_stock s JOIN article a USING (article_id) WHERE {old}"), {"d": KEEP_DAYS})
+        n = conn.execute(text(f"DELETE a FROM article a WHERE {old}"), {"d": KEEP_DAYS}).rowcount
+    if n:
+        log.info("7일 지난 SNS 글 %d건 삭제", n)
+    return n
 
 
 def run_sns(engine=None, stocks=TOP):

@@ -159,6 +159,14 @@ def test_sns_db():
         with engine.connect() as conn:
             hidden = row(99, conn)
         assert hidden.status == "SKIPPED" and hidden.description is None and hidden.summary is None, "원문이 화면에 나가면 안 됨"
+
+        with engine.begin() as conn:  # 101번만 8일 전에 모은 글로
+            conn.execute(text("UPDATE article SET collected_at = NOW() - INTERVAL 8 DAY WHERE article_id = :i"), {"i": new.article_id})
+        assert sns.purge_old_sns(engine) >= 1
+        with engine.connect() as conn:
+            left = conn.execute(text("SELECT COUNT(*) FROM article WHERE url_key LIKE :k"), {"k": prefix + "%"}).scalar()
+            links = conn.execute(text("SELECT COUNT(*) FROM article_stock WHERE article_id = :i"), {"i": new.article_id}).scalar()
+        assert left == 2 and links == 0, "7일 지난 SNS 글은 종목 연결과 함께 지움, 최근 글은 남김"
     finally:
         with engine.begin() as conn:
             conn.execute(text("DELETE s FROM article_stock s JOIN article a USING (article_id) WHERE a.url_key LIKE :k"), {"k": prefix + "%"})
