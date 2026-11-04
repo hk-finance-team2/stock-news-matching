@@ -126,6 +126,23 @@ export function toUiSummary(res) {
   };
 }
 
+/**
+ * 종목 토론 게시판 글 → 화면 댓글 모양 (화면은 댓글형, 서버는 게시판: 댓글 하나 = 게시판 글 하나, 내용은 제목 칸)
+ * likedByMe 는 목록 API에 없어서 처음에는 false, 공감을 누르면 서버 답으로 바뀜
+ */
+export function toUiBoardComment(item, stockCode) {
+  return {
+    commentId: item.postId,
+    id: item.postId,
+    stockCode,
+    author: item.authorLoginId,
+    content: item.title,
+    createdAt: item.createdAt,
+    likes: item.likeCount,
+    likedByMe: false,
+  };
+}
+
 /** 언급량 응답 → 화면 그래프 점 [{ label, news, sns }]. 시간 칸이면 "09시", 날짜 칸이면 "11/02" */
 export function toUiMentionSeries(res) {
   return (res?.items || []).map((pt) => ({

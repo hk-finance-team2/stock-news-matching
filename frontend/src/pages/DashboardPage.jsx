@@ -1,17 +1,22 @@
 // src/pages/DashboardPage.jsx
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   STOCKS_DATA,
   ARTICLES_DATA,
   STOCK_SUMMARIES_DATA,
   MENTION_TRENDS_DATA,
-  INITIAL_STOCK_COMMENTS,
   normalizeStocks,
   normalizeArticles,
-  normalizeComments,
 } from '../mocks/mockData';
-import { articleApi, authApi, quoteApi, statusApi, stockApi, tokenStore, watchlistApi } from '../api';
-import { toClock, toDisplayTime, toUiMentionSeries, toUiStock, toUiSummary } from '../api/adapters';
+import { articleApi, authApi, boardApi, quoteApi, statusApi, stockApi, tokenStore, watchlistApi } from '../api';
+import {
+  toClock,
+  toDisplayTime,
+  toUiBoardComment,
+  toUiMentionSeries,
+  toUiStock,
+  toUiSummary,
+} from '../api/adapters';
 import { useApi } from '../hooks/useApi';
 import { toArticleParams, useArticleDetail, usePagedArticles } from '../hooks/useArticles';
 import '../styles/dashboard.css';
@@ -72,7 +77,8 @@ const COMMENT_TAGS = {
   board: { label: '뉴스', className: 'tag-news' },
 };
 const COMMENT_TAG_PATTERN = /^\[(뉴스|SNS|언급량)\]\s*/;
-const COMMENT_MAX_LENGTH = 1000;
+// 종목 토론 의견은 게시판 글의 제목 칸(200자)에 저장 → 목록 한 번으로 바로 보임 (본문은 목록 API에 없음)
+const COMMENT_MAX_LENGTH = 200;
 
 // 회원가입 규칙 (서버와 같게: docs/api.md 2절)
 const LOGIN_ID_PATTERN = /^[a-z0-9]{4,20}$/;
@@ -94,10 +100,6 @@ const rateTone = (rate) => {
 
 const formatPercent = (value) => `${(Math.round(value * 10) / 10).toFixed(1)}%`;
 
-const nowIsoSeoul = () => {
-  const kst = new Date(Date.now() + 9 * 60 * 60 * 1000);
-  return `${kst.toISOString().slice(0, 19)}+09:00`;
-};
 
 const nowTimeShort = () => {
   const now = new Date();
@@ -606,6 +608,7 @@ function ArticleDetail({
   onDeleteCommentForStock,
   onToggleLikeForStock,
   onRequireLogin,
+  onNeedComments,
 }) {
   const sortedRelatedStocks = useMemo(
     () => [...(article?.relatedStocks || [])].sort((a, b) => (b.relevance ?? -1) - (a.relevance ?? -1)),
@@ -627,6 +630,11 @@ function ArticleDetail({
     );
   }, [article, preferredStockCode, sortedRelatedStocks]);
 
+  // 댓글을 보여 줄 종목의 토론 의견을 받아 달라고 부모에게 알림 (종목을 바꿀 때마다)
+  useEffect(() => {
+    if (showComments && commentTargetCode) onNeedComments?.(commentTargetCode);
+  }, [showComments, commentTargetCode, onNeedComments]);
+
   if (!article) {
     return (
       <div className="empty-text">
@@ -636,10 +644,12 @@ function ArticleDetail({
   }
 
   const isSns = article.sourceType !== 'NEWS';
-  const primaryStock =
-    allStocks.find((s) => s.code === commentTargetCode) ||
-    allStocks.find((s) => s.code === sortedRelatedStocks[0]?.code) ||
-    allStocks[0];
+  // 댓글 대상 종목: 글에 연결된 종목에서 고름 (화면 종목 목록에 없어도 글의 종목 이름으로. 예전에는 목록 첫 종목이 잡혔음)
+  const targetRel =
+    sortedRelatedStocks.find((r) => r.code === commentTargetCode) || sortedRelatedStocks[0] || null;
+  const primaryStock = targetRel
+    ? allStocks.find((s) => s.code === targetRel.code) || { code: targetRel.code, name: targetRel.name }
+    : null;
 
   // 같은 종목·가까운 시각의 SNS (상세 API가 최대 5개를 줌). 목록에서 막 열어 아직 상세를 받는 중이면 빈 목록
   const relatedSnsList = isSns ? [] : (article.relatedSns || []).slice(0, 5);
@@ -1078,9 +1088,17 @@ useEffect(() => {
   const [toast, setToast] = useState(null);
 
   // 종목별 실시간 종목토론 댓글 (F-17)
-  const [commentsByStock, setCommentsByStock] = useState(() =>
-    normalizeComments(INITIAL_STOCK_COMMENTS)
-  );
+  // 종목별 토론 의견 { 종목코드: [의견] } (F-20, 게시판 API). 종목 화면·글 상세에서 필요한 종목만 받음
+  const [commentsByStock, setCommentsByStock] = useState({});
+  const loadComments = useCallback((code) => {
+    if (!code) return;
+    boardApi
+      .posts(code, { size: 50 })
+      .then((res) =>
+        setCommentsByStock((prev) => ({ ...prev, [code]: res.items.map((it) => toUiBoardComment(it, code)) }))
+      )
+      .catch(() => setCommentsByStock((prev) => ({ ...prev, [code]: prev[code] || [] })));
+  }, []);
 
   const mainRef = useRef(null);
 
@@ -1371,6 +1389,10 @@ useEffect(() => {
   }));
 
   const currentComments = commentsByStock[selectedStockCode] || [];
+  // 종목 화면을 열면 그 종목의 토론 의견을 받음 (요약 탭 미리보기·토론 탭)
+  useEffect(() => {
+    if (onStockDetail) loadComments(selectedStockCode);
+  }, [onStockDetail, selectedStockCode, loadComments]);
 
   // 비로그인 시 로그인 모달 오픈 가드
   const requireLogin = (msg) => {
@@ -1579,23 +1601,22 @@ useEffect(() => {
   };
 
   // 종목코드 지정 가능한 종목토론 댓글 추가·공감·삭제 핸들러
+  // 서버 저장이 끝나면 그 종목 의견을 다시 받음. 401이면 로그인 만료 처리
+  const handleBoardError = (err, what) => {
+    if (err.status === 401) handleAuthExpired();
+    else triggerToast(`${what}하지 못했습니다 (${err.message})`);
+  };
+
   const handleAddCommentForStock = (stockCode, content) => {
     const targetCode = stockCode || selectedStockCode;
-    const newComment = {
-      commentId: Date.now(),
-      id: Date.now(),
-      stockCode: targetCode,
-      author: user.username,
-      content,
-      createdAt: nowIsoSeoul(),
-      likes: 0,
-      likedByMe: false,
-    };
-    setCommentsByStock((prev) => ({
-      ...prev,
-      [targetCode]: [newComment, ...(prev[targetCode] || [])],
-    }));
-    triggerToast('💬 실시간 종목토론 의견이 등록되었습니다.');
+    // 화면은 댓글형, 서버는 게시판: 의견 하나 = 게시판 글 하나 (제목·본문에 같은 내용)
+    boardApi
+      .write(targetCode, content, content)
+      .then(() => {
+        loadComments(targetCode);
+        triggerToast('💬 종목토론 의견이 등록되었습니다.');
+      })
+      .catch((err) => handleBoardError(err, '의견을 등록'));
   };
 
   const handleToggleLikeForStock = (stockCode, commentId) => {
@@ -1604,30 +1625,29 @@ useEffect(() => {
       return;
     }
     const targetCode = stockCode || selectedStockCode;
-    setCommentsByStock((prev) => ({
-      ...prev,
-      [targetCode]: (prev[targetCode] || []).map((c) => {
-        const cid = c.commentId ?? c.id;
-        if (cid !== commentId) return c;
-        const nextLiked = !c.likedByMe;
-        return {
-          ...c,
-          likedByMe: nextLiked,
-          likes: nextLiked ? (c.likes || 0) + 1 : Math.max(0, (c.likes || 0) - 1),
-        };
-      }),
-    }));
+    // 공감 토글은 서버가 결과(liked, likeCount)를 알려 줌 → 그 값으로 바꿈 (화면이 짐작하지 않음)
+    boardApi
+      .toggleLike(commentId)
+      .then((res) =>
+        setCommentsByStock((prev) => ({
+          ...prev,
+          [targetCode]: (prev[targetCode] || []).map((c) =>
+            (c.commentId ?? c.id) === commentId ? { ...c, likedByMe: res.liked, likes: res.likeCount } : c
+          ),
+        }))
+      )
+      .catch((err) => handleBoardError(err, '공감'));
   };
 
   const handleDeleteCommentForStock = (stockCode, commentId) => {
     const targetCode = stockCode || selectedStockCode;
-    setCommentsByStock((prev) => ({
-      ...prev,
-      [targetCode]: (prev[targetCode] || []).filter(
-        (c) => (c.commentId ?? c.id) !== commentId
-      ),
-    }));
-    triggerToast('🗑️ 의견이 삭제되었습니다.');
+    boardApi
+      .removePost(commentId)
+      .then(() => {
+        loadComments(targetCode);
+        triggerToast('🗑️ 의견이 삭제되었습니다.');
+      })
+      .catch((err) => handleBoardError(err, '의견을 삭제'));
   };
 
   const activeNavItem = NAV_ITEMS.find((n) => n.key === activeNav) || NAV_ITEMS[0];
@@ -1650,6 +1670,7 @@ useEffect(() => {
     showComments: true,
     preferredStockCode: selectedStockCode,
     commentsByStock,
+    onNeedComments: loadComments,
     user,
     onAddCommentForStock: handleAddCommentForStock,
     onDeleteCommentForStock: handleDeleteCommentForStock,
