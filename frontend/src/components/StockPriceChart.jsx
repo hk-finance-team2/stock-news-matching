@@ -37,6 +37,18 @@ const readColors = () => {
 
 const fmt = (n) => (n == null ? '-' : Math.round(n).toLocaleString('ko-KR'));
 
+const pad = (n) => String(n).padStart(2, '0');
+
+/** 십자선 아래 시각 글자. 기본값은 "04 11월 '26 12:30"처럼 영어식 순서라 한국식으로 (분봉 11/04 12:30, 그 밖 2026-11-04) */
+const formatTime = (t) => {
+  if (typeof t === 'number') {
+    const d = new Date(t * 1000); // 이미 9시간을 더한 값이라 UTC 기준으로 읽으면 한국 시각
+    return `${pad(d.getUTCMonth() + 1)}/${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+  }
+  if (typeof t === 'object' && t) return `${t.year}-${pad(t.month)}-${pad(t.day)}`;
+  return String(t);
+};
+
 export default function StockPriceChart({ stockCode, stockName }) {
   const [unit, setUnit] = useState('day');
   const [data, setData] = useState({ key: null, items: [], error: null });
@@ -53,7 +65,7 @@ export default function StockPriceChart({ stockCode, stockName }) {
       grid: { vertLines: { color: '#f1f5f9' }, horzLines: { color: '#f1f5f9' } },
       rightPriceScale: { borderVisible: false },
       timeScale: { borderVisible: false },
-      localization: { locale: 'ko-KR', priceFormatter: fmt },
+      localization: { locale: 'ko-KR', priceFormatter: fmt, timeFormatter: formatTime },
     });
     const candles = chart.addSeries(CandlestickSeries, {
       upColor: c.up,
