@@ -14,7 +14,7 @@ import {
   normalizeMentionTrends,
   normalizeComments,
 } from '../mocks/mockData';
-import { stockApi } from '../api';
+import { stockApi, quoteApi } from '../api';
 import { toUiStock } from '../api/adapters';
 import '../styles/dashboard.css';
 
@@ -766,8 +766,54 @@ export default function DashboardPage() {
     []
   );
   // 백엔드 종목 검색으로 고른 종목 중 가짜 데이터에 없는 것 (시세·요약은 아직 없음 → analysisReady: false)
+  // const [apiStocks, setApiStocks] = useState([]);
+  // const allStocks = useMemo(() => [...mockStocks, ...apiStocks], [mockStocks, apiStocks]);
   const [apiStocks, setApiStocks] = useState([]);
-  const allStocks = useMemo(() => [...mockStocks, ...apiStocks], [mockStocks, apiStocks]);
+const [liveQuotes, setLiveQuotes] = useState({});
+
+const allStocks = useMemo(
+  () =>
+    [...mockStocks, ...apiStocks].map((stock) => {
+      const quote = liveQuotes[stock.code];
+
+      if (!quote) return stock;
+
+      return {
+        ...stock,
+        price: quote.price,
+        changeRate: quote.changeRate,
+        changeAmount: quote.changeAmount,
+      };
+    }),
+  [mockStocks, apiStocks, liveQuotes]
+);
+
+// // 현재 선택한 종목과 관심종목의 실제 시세 조회
+// useEffect(() => {
+//   const codes = [...new Set([selectedStockCode, ...watchlistCodes].filter(Boolean))];
+//   let cancelled = false;
+
+//   Promise.allSettled(
+//     codes.map((code) => quoteApi.get(code))
+//   ).then((results) => {
+//     if (cancelled) return;
+
+//     const quotes = {};
+
+//     results.forEach((result, index) => {
+//       if (result.status === 'fulfilled' && result.value?.price != null) {
+//         quotes[codes[index]] = result.value;
+//       }
+//     });
+
+//     setLiveQuotes((prev) => ({ ...prev, ...quotes }));
+//   });
+
+//   return () => {
+//     cancelled = true;
+//   };
+// }, [selectedStockCode, watchlistCodes]);
+
   const allArticles = useMemo(() => normalizeArticles(ARTICLES_DATA), []);
   const initialSummaries = useMemo(() => normalizeSummaries(STOCK_SUMMARIES_DATA), []);
   const initialTrends = useMemo(() => normalizeMentionTrends(MENTION_TRENDS_DATA), []);
@@ -777,6 +823,32 @@ export default function DashboardPage() {
   const [selectedStockCode, setSelectedStockCode] = useState(
     INITIAL_WATCHLIST_CODES[0] || allStocks[0]?.code || '005930'
   );
+  // 현재 선택한 종목과 관심종목의 실제 시세 조회
+useEffect(() => {
+  const codes = [...new Set([selectedStockCode, ...watchlistCodes].filter(Boolean))];
+  let cancelled = false;
+
+  Promise.allSettled(
+    codes.map((code) => quoteApi.get(code))
+  ).then((results) => {
+    if (cancelled) return;
+
+    const quotes = {};
+
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled' && result.value?.price != null) {
+        quotes[codes[index]] = result.value;
+      }
+    });
+
+    setLiveQuotes((prev) => ({ ...prev, ...quotes }));
+  });
+
+  return () => {
+    cancelled = true;
+  };
+}, [selectedStockCode, watchlistCodes]);
+
   const [selectedArticleId, setSelectedArticleId] = useState(null);
 
   // 홈 랭킹 탭 필터: 'issue'(매칭 급증) | 'up'(급상승) | 'down'(급하락)
