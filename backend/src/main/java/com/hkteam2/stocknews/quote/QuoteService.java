@@ -1,6 +1,7 @@
 package com.hkteam2.stocknews.quote;
 
 import java.time.Clock;
+import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -10,6 +11,11 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.function.Function;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
@@ -21,7 +27,7 @@ import com.hkteam2.stocknews.common.TimeUtils;
  *
  * | 무엇 | 캐시 | KIS 호출 |
  * | 현재가 | 5초 | 1번 |
- * | 분봉 1·5·10·30분 (그날 하루) | 오늘 60초, 지난 날 1시간 | 4번 (120분씩 거꾸로) → 서버가 n분씩 묶음 |
+ * | 분봉 1·5·10·30분 (그날 하루) | 오늘 장중 60초, 15:40 이후·지난 날 1시간 | 4번 동시에 (120분 구간씩), 주말 0번 → 서버가 n분씩 묶음 |
  * | 주·월·년봉 | 10분 | 1번 (최근 100개, 년봉은 상장 이후) |
  * | 일봉 1년 (차트 첫 화면 + 급등·급락 이력, 같은 캐시) | 10분 | 3번 (140일씩 나눠서) |
  * | 일·주·월봉 이어 받기 (to 이전 100개) | 1시간 | 1번 |
@@ -40,8 +46,12 @@ public class QuoteService {
     static final Duration PAST_MINUTE_TTL = Duration.ofHours(1);
     /** 지난 구간 일·주·월봉 (to 있음)도 바뀌지 않으므로 길게 */
     static final Duration PAST_PERIOD_TTL = Duration.ofHours(1);
-    /** 09:00~15:30 = 391분, KIS는 한 번에 120분 → 4번 (+ 여유 1번) */
+    /** 09:00~15:30 = 391분, KIS는 한 번에 120분 → 4구간 (+ 여유 1) */
     private static final int MINUTE_PAGES = 5;
+    /** KIS 분봉 한 번에 거꾸로 120줄 */
+    private static final int MINUTE_WINDOW_MINUTES = 120;
+    /** 이 시각이 지나면 오늘 분봉도 다 나온 것 (15:30 종가 단일가 봉이 들어올 여유 10분) */
+    static final LocalTime MINUTE_SETTLED_AT = LocalTime.of(15, 40);
     private static final LocalTime MARKET_OPEN = CandleAggregator.MARKET_OPEN;
     private static final LocalTime MARKET_CLOSE = LocalTime.of(15, 30);
     /** KIS 분봉 보관 기간 (공식 예제 주석: 최대 1년) */
@@ -109,33 +119,70 @@ public class QuoteService {
                 toCandles(CandleAggregator.aggregate(oneMinute, unit.minutes())));
     }
 
-    /** 그날 1분봉 전부. 15:30(오늘이면 지금)부터 120분씩 거꾸로, 그날·장 시간 것만 남김 */
+    /**
+     * 그날 1분봉 전부. 그날·장 시간(09:00~15:30) 것만 남김
+     *
+     * 15:30(오늘 장중이면 지금)부터 120분 간격으로 끊은 구간(15:30·13:30·11:30·09:30)을 KIS에 **한꺼번에** 물음.
+     * 예전에는 한 구간 답을 받고 나서 다음 구간을 물어(KIS 한 번에 약 1초 × 4번) 첫 조회가 5초쯤 걸렸음 (QA #7)
+     * - 구간끼리는 서로의 답이 필요 없어서 동시에 물어도 됨. 줄 서기(KisRateLimiter)는 그대로라 KIS 한도는 지킴
+     * - KIS는 구간마다 거꾸로 120줄을 줌. 거래 없는 분(15:20~15:30 단일가 등)은 줄이 없어서 120분보다 길게 덮음
+     *   → 구간끼리 겹치기만 하고 빈틈은 생기지 않음. 겹치는 분은 하나로 합침
+     * - 주말은 장이 없으니 KIS에 묻지 않음 (화면이 빈 날을 건너 앞 영업일을 물을 때 헛호출 4번을 막음)
+     */
     List<KisCandle> oneMinuteCandles(String stockCode, LocalDate date) {
-        boolean isToday = date.equals(today());
-        return cache.get("m1:" + stockCode + ":" + date, isToday ? MINUTE_TTL : PAST_MINUTE_TTL, () -> {
+        if (date.getDayOfWeek() == DayOfWeek.SATURDAY || date.getDayOfWeek() == DayOfWeek.SUNDAY) {
+            return List.of();
+        }
+        LocalDateTime now = LocalDateTime.now(clock).withNano(0);
+        boolean isToday = date.equals(now.toLocalDate());
+        // 오늘이라도 장이 끝나고 조금 지나면(15:40) 더 바뀌지 않으므로 지난 날처럼 길게
+        boolean settled = !isToday || !now.toLocalTime().isBefore(MINUTE_SETTLED_AT);
+        return cache.get("m1:" + stockCode + ":" + date, settled ? PAST_MINUTE_TTL : MINUTE_TTL, () -> {
+            LocalTime until = isToday && now.toLocalTime().isBefore(MARKET_CLOSE) ? now.toLocalTime() : MARKET_CLOSE;
+            List<LocalTime> windows = new ArrayList<>();
+            for (LocalTime t = until; !t.isBefore(MARKET_OPEN) && windows.size() < MINUTE_PAGES;
+                 t = t.minusMinutes(MINUTE_WINDOW_MINUTES)) {
+                windows.add(t);
+            }
             Map<LocalDateTime, KisCandle> byTime = new TreeMap<>();   // 시각 순 + 겹치는 분 하나로
-            LocalTime now = LocalTime.now(clock).withNano(0);
-            LocalTime until = isToday && now.isBefore(MARKET_CLOSE) ? now : MARKET_CLOSE;
-            for (int page = 0; page < MINUTE_PAGES && !until.isBefore(MARKET_OPEN); page++) {
-                List<KisCandle> rows = kis.inquireMinuteCandles(stockCode, date, until);
-                LocalDateTime earliest = null;
+            for (List<KisCandle> rows : inParallel(windows, t -> kis.inquireMinuteCandles(stockCode, date, t))) {
                 for (KisCandle c : rows) {
-                    if (earliest == null || c.time().isBefore(earliest)) {
-                        earliest = c.time();
-                    }
                     LocalTime t = c.time().toLocalTime();
                     // 장 시작 앞으로 넘어가면 전날 시간외 봉이 섞여 옴 → 그날 09:00~15:30만
                     if (c.time().toLocalDate().equals(date) && !t.isBefore(MARKET_OPEN) && !t.isAfter(MARKET_CLOSE)) {
                         byTime.put(c.time(), c);
                     }
                 }
-                if (earliest == null || !earliest.toLocalDate().equals(date) || !earliest.toLocalTime().isAfter(MARKET_OPEN)) {
-                    break;   // 더 없음, 또는 장 시작(09:00)까지 다 받음
-                }
-                until = earliest.toLocalTime().minusMinutes(1);
             }
             return List.copyOf(byTime.values());
         });
+    }
+
+    /**
+     * 여러 KIS 조회를 동시에 보내고, 보낸 순서대로 답을 모음. 하나라도 실패하면 그 오류를 그대로 던짐
+     * (KisApiException 그대로 → QuoteExceptionHandler가 429·502로 바꿈)
+     * 일꾼(스레드)은 부를 때마다 구간 수만큼 만들고 끝나면 닫음. 분봉은 캐시가 있어 새로 만드는 일이 드묾
+     */
+    private static <T, R> List<R> inParallel(List<T> inputs, Function<T, R> call) {
+        if (inputs.isEmpty()) {
+            return List.of();
+        }
+        try (ExecutorService pool = Executors.newFixedThreadPool(inputs.size())) {
+            List<Future<R>> futures = inputs.stream().map(in -> pool.submit(() -> call.apply(in))).toList();
+            List<R> out = new ArrayList<>();
+            for (Future<R> f : futures) {
+                out.add(f.get());
+            }
+            return out;
+        } catch (ExecutionException e) {
+            if (e.getCause() instanceof RuntimeException re) {
+                throw re;
+            }
+            throw new KisApiException("PARALLEL_FAILED", String.valueOf(e.getCause()));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new KisApiException("INTERRUPTED", "기다리는 중 중단됨");
+        }
     }
 
     /** 일·주·월·년봉 최근 (to 없음) */
