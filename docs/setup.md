@@ -193,7 +193,8 @@ cd backend
 | `docker compose --profile full up -d --build` | + 프론트 화면(`frontend`) → **http://localhost:5173** | 시연 PC (한 줄로 전부) |
 | `docker compose --profile full down` | 전부 끄기 (DB 데이터는 남음) | |
 
-- **`--profile ai`·`full`은 아무나 켜지 않습니다.** 켜 두는 동안 OpenAI 비용이 들고(하루 약 $0.5), PC마다 따로 모으면 팀원끼리 데이터가 달라집니다. 수집 데이터는 데이터 담당이 PR로 올립니다(2절).
+- **`--profile ai`·`full`은 아무나 켜지 않습니다.** 켜 두는 동안 OpenAI 비용이 들고(SNS 포함 하루 약 $1 추정), PC마다 따로 모으면 팀원끼리 데이터가 달라집니다. 수집 데이터는 데이터 담당이 PR로 올립니다(2절).
+- **SNS(네이버 블로그·카페)**는 `.env`에 `NAVER_CLIENT_ID`·`NAVER_CLIENT_SECRET`(NAVER API HUB에서 받은 Client ID·Secret)이 있을 때만 **1시간마다** 모읍니다. 없으면 건너뛰고 뉴스는 그대로. 1시간을 기다리지 않고 바로 시험: `docker compose exec ai python -m hk_llm.steps.sns 3` (종목 3개, LLM 비용 1센트 미만)
 - `full`의 프론트는 **완성본(빌드한 화면)**을 nginx가 보여 주고, `/api` 요청은 백엔드 상자로 넘깁니다(`frontend/nginx.conf`). 화면 코드를 고치면서 볼 때는 11절 `npm run dev`(같은 5173 포트라 `full`과 동시에 켜지 않기).
 - 끌 때도 같은 `--profile`을 붙여야 합니다. `docker compose down`만 하면 AI·프론트 상자는 남습니다.
 - 상자마다 `restart: unless-stopped`라서, 꺼지면 Docker가 다시 켜 줍니다. PC를 다시 켜도 Docker Desktop만 켜지면 직전 상태로 돌아옵니다.
