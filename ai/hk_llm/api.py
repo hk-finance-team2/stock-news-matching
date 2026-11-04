@@ -64,7 +64,7 @@ def regenerate_summary(stock_code: Annotated[str, Path(pattern=r"^[0-9A-Z]{6}$")
     engine, now = get_engine(), datetime.now(KST)
     day = now.date()
     row = stored(engine, stock_code, day)
-    if (row and now - row[1] < COOLDOWN) or not claim(stock_code, now):
+    if (row and row[0] and now - row[1] < COOLDOWN) or not claim(stock_code, now):
         return body(stock_code, day, row, False)
     try:
         made = regenerate(engine, stock_code, day)

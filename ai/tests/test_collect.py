@@ -86,6 +86,77 @@ def test_step3_save():
             conn.execute(text("DELETE FROM article WHERE url_key = :k"), {"k": key})
 
 
+def test_sns_db():
+    # DB 가 켜져 있어야 함. 가짜 검색으로 시험용 글을 넣었다가 지움 (네이버·LLM 안 부름)
+    from datetime import date, datetime
+    from types import SimpleNamespace
+    from unittest import mock
+
+    import requests
+    from sqlalchemy import text
+
+    from hk_llm.core.config import KST
+    from hk_llm.core.db import get_engine
+    from hk_llm.steps import sns
+
+    prefix = "https://cafe.naver.com/hkllmtestcafe/"
+    code, name = "005930", "삼성전자"
+    response = []
+
+    def fake_search(kind, query):
+        if kind == "blog":
+            raise requests.ConnectionError("끊김")
+        return [{"title": f"{name} 주가 전망", "description": "상승 기대", "link": prefix + str(n), "cafename": "주식 시험"} for n in response]
+
+    def row(n, conn):
+        return conn.execute(text("""SELECT a.article_id, a.status, a.description, a.summary, a.model, a.summarized_at,
+                                           (SELECT COUNT(*) FROM article_stock s WHERE s.article_id = a.article_id) AS links
+                                    FROM article a WHERE a.url_key = :k"""), {"k": prefix + str(n)}).one()
+
+    engine = get_engine()
+    day = datetime(2000, 1, 1, tzinfo=KST)
+    try:
+        with mock.patch.object(sns, "search", fake_search):
+            response[:] = [100]
+            assert sns.collect(engine, [(code, name)]) == (0, 1), "처음 보는 카페는 기준점, 블로그 실패에도 계속"
+            response[:] = [101, 99]
+            assert sns.collect(engine, [(code, name)]) == (1, 1), "기준점보다 큰 번호만 새 글"
+        with engine.connect() as conn:
+            base, old, new = row(100, conn), row(99, conn), row(101, conn)
+        assert base.status == "SKIPPED" and base.description is None and base.links == 0
+        assert old.status == "SKIPPED" and old.links == 0, "번호가 작은 글은 오래된 글"
+        assert new.status == "FETCHED" and new.links == 1
+
+        item = SimpleNamespace(article_id=new.article_id, title="제목", description="상승 기대")
+        opinion = sns.Opinion(posts=[sns.Post(id=new.article_id, sentiment="POSITIVE", reason="실적 기대")], summary="기대 의견")
+        assert sns.save_result(engine, code, [item], opinion, day) == 1
+        summary_sql = text("SELECT sns_summary FROM stock_daily_summary WHERE stock_code = :c AND summary_date = :d")
+        with engine.connect() as conn:
+            done = row(101, conn)
+            assert conn.execute(summary_sql, {"c": code, "d": date(2000, 1, 1)}).scalar() == "기대 의견"
+        assert done.status == "DONE" and done.summary == "상승 기대"
+        assert done.model is None and done.summarized_at is None, "원문 미리보기를 AI 요약으로 표시하면 안 됨"
+
+        opinion.summary = ""
+        sns.save_result(engine, code, [item], opinion, day)
+        with engine.connect() as conn:
+            assert conn.execute(summary_sql, {"c": code, "d": date(2000, 1, 1)}).scalar() == "기대 의견", "버린 요약은 덮어쓰지 않음"
+
+        old_spam = SimpleNamespace(article_id=old.article_id, title="제목", description="abc.com 으로 오세요")
+        with engine.begin() as conn:
+            conn.execute(text("UPDATE article SET status = 'FETCHED', description = :d WHERE article_id = :i"), {"d": old_spam.description, "i": old.article_id})
+        opinion = sns.Opinion(posts=[sns.Post(id=old.article_id, sentiment="NEUTRAL", reason="의견")], summary="")
+        assert sns.save_result(engine, code, [old_spam], opinion, day) == 0
+        with engine.connect() as conn:
+            hidden = row(99, conn)
+        assert hidden.status == "SKIPPED" and hidden.description is None and hidden.summary is None, "원문이 화면에 나가면 안 됨"
+    finally:
+        with engine.begin() as conn:
+            conn.execute(text("DELETE s FROM article_stock s JOIN article a USING (article_id) WHERE a.url_key LIKE :k"), {"k": prefix + "%"})
+            conn.execute(text("DELETE FROM article WHERE url_key LIKE :k"), {"k": prefix + "%"})
+            conn.execute(text("DELETE FROM stock_daily_summary WHERE stock_code = :c AND summary_date = :d"), {"c": code, "d": date(2000, 1, 1)})
+
+
 def test_step4_extract():
     from hk_llm.steps.step4_body import extract
 

@@ -74,7 +74,7 @@ def combine(stock_name, lines, llm=None):
 def load_rows(engine, day):
     sql = text("""SELECT s.stock_code, i.stock_name, s.is_main, s.sentiment, s.reason, a.summary
                   FROM article_stock s JOIN article a USING (article_id) JOIN stock_info i USING (stock_code)
-                  WHERE a.status = 'DONE' AND a.channel <> 'DART' AND a.published_at >= :d AND a.published_at < :n
+                  WHERE a.status = 'DONE' AND a.source_type = 'NEWS' AND a.channel <> 'DART' AND a.published_at >= :d AND a.published_at < :n
                   ORDER BY a.published_at DESC""")
     with engine.connect() as conn:
         return [dict(r._mapping) for r in conn.execute(sql, {"d": day, "n": day + timedelta(days=1)})]

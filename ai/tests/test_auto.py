@@ -65,6 +65,56 @@ def test_dart_not_ready():
             pass
 
 
+def test_sns_rules():
+    from hk_llm.core.config import KST
+    from hk_llm.steps import sns
+    from hk_llm.steps.sns import Opinion, Post, cafe_marks, check, clean, is_new_cafe_post, is_spam, keep, published
+
+    names = ["HLB", "HLB제약", "삼성전자"]
+    assert clean("<b>HLB</b> &quot;주가&quot;   전망") == 'HLB "주가" 전망'
+    assert keep("HLB", "HLB 주가 어디까지", "신약 기대", None, names)
+    assert not keep("HLB", "HLB제약 주가 어디까지", "신약 기대", None, names), "다른 종목"
+    assert not keep("삼성전자", "반도체 이야기", "삼성전자 주가", None, names), "제목에 이름이 없음"
+    assert not keep("삼성전자", "삼성전자 주가 무료 추천", "카톡 문의", None, names), "광고"
+    assert not keep("삼성전자", "삼성전자 시황 정리", "주가", None, names), "모음 글"
+    assert not keep("삼성전자", "삼성전자 신제품 후기", "좋아요", None, names), "주식 이야기 아님"
+    assert not keep("삼성전자", "삼성전자 주가", "상승", "중고나라", names), "금융 카페 아님"
+    assert keep("삼성전자", "삼성전자 주가", "상승", "주식 종목분석", names)
+    now = datetime(2026, 11, 3, 15, 0, tzinfo=KST)
+    assert published(None, now) == now and published("20261103", now) == now
+    assert published("20261102", now).day == 2 and published("20261101", now) is None
+    for spam in ("HTTP://X.CO", "ｈｔｔｐ：／／x", "t.me/abc", "open.kakao.com/o/a", "abc . com 에서", "naver.com에서", "오픈\u200b채팅",
+                 "010.1234.5678", "010 1234 5678", "(010)1234-5678", "카카오톡 아이디 abc",
+                 "abc.com now", "t.me now", "30000 010-1234-5678", "주가 3 010-1234-5678", "0 1 0 1 2 3 4 5 6 7 8",
+                 "abc。com", "abc．com", "abc.shop", "네이버.com", "abc\u3164.com", "오픈\u3164채팅", "오픈\ufe0f채팅"):
+        assert is_spam(spam), f"광고를 통과시킴: {spam}"
+    for fine in ("카카오톡 개편 기대", "목표가 3.5만원", "1,010억 3,456만 7,890원", "2010-11-30 실적", "삼성전자 주가 전망", None,
+                 "1.SK하이닉스 상승", "상승했다.LG전자 하락", "2026.01.10 12:30 실적", "get.media 관련주", "3.5 . 7 상승"):
+        assert not is_spam(fine), f"정상 글을 막음: {fine}"
+    assert not keep("삼성전자", "삼성전자 주가 오픈 채팅", "상승", None, names), "공백으로 우회"
+    assert not keep("삼성전자", "삼성전자 주가", "상승 abc.com", None, names), "주소만 있는 글"
+    assert not keep("삼성전자", "삼성전자 주가", "상담 받으세요", None, names), "글에는 광고 단어도 막음"
+    for fine in ("리딩뱅크 경쟁과 유상증자 모집 의견", "목표가 30100원 의견", "2010-11 실적 비교"):
+        assert check(Opinion(posts=[], summary=fine)).summary == fine, "금융 표현은 통과"
+    for bad in ("오픈 채팅으로 오세요", "자세한 건 https://x.co", "010 1234 5678 로 연락"):
+        assert check(Opinion(posts=[], summary=bad)).summary == "", f"광고 요약을 통과시킴: {bad}"
+    mixed = check(Opinion(posts=[Post(id=1, sentiment="POSITIVE", reason="카톡 방 안내"), Post(id=2, sentiment="NEGATIVE", reason="실적 걱정")], summary="기대 의견"))
+    assert mixed.posts[0].reason == "이유 표시 안 함" and mixed.posts[1].reason == "실적 걱정" and mixed.summary == "기대 의견"
+    marks = cafe_marks(["https://cafe.naver.com/a/100", "https://cafe.naver.com/a/90", "https://blog.naver.com/x/5"])
+    assert marks == {"a": 100}
+    assert is_new_cafe_post("https://cafe.naver.com/a/101", marks)
+    assert not is_new_cafe_post("https://cafe.naver.com/a/100", marks), "이미 본 번호"
+    assert not is_new_cafe_post("https://cafe.naver.com/a/99", marks), "오래된 글"
+    assert not is_new_cafe_post("https://cafe.naver.com/b/999", marks), "처음 보는 카페는 기준점"
+    with mock.patch.dict(os.environ, {"NAVER_CLIENT_ID": "x"}), mock.patch.object(sns, "top_stocks", return_value=[]), \
+            mock.patch.object(sns, "collect", return_value=(1, 2)), mock.patch.object(sns, "summarize", return_value=1) as summarize:
+        try:
+            sns.run_sns(engine=object())
+            raise AssertionError("검색 실패를 알려야 함")
+        except RuntimeError:
+            assert summarize.called, "검색이 실패해도 분석은 함"
+
+
 def test_api_rules():
     from fastapi.testclient import TestClient
     from hk_llm import api

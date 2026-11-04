@@ -118,7 +118,7 @@ def summarize_articles(engine=None, limit=BATCH, model=MODEL, since=None):
     since = since or datetime.now(KST).date() - timedelta(days=1)
     with engine.connect() as conn:
         rows = conn.execute(text("""SELECT article_id, title, body, retry_count FROM article
-                                    WHERE status = 'FETCHED' AND published_at >= :since
+                                    WHERE status = 'FETCHED' AND source_type = 'NEWS' AND published_at >= :since
                                     ORDER BY article_id DESC LIMIT :n"""), {"since": since, "n": limit}).all()
     done = failed = 0
     for r in rows:
