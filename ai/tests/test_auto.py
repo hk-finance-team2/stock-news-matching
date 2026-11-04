@@ -84,9 +84,12 @@ def test_sns_rules():
     assert published(None, now) == now and published("20261103", now) == now
     assert published("20261102", now).day == 2 and published("20261101", now) is None
     for spam in ("HTTP://X.CO", "ｈｔｔｐ：／／x", "t.me/abc", "open.kakao.com/o/a", "abc . com 에서", "naver.com에서", "오픈\u200b채팅",
-                 "010.1234.5678", "010 1234 5678", "(010)1234-5678", "카카오톡 아이디 abc"):
+                 "010.1234.5678", "010 1234 5678", "(010)1234-5678", "카카오톡 아이디 abc",
+                 "abc.com now", "t.me now", "30000 010-1234-5678", "주가 3 010-1234-5678", "0 1 0 1 2 3 4 5 6 7 8",
+                 "abc。com", "abc．com", "abc.shop", "네이버.com", "abc\u3164.com", "오픈\u3164채팅", "오픈\ufe0f채팅"):
         assert is_spam(spam), f"광고를 통과시킴: {spam}"
-    for fine in ("카카오톡 개편 기대", "목표가 3.5만원", "1,010억 3,456만 7,890원", "2010-11-30 실적", "삼성전자 주가 전망", None):
+    for fine in ("카카오톡 개편 기대", "목표가 3.5만원", "1,010억 3,456만 7,890원", "2010-11-30 실적", "삼성전자 주가 전망", None,
+                 "1.SK하이닉스 상승", "상승했다.LG전자 하락", "2026.01.10 12:30 실적", "get.media 관련주", "3.5 . 7 상승"):
         assert not is_spam(fine), f"정상 글을 막음: {fine}"
     assert not keep("삼성전자", "삼성전자 주가 오픈 채팅", "상승", None, names), "공백으로 우회"
     assert not keep("삼성전자", "삼성전자 주가", "상승 abc.com", None, names), "주소만 있는 글"

@@ -38,10 +38,13 @@ WORD = re.compile("주가|주식|매수|매도|종목|증시|실적|목표가|�
 AD = re.compile(r"리딩|문의|모집|상담")  # 글에만 씀. 리딩뱅크·공모주 모집처럼 금융 표현일 수 있어 LLM 답에는 안 씀
 BRIEF = re.compile(r"마감|시황|브리핑|뉴스|상한가|\[일간|\[검색|정리|일정|TOP")
 FIN_CAFE = re.compile("주식|증시|재테크|투자|종목|차트|트레이더|트레이딩|매매|금융|경제|ETF", re.I)
-REJECT = re.compile(  # 글과 LLM 답에 같이 씀. normalize 한 글 기준. 카카오톡만 나오는 글은 카카오 종목 이야기일 수 있어 막지 않음
-    r"https?://|www\.|닷컴|t\.me|open\.kakao|kakaotalk|telegram|카톡|카카오톡(?:방|아이디|친구|문의|으로|오픈)|오픈채팅|텔레그램|무료추천|수익인증"
-    r"|[a-z0-9-]+\.(?:com|net|org|kr|co|me|ly|io)(?![a-z0-9])"
-    r"|(?<!\d)01[016-9][.\-()/·]*\d{3,4}[.\-()/·]*\d{4}(?!\d)")
+# 글과 LLM 답에 같이 씀. 카카오톡만 나오는 글은 카카오 종목 이야기일 수 있어 막지 않음
+SPAM_WORD = re.compile(r"https?://|www\.|닷컴|open\.kakao|kakaotalk|telegram|카톡|카카오톡(?:방|아이디|친구|문의|으로|오픈)|오픈채팅|텔레그램|무료추천|수익인증")  # 공백을 지운 글에
+# ponytail: 주소 끝은 목록으로 봄. 아무 영문이나 받으면 "1.SK하이닉스"·"상승.LG전자" 같은 정상 글이 걸림. 새 주소 끝이 보이면 추가
+SPAM_CONTACT = re.compile(  # 앞뒤 경계를 봐야 해서 공백을 남긴 글에
+    r"(?!\d+\.)[\w-]+\.(?:com|net|org|kr|co|me|ly|io|ai|gg|cc|tv|shop|xyz|site|info|biz|app|link|top|club|online|store|live)(?![a-z0-9])"
+    r"|(?<!\d)0[\s.\-()/·]*1[\s.\-()/·]*[016-9](?:[\s.\-()/·]*\d){7,8}(?!\d)")
+FILLER = {"\u115f", "\u1160", "\u3164", "\uffa0"}  # 한글 채움 문자: 안 보이지만 글자로 취급됨
 CAFE_POST = re.compile(r"cafe\.naver\.com/([^/?#]+)/(\d+)")
 UPSERT = text("""INSERT INTO stock_daily_summary (stock_code, summary_date, sns_summary) VALUES (:code, :d, :text)
                  ON DUPLICATE KEY UPDATE sns_summary = :text""")  # 뉴스 요약·generated_at 은 건드리지 않음
@@ -77,15 +80,20 @@ def clean(value):
     return " ".join(html.unescape(re.sub(r"<[^>]+>", "", value or "")).split())
 
 
+def visible(value):
+    """우회 막기: 전각 문자를 보통 문자로, 다른 모양 마침표를 . 으로, 보이지 않는 문자 제거, 소문자. 공백은 남김"""
+    value = unicodedata.normalize("NFKC", value or "").replace("\u3002", ".")
+    return "".join(c for c in value if unicodedata.category(c) not in ("Cf", "Mn") and c not in FILLER).lower()
+
+
 def normalize(value):
-    """우회 막기: 전각 문자를 보통 문자로, 보이지 않는 문자·공백 제거, 소문자"""
-    value = unicodedata.normalize("NFKC", value or "")
-    return "".join(c for c in value if unicodedata.category(c) != "Cf" and not c.isspace()).lower()
+    return re.sub(r"\s+", "", visible(value))
 
 
 def is_spam(value):
-    """링크·연락처·메신저 표현이 있나"""
-    return bool(REJECT.search(normalize(value)))
+    """링크·연락처·메신저 표현이 있나. 공백을 지운 글과 남긴 글을 따로 봄 (지우면 abc.com now 가 abc.comnow 로 붙음)"""
+    text_ = visible(value)
+    return bool(SPAM_WORD.search(re.sub(r"\s+", "", text_)) or SPAM_CONTACT.search(re.sub(r"\s*\.\s*", ".", text_)))
 
 
 def keep(name, title, preview, cafe, all_names):
