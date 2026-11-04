@@ -1167,8 +1167,15 @@ textarea:focus-visible,
     display: flex;
     align-items: center;
     gap: 6px;
+    min-width: 0;
     overflow-x: auto;
     scrollbar-width: thin;
+}
+
+/* 칩이 많거나 화면이 좁아도 "+ 관심종목 관리"가 한 글자씩 세로로 꺾이지 않게 (QA #1 같이) */
+.quick-chips .more-link2 {
+    flex-shrink: 0;
+    white-space: nowrap;
 }
 
 .quick-chip {
@@ -2119,6 +2126,23 @@ textarea:focus-visible,
         position: static;
         max-height: none;
         overflow: visible;
+    }
+
+    /* 헤더가 좁아지면 설명 배지·수집 상태 글자를 숨기고, 그래도 넘치면 다음 줄로 → 로그인 버튼이 화면 밖으로 밀리지 않게 (QA #1) */
+    .header-content {
+        flex-wrap: wrap;
+        row-gap: 8px;
+    }
+
+    .brand-sub,
+    .live-indicator {
+        display: none;
+    }
+
+    .user-actions {
+        margin-left: auto;
+        flex-wrap: wrap;
+        justify-content: flex-end;
     }
 }
 
