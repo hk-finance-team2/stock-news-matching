@@ -113,6 +113,7 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 | `minRelevance` | 0~100 (%). 관련도가 이 값 이상인 종목이 있는 글만. `stockCode`와 같이 쓰면 그 종목 기준 | 관련도 필터 |
 | `q` | 검색어 (50자 이하). 제목·요약·키워드에 들어 있는 글만 | 검색 |
 | `period` | `today` / `7d` / `30d` (없으면 전체). 7d = 오늘 포함 7일 (언급량 그래프와 같은 뜻) | 기간 버튼 |
+| `sentiment` | `POSITIVE` / `NEGATIVE` / `NEUTRAL` (없으면 전체). `stockCode`가 있으면 그 종목에 대한 감성, 없으면 주인공 종목의 감성 (카드에 보이는 감성과 같은 뜻). 관심 종목 글(`/api/watchlist/articles`)도 같음 | 감성 버튼 |
 | `page`, `size` | 1부터, 1~100 (기본 20) | |
 
 예: 홈 `GET /api/articles` · 삼성전자 화면 `GET /api/articles?stockCode=005930` · SNS만 관련도순 `GET /api/articles?source=SNS&sort=relevance`
