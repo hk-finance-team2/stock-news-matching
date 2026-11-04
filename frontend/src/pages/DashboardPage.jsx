@@ -743,7 +743,7 @@ function ArticleDetail({
       {/* AI 3줄 핵심 요약 & 종목 감성 분석 카드 */}
       <div className="ai-card">
         <div className="ai-card-header">
-          <span className="ai-card-badge">🤖 AI 3줄 핵심 요약 & 감성 분석 (F-05)</span>
+          <span className="ai-card-badge">🤖 AI 3줄 핵심 요약 & 감성 분석</span>
           <div className="header-btn-group">
             <SentimentBadge sentiment={article.sentiment} />
           </div>
@@ -1045,7 +1045,7 @@ useEffect(() => {
   const [searchSource, setSearchSource] = useState('NEWS'); // NEWS | SNS | ALL (기본 뉴스: 목록과 같은 이유)
   const [showAutocomplete, setShowAutocomplete] = useState(false);
 
-  // 언급량 추이 기간 (F-13)
+  // 언급량 추이 기간 (F-14)
   const [trendPeriod, setTrendPeriod] = useState('today'); // today | 7d | 30d
 
   // 뉴스·SNS 필터 및 정렬
@@ -1095,7 +1095,7 @@ useEffect(() => {
   // 토스트 알림
   const [toast, setToast] = useState(null);
 
-  // 종목별 실시간 종목토론 댓글 (F-17)
+  // 종목별 실시간 종목토론 댓글 (F-20)
   // 종목별 토론 의견 { 종목코드: [의견] } (F-20, 게시판 API). 종목 화면·글 상세에서 필요한 종목만 받음
   const [commentsByStock, setCommentsByStock] = useState({});
   const loadComments = useCallback((code) => {
@@ -2049,7 +2049,7 @@ useEffect(() => {
             />
 
             <div className="llm-notice feed-footer-notice">
-              🤖 안내(N-05): AI(LLM) 요약·감성 분석 및 SNS 게시글(미검증 정보)은 투자 권유가 아니며, 원문과 공시를 반드시 확인해 주세요.
+              🤖 안내: AI(LLM) 요약·감성 분석 및 SNS 게시글(미검증 정보)은 투자 권유가 아니며, 원문과 공시를 반드시 확인해 주세요.
             </div>
           </div>
 
@@ -2512,7 +2512,7 @@ useEffect(() => {
             <div className="content-card">
               <div className="card-header">
                 <div className="card-title">
-                  🤖 {selectedStock.name} 오늘의 AI 종합 요약 & 감성 비율 (F-06)
+                  🤖 {selectedStock.name} 오늘의 AI 종합 요약 & 감성 비율
                 </div>
                 <div className="header-btn-group">
                   <span className="stock-meta num">생성 시각 {currentSummary?.updatedAt || '-'}</span>
@@ -2542,7 +2542,7 @@ useEffect(() => {
                   <div className="empty-text">{stockSummary.error ? '요약을 불러오지 못했습니다.' : '불러오는 중…'}</div>
                 )}
                 <div className="llm-notice">
-                  🤖 안내(N-05): AI(LLM)가 생성한 요약 및 감성 분석 결과는 원문과 차이가 있거나 오류가 있을 수 있습니다.
+                  🤖 안내: AI(LLM)가 생성한 요약 및 감성 분석 결과는 원문과 차이가 있거나 오류가 있을 수 있습니다.
                 </div>
               </div>
 
@@ -2660,7 +2660,7 @@ useEffect(() => {
           <>
             {stockTab === 'sns' && (
               <div className="sns-warning-inline" role="alert">
-                ⚠️ <strong>참고용 · 확인되지 않은 정보 (N-05):</strong> SNS 블로그·카페 게시글은 사실 여부가 검증되지 않았으므로 투자 판단 시 원문과 공시를 반드시 확인해 주세요.
+                ⚠️ <strong>참고용 · 확인되지 않은 정보:</strong> SNS 블로그·카페 게시글은 사실 여부가 검증되지 않았으므로 투자 판단 시 원문과 공시를 반드시 확인해 주세요.
               </div>
             )}
 
