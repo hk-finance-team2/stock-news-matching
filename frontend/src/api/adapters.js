@@ -69,8 +69,9 @@ export function toUiArticle(item) {
   }));
   // 글 전체 감성은 상세에만 있음. 목록에서는 주인공 종목(isMain)에 대한 감성으로 대신함
   const main = relatedStocks.find((s) => s.isMain) || relatedStocks[0];
-  const summaryLines = String(item.summary || '')
-    .split('\n')
+  // AI 요약은 2~3문장이 한 줄로 옴 → 문장마다 한 줄 (화면의 "3줄 요약"). 줄바꿈이 있으면 그대로
+  const rawSummary = String(item.summary || '').trim();
+  const summaryLines = (rawSummary.includes('\n') ? rawSummary.split('\n') : rawSummary.split(/(?<=[.!?])\s+/))
     .map((line) => line.trim())
     .filter(Boolean);
 

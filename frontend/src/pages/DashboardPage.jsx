@@ -16,6 +16,7 @@ import {
 } from '../mocks/mockData';
 import { stockApi, quoteApi } from '../api';
 import { toUiStock } from '../api/adapters';
+import { toArticleParams, useArticleDetail, usePagedArticles } from '../hooks/useArticles';
 import '../styles/dashboard.css';
 
 // 1계층: 왼쪽 사이드바 네비게이션 메뉴 (장소 이동 전용)
@@ -296,8 +297,38 @@ function MentionTrendChart({ series, plotHeight }) {
 }
 
 // 좌측 뉴스·SNS 목록 (카드 클릭 시 우측 ArticleDetail, #종목칩 클릭 시 종목 상세 화면 이동)
-function ArticleList({ articles, selectedId, onSelect, onSelectStock }) {
+/** SNS 글은 네이버 검색 결과 그대로: 누르면 원문으로 (약관 특약 2.1, docs/api.md "뉴스·SNS 글") */
+const openOriginal = (url) => {
+  if (/^https?:\/\//.test(url || '')) window.open(url, '_blank', 'noopener,noreferrer');
+};
+
+/** 서버에서 한 쪽씩 받은 목록 아래: 불러오는 중 / 실패 / 더 보기 */
+function FeedFooter({ feed }) {
+  if (!feed) return null;
+  if (feed.error) {
+    return (
+      <div className="empty-text">
+        글을 불러오지 못했습니다 ({feed.error.message}){' '}
+        <button type="button" className="more-link2" onClick={feed.reload}>
+          다시 시도
+        </button>
+      </div>
+    );
+  }
+  if (feed.loading) return <div className="empty-text">불러오는 중…</div>;
+  if (!feed.hasMore) return null;
+  return (
+    <div className="card-footer-link">
+      <button type="button" className="more-link" onClick={feed.loadMore}>
+        더 보기 ({feed.items.length.toLocaleString()} / {feed.totalCount.toLocaleString()})
+      </button>
+    </div>
+  );
+}
+
+function ArticleList({ articles, selectedId, onSelect, onSelectStock, feed }) {
   if (articles.length === 0) {
+    if (feed && (feed.loading || feed.error)) return <FeedFooter feed={feed} />;
     return (
       <div className="empty-text">
         조건에 맞는 분석 완료 글이 없습니다. 상단 필터 조건을 변경해 보세요.
@@ -309,8 +340,10 @@ function ArticleList({ articles, selectedId, onSelect, onSelectStock }) {
       {articles.map((art) => {
         const isSns = art.sourceType !== 'NEWS';
         const topStocks = [...(art.relatedStocks || [])]
-          .sort((a, b) => b.relevance - a.relevance)
+          .sort((a, b) => (b.relevance ?? -1) - (a.relevance ?? -1))
           .slice(0, 3);
+        // SNS는 상세 대신 원문으로 바로 (우리 분석을 검색 결과에 붙이지 않음)
+        const open = () => (isSns ? openOriginal(art.url) : onSelect(art.id));
 
         return (
           <article
@@ -318,18 +351,18 @@ function ArticleList({ articles, selectedId, onSelect, onSelectStock }) {
             className={`article-item ${selectedId === art.id ? 'selected' : ''}`}
             role="button"
             tabIndex={0}
-            aria-label={`${art.title} 상세 보기`}
-            onClick={() => onSelect(art.id)}
+            aria-label={isSns ? `${art.title} 원문 열기 (새 창)` : `${art.title} 상세 보기`}
+            onClick={open}
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
-                onSelect(art.id);
+                open();
               }
             }}
           >
             <div className="article-top-meta">
               <div className="article-meta-left">
-                <SentimentBadge sentiment={art.sentiment} />
+                {!isSns && <SentimentBadge sentiment={art.sentiment} />}
                 <span className={`source-pill ${isSns ? 'sns' : 'news'}`}>
                   {isSns ? 'SNS' : 'NEWS'}
                 </span>
@@ -339,7 +372,10 @@ function ArticleList({ articles, selectedId, onSelect, onSelectStock }) {
               </span>
             </div>
 
-            <h4 className="article-title">{art.title}</h4>
+            <h4 className="article-title">
+              {art.title}
+              {isSns && ' ↗'}
+            </h4>
 
             <div className="article-stock-tags">
               {topStocks.map((rel) => (
@@ -351,9 +387,10 @@ function ArticleList({ articles, selectedId, onSelect, onSelectStock }) {
                     e.stopPropagation();
                     onSelectStock(rel.code);
                   }}
-                  title={`${rel.name} 종목 상세 화면으로 이동 (${rel.relationType} · 관련도 ${rel.relevance}%)`}
+                  title={`${rel.name} 종목 상세 화면으로 이동`}
                 >
-                  #{rel.name} <span>{rel.relevance}%</span>
+                  #{rel.name}
+                  {!isSns && rel.relevance !== null && <span>{rel.relevance}%</span>}
                 </button>
               ))}
               {isSns && <span className="sns-mini-tag">⚠️ 참고용 · 확인되지 않은 정보</span>}
@@ -361,6 +398,7 @@ function ArticleList({ articles, selectedId, onSelect, onSelectStock }) {
           </article>
         );
       })}
+      <FeedFooter feed={feed} />
     </div>
   );
 }
@@ -581,12 +619,8 @@ function StockComments({
 function ArticleDetail({
   article,
   allStocks,
-  allArticles,
   onSelectStock,
-  onSelectArticle,
   onClose,
-  regenerating = false,
-  onRegenerateSummary,
   showComments = true,
   preferredStockCode,
   commentsByStock = {},
@@ -597,7 +631,7 @@ function ArticleDetail({
   onRequireLogin,
 }) {
   const sortedRelatedStocks = useMemo(
-    () => [...(article?.relatedStocks || [])].sort((a, b) => b.relevance - a.relevance),
+    () => [...(article?.relatedStocks || [])].sort((a, b) => (b.relevance ?? -1) - (a.relevance ?? -1)),
     [article]
   );
 
@@ -630,27 +664,8 @@ function ArticleDetail({
     allStocks.find((s) => s.code === sortedRelatedStocks[0]?.code) ||
     allStocks[0];
 
-  const articleSentimentRatio =
-    article.sentimentRatio ||
-    primaryStock?.sentimentRatio ||
-    (article.sentiment === 'POSITIVE'
-      ? { positive: 72, neutral: 18, negative: 10 }
-      : article.sentiment === 'NEGATIVE'
-        ? { positive: 18, neutral: 22, negative: 60 }
-        : { positive: 45, neutral: 35, negative: 20 });
-
-  const relatedSnsList = (() => {
-    if (isSns) return [];
-    if (Array.isArray(article.relatedSns) && article.relatedSns.length > 0) {
-      return article.relatedSns.slice(0, 5);
-    }
-    const relCodes = new Set(sortedRelatedStocks.map((r) => r.code));
-    return allArticles
-      .filter(
-        (a) => a.sourceType === 'SNS' && a.relatedStocks.some((r) => relCodes.has(r.code))
-      )
-      .slice(0, 5);
-  })();
+  // 같은 종목·가까운 시각의 SNS (상세 API가 최대 5개를 줌). 목록에서 막 열어 아직 상세를 받는 중이면 빈 목록
+  const relatedSnsList = isSns ? [] : (article.relatedSns || []).slice(0, 5);
 
   const targetStockComments = commentsByStock[primaryStock?.code] || [];
   // 현재 상세보기로 열어본 글이 뉴스(NEWS)이면 'news'([뉴스]), SNS이면 'sns'([SNS]) 말머리 자동 연동
@@ -713,16 +728,6 @@ function ArticleDetail({
           <span className="ai-card-badge">🤖 AI 3줄 핵심 요약 & 감성 분석 (F-05)</span>
           <div className="header-btn-group">
             <SentimentBadge sentiment={article.sentiment} />
-            {onRegenerateSummary && (
-              <button
-                type="button"
-                className="more-link2"
-                onClick={onRegenerateSummary}
-                disabled={regenerating}
-              >
-                {regenerating ? '⏳ 재생성 중...' : '🔄 요약 재생성'}
-              </button>
-            )}
           </div>
         </div>
         <ul className="summary-lines">
@@ -730,7 +735,6 @@ function ArticleDetail({
             <li key={idx}>{line}</li>
           ))}
         </ul>
-        <SentimentBar ratio={articleSentimentRatio} />
         <div className="llm-notice">
           🤖 AI(LLM) 요약 및 감성 분석 결과는 원문과 차이가 있을 수 있습니다.
         </div>
@@ -770,19 +774,11 @@ function ArticleDetail({
                         <span className="stock-code num">{rel.code}</span>
                       </td>
                       <td className="num">
-                        <span className="source-pill">{rel.relationType}</span>{' '}
-                        <strong>{rel.relevance}%</strong>
+                        {rel.relationType && <span className="source-pill">{rel.relationType}</span>}{' '}
+                        <strong>{rel.relevance !== null ? `${rel.relevance}%` : '-'}</strong>
                       </td>
-                      <td className="num-col num">
-                        {hasPrice
-                          ? `${st.price.toLocaleString()}원`
-                          : `매칭 ${st?.todayMatchedCount ?? 0}건`}
-                      </td>
-                      <td className={`num-col num ${tone}`}>
-                        {hasPrice
-                          ? formatRate(st.changeRate)
-                          : `긍정 ${st?.sentimentRatio?.positive ?? 50}%`}
-                      </td>
+                      <td className="num-col num">{hasPrice ? `${st.price.toLocaleString()}원` : '-'}</td>
+                      <td className={`num-col num ${tone}`}>{hasPrice ? formatRate(st.changeRate) : '-'}</td>
                     </tr>
                   );
                 })}
@@ -802,12 +798,15 @@ function ArticleDetail({
                       📊 {rel.name} <span className="stock-code num">({rel.code})</span> 상세 이동 →
                     </button>
                     <span className="relevance-score num">
-                      {rel.relationType} 매칭 · 관련도 {rel.relevance}%
+                      {rel.relationType && `${rel.relationType} 매칭 · `}
+                      {rel.relevance !== null ? `관련도 ${rel.relevance}%` : '관련도 준비 중'}
                     </span>
                   </div>
-                  <div className="gauge-track" title={`관련도 ${rel.relevance}%`}>
-                    <div className="gauge-fill" style={{ width: `${rel.relevance}%` }} />
-                  </div>
+                  {rel.relevance !== null && (
+                    <div className="gauge-track" title={`관련도 ${rel.relevance}%`}>
+                      <div className="gauge-fill" style={{ width: `${rel.relevance}%` }} />
+                    </div>
+                  )}
                   {rel.matchedKeywords?.length > 0 && (
                     <div className="matched-kw-row">
                       {rel.matchedKeywords.map((mk) => (
@@ -817,12 +816,16 @@ function ArticleDetail({
                       ))}
                     </div>
                   )}
-                  <div className="evidence-reason">
-                    <strong>연결 이유:</strong> {rel.reason}
-                  </div>
-                  <div className="evidence-quote">
-                    <strong>근거 원문:</strong> {rel.evidence}
-                  </div>
+                  {rel.reason && (
+                    <div className="evidence-reason">
+                      <strong>연결 이유:</strong> {rel.reason}
+                    </div>
+                  )}
+                  {rel.evidence && (
+                    <div className="evidence-quote">
+                      <strong>근거 원문:</strong> “{rel.evidence}”
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -846,16 +849,17 @@ function ArticleDetail({
                   className="related-sns-row"
                   role="button"
                   tabIndex={0}
-                  onClick={() => onSelectArticle(sns.id)}
+                  aria-label={`${sns.title} 원문 열기 (새 창)`}
+                  onClick={() => openOriginal(sns.url)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                       e.preventDefault();
-                      onSelectArticle(sns.id);
+                      openOriginal(sns.url);
                     }
                   }}
                 >
-                  <span className="source-pill sns">{sns.channel || sns.press}</span>
-                  <span className="related-sns-title">{sns.title}</span>
+                  <span className="source-pill sns">{sns.press || sns.channel}</span>
+                  <span className="related-sns-title">{sns.title} ↗</span>
                   <span className="stock-meta num">{sns.publishedAt || sns.time}</span>
                 </div>
               ))}
@@ -1029,7 +1033,8 @@ useEffect(() => {
   const [trendPeriod, setTrendPeriod] = useState('today'); // today | 7d | 30d
 
   // 뉴스·SNS 필터 및 정렬
-  const [channelFilter, setChannelFilter] = useState('ALL'); // ALL | NEWS | SNS
+  // 기본은 뉴스: SNS 글 시각은 "모은 시각"이라 뉴스와 한 줄로 세우면 1시간마다 SNS가 맨 위를 덮음
+  const [channelFilter, setChannelFilter] = useState('NEWS'); // NEWS | SNS | ALL
   const [sentimentFilter, setSentimentFilter] = useState('ALL'); // ALL | POSITIVE | NEGATIVE | NEUTRAL
   const [articlePeriod, setArticlePeriod] = useState('ALL'); // ALL | 0 | 7 | 30
   const [minRelevance, setMinRelevance] = useState(0); // 0 | 50 | 70 | 80
@@ -1252,35 +1257,20 @@ useEffect(() => {
     [currentTrend]
   );
 
-  // [화면 A] 홈 화면용 전체 뉴스·SNS 소식 필터링
-  const homeFeedArticles = useMemo(() => {
-    const relevanceOf = (art) =>
-      Math.max(...(art.relatedStocks || []).map((r) => r.relevance), 0);
+  // [화면 A] 홈 뉴스·SNS 목록: 조건은 서버가 걸러 한 쪽(20개)씩 줌 (GET /api/articles)
+  const homeFeed = usePagedArticles(
+    toArticleParams({
+      channel: channelFilter,
+      sentiment: sentimentFilter,
+      period: articlePeriod,
+      minRelevance,
+      sort: articleSort,
+    })
+  );
+  const homeFeedArticles = homeFeed.items;
 
-    return allArticles
-      .filter((art) => channelFilter === 'ALL' || art.sourceType === channelFilter)
-      .filter((art) => sentimentFilter === 'ALL' || art.sentiment === sentimentFilter)
-      .filter((art) => {
-        if (!onlyWatchlistArticles) return true;
-        return art.relatedStocks.some((r) => watchlistCodes.includes(r.code));
-      })
-      .filter((art) => articlePeriod === 'ALL' || art.daysAgo <= Number(articlePeriod))
-      .filter((art) => relevanceOf(art) >= minRelevance)
-      .sort((a, b) =>
-        articleSort === 'relevance'
-          ? relevanceOf(b) - relevanceOf(a)
-          : b.publishedAt.localeCompare(a.publishedAt)
-      );
-  }, [
-    allArticles,
-    channelFilter,
-    sentimentFilter,
-    onlyWatchlistArticles,
-    watchlistCodes,
-    articlePeriod,
-    minRelevance,
-    articleSort,
-  ]);
+  // 고른 글의 상세 (연결 이유·근거 문장·가까운 SNS는 상세 API에만 있음). 받는 동안은 목록의 값으로 먼저 보여 줌
+  const articleDetail = useArticleDetail(selectedArticleId);
 
   // [화면 B] 개별 종목 상세(news / sns 탭) 전용 소식 필터링
   const stockFeedArticles = useMemo(() => {
@@ -1628,9 +1618,6 @@ useEffect(() => {
   // ArticleDetail에 공통 전달할 댓글·요약 연동 props
   const detailSharedProps = {
     allStocks,
-    allArticles,
-    regenerating,
-    onRegenerateSummary: handleRegenerateSummary,
     showComments: true,
     preferredStockCode: selectedStockCode,
     commentsByStock,
@@ -1813,9 +1800,9 @@ useEffect(() => {
         {showChannel && (
           <div className="control-group" role="group" aria-label="채널 필터">
             {[
-              { key: 'ALL', label: '전체 채널' },
               { key: 'NEWS', label: '📰 뉴스' },
               { key: 'SNS', label: '💬 SNS' },
+              { key: 'ALL', label: '전체' },
             ].map((ch) => (
               <button
                 key={ch.key}
@@ -1904,8 +1891,9 @@ useEffect(() => {
   // 우측(.side-stack) 순서: 1순위 [⭐ 나의 관심 종목] (위) -> 2순위 [🔥 오늘의 이슈 종목 TOP 7] (아래)
   // ============================================================================
   const renderHomeView = () => {
-    const selectedHomeArticle =
-      homeFeedArticles.find((a) => a.id === selectedArticleId) || null;
+    const selectedHomeArticle = selectedArticleId
+      ? articleDetail.article || homeFeedArticles.find((a) => a.id === selectedArticleId) || null
+      : null;
 
     return (
       <div className="wrapper">
@@ -1954,8 +1942,8 @@ useEffect(() => {
           ))}
         </section>
 
-        {/* 3. 통합 필터 컨트롤 바 */}
-        {renderFilterControlBar({ showChannel: true, showWatchToggle: true })}
+        {/* 3. 통합 필터 컨트롤 바 (관심종목 글만 보기는 로그인 연결 뒤에 다시 켬) */}
+        {renderFilterControlBar({ showChannel: true, showWatchToggle: false })}
 
         {/* 4. 하단 2단 분할 레이아웃 (.split-layout) */}
         <div className="split-layout">
@@ -1964,7 +1952,7 @@ useEffect(() => {
             <div className="card-header">
               <div className="card-title">
                 📰 실시간 뉴스 × 종목 AI 매칭 소식{' '}
-                <span className="count-badge num">{homeFeedArticles.length}</span>
+                <span className="count-badge num">{homeFeed.totalCount.toLocaleString()}</span>
               </div>
               <span className="card-caption">
                 글 클릭 시 우측 상세 분석 · #종목칩 클릭 시 종목 상세 화면 이동
@@ -1978,6 +1966,7 @@ useEffect(() => {
                 setSelectedArticleId((prev) => (prev === artId ? null : artId))
               }
               onSelectStock={(code) => navigateToStockDetail(code, 'summary')}
+              feed={homeFeed}
             />
 
             <div className="llm-notice feed-footer-notice">
