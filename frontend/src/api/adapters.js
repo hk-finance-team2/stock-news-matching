@@ -1,5 +1,5 @@
 // 백엔드 응답 → 화면(DashboardPage)이 쓰는 모양으로 바꾸기
-// 화면은 mocks/mockData.js 의 normalize* 함수가 만든 모양을 씀. 같은 칸 이름을 맞춰 주면 화면 코드를 안 고쳐도 됨
+// 화면 조각(글 카드·상세·감성 막대 등)이 처음 만들어질 때 쓰던 칸 이름에 맞춤 → 화면 코드를 덜 고치고 연결
 // 원칙: 백엔드에 없는 값은 지어내지 않음 (가짜 감성 %·가짜 연결 이유 금지) → 비워 두고 화면에서 "준비 중"
 
 const EMPTY_RATIO = Object.freeze({ positive: 0, neutral: 0, negative: 0 });

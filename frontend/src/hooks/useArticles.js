@@ -5,7 +5,8 @@ import { toUiArticle } from '../api/adapters';
 
 const PAGE_SIZE = 20;
 
-const PERIOD_PARAM = { ALL: undefined, 0: 'today', 7: '7d', 30: '30d' };
+/** 화면 기간 버튼(ALL|0|7|30) → API 기간(today|7d|30d). 검색에도 씀 */
+export const PERIOD_PARAM = { ALL: undefined, 0: 'today', 7: '7d', 30: '30d' };
 
 /**
  * 화면 필터 상태 → GET /api/articles 조건 (값이 없으면 undefined → 주소에서 빠짐)

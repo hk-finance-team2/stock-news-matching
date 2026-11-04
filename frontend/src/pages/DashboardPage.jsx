@@ -1,24 +1,27 @@
 // src/pages/DashboardPage.jsx
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  STOCKS_DATA,
-  ARTICLES_DATA,
-  STOCK_SUMMARIES_DATA,
-  MENTION_TRENDS_DATA,
-  normalizeStocks,
-  normalizeArticles,
-} from '../mocks/mockData';
-import { articleApi, authApi, boardApi, quoteApi, statusApi, stockApi, tokenStore, watchlistApi } from '../api';
+  articleApi,
+  authApi,
+  boardApi,
+  quoteApi,
+  searchApi,
+  statusApi,
+  stockApi,
+  tokenStore,
+  watchlistApi,
+} from '../api';
 import {
   toClock,
   toDisplayTime,
+  toUiArticle,
   toUiBoardComment,
   toUiMentionSeries,
   toUiStock,
   toUiSummary,
 } from '../api/adapters';
 import { useApi } from '../hooks/useApi';
-import { toArticleParams, useArticleDetail, usePagedArticles } from '../hooks/useArticles';
+import { PERIOD_PARAM, toArticleParams, useArticleDetail, usePagedArticles } from '../hooks/useArticles';
 import '../styles/dashboard.css';
 
 // 1계층: 왼쪽 사이드바 네비게이션 메뉴 (장소 이동 전용)
@@ -892,62 +895,21 @@ function ArticleDetail({
 }
 
 export default function DashboardPage() {
-  // 양방향 정규화된 초기 데이터
-  // 화면 연결 진행 상황은 src/api/README.md 참고. 아직 연결하지 않은 화면은 가짜 데이터(mockData)를 씀
-  const mockStocks = useMemo(
-    () => normalizeStocks(STOCKS_DATA, STOCK_SUMMARIES_DATA, MENTION_TRENDS_DATA),
-    []
-  );
-  // 백엔드 종목 검색으로 고른 종목 중 가짜 데이터에 없는 것 (시세·요약은 아직 없음 → analysisReady: false)
-  // const [apiStocks, setApiStocks] = useState([]);
-  // const allStocks = useMemo(() => [...mockStocks, ...apiStocks], [mockStocks, apiStocks]);
+  // 화면에 쓰는 종목 = 서버에서 받은 종목 (검색·이슈 순위·글의 종목 칩에서 고른 것) + 받아 둔 시세
+  // 데이터 흐름: 백엔드 API(src/api) → 화면 모양 변환(api/adapters.js) → 이 화면. 가짜 데이터(mocks)는 쓰지 않음
   const [apiStocks, setApiStocks] = useState([]);
-const [liveQuotes, setLiveQuotes] = useState({});
+  const [liveQuotes, setLiveQuotes] = useState({});
 
-const allStocks = useMemo(
-  () =>
-    [...mockStocks, ...apiStocks].map((stock) => {
-      const quote = liveQuotes[stock.code];
+  const allStocks = useMemo(
+    () =>
+      apiStocks.map((stock) => {
+        const quote = liveQuotes[stock.code];
+        if (!quote) return stock;
+        return { ...stock, price: quote.price, changeRate: quote.changeRate, changeAmount: quote.changeAmount };
+      }),
+    [apiStocks, liveQuotes]
+  );
 
-      if (!quote) return stock;
-
-      return {
-        ...stock,
-        price: quote.price,
-        changeRate: quote.changeRate,
-        changeAmount: quote.changeAmount,
-      };
-    }),
-  [mockStocks, apiStocks, liveQuotes]
-);
-
-// // 현재 선택한 종목과 관심종목의 실제 시세 조회
-// useEffect(() => {
-//   const codes = [...new Set([selectedStockCode, ...watchlistCodes].filter(Boolean))];
-//   let cancelled = false;
-
-//   Promise.allSettled(
-//     codes.map((code) => quoteApi.get(code))
-//   ).then((results) => {
-//     if (cancelled) return;
-
-//     const quotes = {};
-
-//     results.forEach((result, index) => {
-//       if (result.status === 'fulfilled' && result.value?.price != null) {
-//         quotes[codes[index]] = result.value;
-//       }
-//     });
-
-//     setLiveQuotes((prev) => ({ ...prev, ...quotes }));
-//   });
-
-//   return () => {
-//     cancelled = true;
-//   };
-// }, [selectedStockCode, watchlistCodes]);
-
-  const allArticles = useMemo(() => normalizeArticles(ARTICLES_DATA), []);
 
   // 1계층: 왼쪽 사이드바 장소 상태 ('home' | 'stock' | 'watchlist') & 접기/펴기 상태
   const [activeNav, setActiveNav] = useState('home');
@@ -1034,7 +996,7 @@ useEffect(() => {
   // 통합 검색바 (F-12: 검색어 + 기간 필터 + 출처 필터 + 종목·글 2단 자동완성)
   const [searchQuery, setSearchQuery] = useState('');
   const [searchPeriod, setSearchPeriod] = useState('ALL'); // ALL | 0 | 7 | 30
-  const [searchSource, setSearchSource] = useState('ALL'); // ALL | NEWS | SNS
+  const [searchSource, setSearchSource] = useState('NEWS'); // NEWS | SNS | ALL (기본 뉴스: 목록과 같은 이유)
   const [showAutocomplete, setShowAutocomplete] = useState(false);
 
   // 언급량 추이 기간 (F-13)
@@ -1151,7 +1113,7 @@ useEffect(() => {
   /** 화면 종목 목록에 없는 종목(검색·이슈 순위·글의 종목 칩)을 서버 종목 정보로 추가 */
   const ensureStock = (uiStock) =>
     setApiStocks((prev) =>
-      prev.some((s) => s.code === uiStock.code) || mockStocks.some((s) => s.code === uiStock.code)
+      prev.some((s) => s.code === uiStock.code)
         ? prev
         : [...prev, uiStock]
     );
@@ -1161,6 +1123,20 @@ useEffect(() => {
     stockByCode(selectedStockCode) ||
     toUiStock({ stockCode: selectedStockCode, stockName: '불러오는 중…', market: '', sector: '' });
   const isInWatchlist = (code) => watchlistCodes.includes(code);
+
+  // 고른 종목이 화면 목록에 없으면 서버 종목 정보로 채움 (검색·이슈 순위·글의 종목 칩·처음 화면)
+  const selectedKnown = Boolean(stockByCode(selectedStockCode));
+  useEffect(() => {
+    if (selectedKnown) return undefined;
+    const controller = new AbortController();
+    stockApi
+      .get(selectedStockCode, { signal: controller.signal })
+      .then((item) => ensureStock(toUiStock(item)))
+      .catch(() => {});
+    return () => controller.abort();
+    // ensureStock 은 매번 새 함수지만 하는 일은 같음
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedStockCode, selectedKnown]);
 
   // 관심 종목 행: 서버 목록(오늘 글 수·최근 매칭) + 받아 둔 시세. 화면 종목 목록에 없어도 서버 값으로 그림
   const watchlistStocks = watchlistItems.map((it) => ({
@@ -1175,12 +1151,6 @@ useEffect(() => {
   // 종목명·종목 행·#종목칩 클릭 시 즉시 종목 상세 대시보드(activeNav='stock', stockViewMode='detail')로 전환
   const navigateToStockDetail = (code, initialTab = 'summary', showFeedback = true) => {
     const st = stockByCode(code);
-    if (!st) {
-      stockApi
-        .get(code)
-        .then((item) => ensureStock(toUiStock(item)))
-        .catch(() => triggerToast(`종목 정보를 불러오지 못했습니다 (${code})`));
-    }
     setSelectedStockCode(code);
     setActiveNav('stock');
     setStockViewMode('detail');
@@ -1192,68 +1162,41 @@ useEffect(() => {
     }
   };
 
-  // 종목 검색 헬퍼 (종목명·코드·별칭·테마)
-  const matchStockByQuery = (stock, q) =>
-    stock.name.toLowerCase().includes(q) ||
-    stock.code.includes(q) ||
-    stock.aliases.some((al) => al.toLowerCase().includes(q)) ||
-    stock.themes.some((th) => th.toLowerCase().includes(q));
-
-  // 통합 검색 2단 자동완성 결과: ① 매칭 종목 + ② 매칭 뉴스·SNS 글 (F-12)
-  // 백엔드 종목 검색 결과 (검색어를 멈추고 0.25초 뒤 한 번, 이전 요청은 취소). null이면 서버 연결 안 됨
-  const [remoteStockResult, setRemoteStockResult] = useState(null);
+  // 통합 검색 2단 자동완성 (F-13): 종목 5개 + 글 5개를 GET /api/search 한 번으로
+  // 검색어를 멈추고 0.25초 뒤 한 번, 이전 요청은 취소. 조건(기간·출처)까지 같을 때만 결과를 씀
+  const searchKey = JSON.stringify([searchQuery.trim(), searchPeriod, searchSource]);
+  const [searchResult, setSearchResult] = useState(null);
   useEffect(() => {
     const q = searchQuery.trim();
     if (!q) return undefined;
     const controller = new AbortController();
     const timer = setTimeout(() => {
-      stockApi
-        .search(q, { size: 5 }, { signal: controller.signal })
-        .then((res) => setRemoteStockResult({ q, items: res.items }))
-        .catch((err) => {
-          if (err.name !== 'AbortError') setRemoteStockResult(null);
-        });
+      searchApi
+        .all(
+          q,
+          { period: PERIOD_PARAM[searchPeriod], source: searchSource === 'ALL' ? undefined : searchSource, size: 5 },
+          { signal: controller.signal }
+        )
+        .then((res) => setSearchResult({ key: searchKey, res }))
+        .catch(() => {});
     }, 250);
     return () => {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [searchQuery]);
+  }, [searchKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const integratedSearchResults = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return { matchedStocks: [], matchedArticles: [] };
-
-    // 서버가 답하면 서버 순서 그대로 (별칭 "삼전"·"현대차", 최근 많이 언급된 종목 먼저 등은 백엔드가 처리)
-    // 가짜 데이터에 있는 종목은 그 정보(시세 등)를 그대로 보여 줌
-    const remote =
-      remoteStockResult && remoteStockResult.q.toLowerCase() === q ? remoteStockResult.items : null;
-    const matchedStocks = remote
-      ? remote.map((item) => allStocks.find((st) => st.code === item.stockCode) || toUiStock(item))
-      : allStocks.filter((st) => matchStockByQuery(st, q)).slice(0, 5);
-
-    const matchedArticles = allArticles
-      .filter((art) => {
-        if (searchSource !== 'ALL' && art.sourceType !== searchSource) return false;
-        if (searchPeriod !== 'ALL' && art.daysAgo > Number(searchPeriod)) return false;
-
-        const inTitle = art.title.toLowerCase().includes(q);
-        const inSummary = art.summary.some((line) => line.toLowerCase().includes(q));
-        const inKeywords = art.keywords.some((kw) => kw.toLowerCase().includes(q));
-        const inRelatedStock = art.relatedStocks.some((rel) => {
-          const st = stockByCode(rel.code);
-          return (
-            rel.name.toLowerCase().includes(q) ||
-            rel.code.includes(q) ||
-            st?.aliases.some((al) => al.toLowerCase().includes(q))
-          );
-        });
-        return inTitle || inSummary || inKeywords || inRelatedStock;
-      })
-      .slice(0, 5);
-
-    return { matchedStocks, matchedArticles };
-  }, [searchQuery, searchPeriod, searchSource, allStocks, allArticles, remoteStockResult]);
+  const integratedSearchResults =
+    searchQuery.trim() && searchResult?.key === searchKey
+      ? {
+          matchedStocks: searchResult.res.stocks.items.map((it) => ({
+            ...(stockByCode(it.stockCode) || toUiStock(it)),
+            price: liveQuotes[it.stockCode]?.price ?? null,
+            changeRate: liveQuotes[it.stockCode]?.changeRate ?? null,
+          })),
+          matchedArticles: searchResult.res.articles.items.map(toUiArticle),
+        }
+      : { matchedStocks: [], matchedArticles: [] };
 
   // 관심종목 추가 검색 후보
   // 관심 종목 추가 후보: 전 종목(2,655개)에서 서버 검색 (이름·코드·별칭 "삼전"). 검색어가 없으면 이슈 종목
@@ -1364,19 +1307,25 @@ useEffect(() => {
         : null);
   const articleDetail = useArticleDetail(detailId);
 
-  // 종목 찾기(stockViewMode === 'list') 필터링·정렬 목록
-  const filteredStockList = useMemo(() => {
-    const q = stockListQuery.trim().toLowerCase();
-    return allStocks
-      .filter((st) => (stockListMarket === 'ALL' ? true : st.market === stockListMarket))
-      .filter((st) => (!q ? true : matchStockByQuery(st, q)))
-      .sort((a, b) => {
-        if (stockListSort === 'up') return (b.changeRate ?? -999) - (a.changeRate ?? -999);
-        if (stockListSort === 'down') return (a.changeRate ?? 999) - (b.changeRate ?? 999);
-        if (stockListSort === 'name') return a.name.localeCompare(b.name, 'ko');
-        return b.todayMatchedCount - a.todayMatchedCount;
-      });
-  }, [allStocks, stockListQuery, stockListMarket, stockListSort]);
+  // 종목 찾기(stockViewMode === 'list'): 검색어가 없으면 오늘의 이슈 30위, 있으면 전 종목(2,655개) 서버 검색
+  const stockListQ = stockListQuery.trim();
+  const stockListData = useApi(
+    (signal) =>
+      stockListQ
+        ? stockApi.search(stockListQ, { size: 30 }, { signal })
+        : stockApi.issues({ limit: 30 }, { signal }),
+    [stockListQ],
+    { enabled: activeNav === 'stock' && stockViewMode === 'list' }
+  );
+  const filteredStockList = (stockListData.data?.items ?? [])
+    .map((it) => ({
+      ...(stockByCode(it.stockCode) || toUiStock(it)),
+      todayMatchedCount: it.articleCount ?? null, // 이슈 순위에만 있음
+      price: liveQuotes[it.stockCode]?.price ?? null,
+      changeRate: liveQuotes[it.stockCode]?.changeRate ?? null,
+    }))
+    .filter((st) => !stockListQ || stockListMarket === 'ALL' || st.market === stockListMarket)
+    .sort((a, b) => (stockListSort === 'name' ? a.name.localeCompare(b.name, 'ko') : 0));
 
   // 홈 우측 [🔥 오늘의 이슈 종목 TOP 7] 정렬 목록
   // 홈 우측 [🔥 오늘의 이슈 종목]: 서버 순위(오늘 뉴스에 많이 나온 순) + 받아 둔 시세
@@ -1521,14 +1470,19 @@ useEffect(() => {
 
   // 통합 검색 자동완성 선택 핸들러
   const handleSelectSearchStock = (stock) => {
+    ensureStock(stock);
     setSearchQuery('');
     setShowAutocomplete(false);
     navigateToStockDetail(stock.code, 'summary');
   };
 
   const handleSelectSearchArticle = (article) => {
+    if (article.sourceType !== 'NEWS') {
+      openOriginal(article.url);
+      return;
+    }
     const primaryCode = article.relatedStocks[0]?.code || selectedStockCode;
-    const targetTab = article.sourceType === 'NEWS' ? 'news' : 'sns';
+    const targetTab = 'news';
     setSelectedStockCode(primaryCode);
     setActiveNav('stock');
     setStockViewMode('detail');
@@ -1536,9 +1490,7 @@ useEffect(() => {
     setSelectedArticleId(article.id);
     setSearchQuery('');
     setShowAutocomplete(false);
-    triggerToast(
-      `📰 선택한 ${article.sourceType === 'NEWS' ? '뉴스' : 'SNS'} 상세 분석으로 이동했습니다.`
-    );
+    triggerToast('📰 선택한 뉴스의 상세 분석으로 이동했습니다.');
   };
 
   // 회원가입·로그인 제출 (F-18). 가입 응답에는 토큰이 없어서 가입 직후 같은 값으로 로그인
@@ -1704,9 +1656,9 @@ useEffect(() => {
           </div>
           <div className="auto-filter-group">
             {[
-              { key: 'ALL', label: '전체 출처' },
               { key: 'NEWS', label: '뉴스' },
               { key: 'SNS', label: 'SNS' },
+              { key: 'ALL', label: '전체 출처' },
             ].map((src) => (
               <button
                 key={src.key}
@@ -1755,7 +1707,7 @@ useEffect(() => {
                 title={isInWatchlist(s.code) ? '관심종목 해제' : '관심종목 추가'}
                 aria-label={`${s.name} ${isInWatchlist(s.code) ? '관심종목 해제' : '관심종목 추가'
                   }`}
-                onClick={() => handleToggleWatchlist(s.code)}
+                onClick={() => handleToggleWatchlist(s.code, s)}
               >
                 {isInWatchlist(s.code) ? '★' : '☆'}
               </button>
@@ -2134,14 +2086,10 @@ useEffect(() => {
                                 <div className="stock-meta num">오늘 {st.todayMatchedCount}건</div>
                               </td>
                               <td className="num-col num">
-                                {stHasPrice
-                                  ? `${st.price.toLocaleString()}원`
-                                  : `${st.todayMatchedCount}건`}
+                                {stHasPrice ? `${st.price.toLocaleString()}원` : '-'}
                               </td>
                               <td className={`num-col num ${tone}`}>
-                                {stHasPrice
-                                  ? formatRate(st.changeRate)
-                                  : `긍정 ${st.sentimentRatio.positive}%`}
+                                {stHasPrice ? formatRate(st.changeRate) : '-'}
                               </td>
                               <td className="num-col">
                                 <button
@@ -2256,11 +2204,12 @@ useEffect(() => {
           <div className="content-card">
             <div className="card-header">
               <div className="card-title">
-                📊 전체 종목 탐색 & 이슈 시세 순위{' '}
+                {stockListQ ? '🔎 전체 종목 검색 결과' : '📊 오늘의 이슈 종목 순위 (뉴스 기준)'}{' '}
                 <span className="count-badge num">{filteredStockList.length}</span>
               </div>
               <div className="header-btn-group">
-                {['ALL', 'KOSPI', 'KOSDAQ'].map((m) => (
+                {/* 시장 구분은 검색 결과에만 있음 (이슈 순위 응답에는 시장 칸이 없음) */}
+                {stockListQ && ['ALL', 'KOSPI', 'KOSDAQ'].map((m) => (
                   <button
                     key={m}
                     type="button"
@@ -2270,10 +2219,9 @@ useEffect(() => {
                     {m === 'ALL' ? '전체 시장' : m}
                   </button>
                 ))}
+                {/* 급상승·급하락순은 전 종목 시세가 필요해 뺌 (시세는 화면에 보이는 종목만 받음) */}
                 {[
-                  { key: 'issue', label: '이슈급증순' },
-                  { key: 'up', label: '급상승순' },
-                  { key: 'down', label: '급하락순' },
+                  { key: 'issue', label: stockListQ ? '검색 순위순' : '이슈순' },
                   { key: 'name', label: '가나다순' },
                 ].map((s) => (
                   <button
@@ -2293,7 +2241,7 @@ useEffect(() => {
                 <input
                   type="text"
                   className="watch-inline-input"
-                  placeholder="찾으실 종목명, 종목코드(6자리), 별칭(삼전, 하닉) 또는 테마 검색..."
+                  placeholder="코스피·코스닥 전 종목에서 종목명, 종목코드(6자리), 별칭(삼전, 하닉) 검색"
                   aria-label="전체 종목 필터 검색"
                   value={stockListQuery}
                   onChange={(e) => setStockListQuery(e.target.value)}
@@ -2319,7 +2267,6 @@ useEffect(() => {
                   <th className="num-col">현재가</th>
                   <th className="num-col">등락률</th>
                   <th className="num-col">오늘 매칭</th>
-                  <th className="num-col">AI 감성</th>
                   <th className="num-col">관심</th>
                 </tr>
               </thead>
@@ -2334,10 +2281,14 @@ useEffect(() => {
                       className={st.code === selectedStockCode ? 'selected-row' : ''}
                       tabIndex={0}
                       aria-label={`${st.name} 종목 상세 대시보드로 이동`}
-                      onClick={() => navigateToStockDetail(st.code, 'summary')}
+                      onClick={() => {
+                        ensureStock(st);
+                        navigateToStockDetail(st.code, 'summary');
+                      }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
                           e.preventDefault();
+                          ensureStock(st);
                           navigateToStockDetail(st.code, 'summary');
                         }
                       }}
@@ -2348,26 +2299,19 @@ useEffect(() => {
                         <span className="stock-code num">{st.code}</span>
                       </td>
                       <td>
-                        <span className="source-pill">{st.market}</span> {st.sector} ·{' '}
-                        <span className="stock-meta">#{st.themes.slice(0, 2).join(' #')}</span>
+                        {st.market && <span className="source-pill">{st.market}</span>} {st.sector || '-'}
+                        {st.themes.length > 0 && (
+                          <span className="stock-meta"> · #{st.themes.slice(0, 2).join(' #')}</span>
+                        )}
                       </td>
                       <td className="num-col num">
                         {stHasPrice ? `${st.price.toLocaleString()}원` : '-'}
                       </td>
                       <td className={`num-col num ${tone}`}>
-                        {stHasPrice ? (
-                          <RatePill rate={st.changeRate} size="sm" />
-                        ) : (
-                          <span className="stock-meta">시세 대기</span>
-                        )}
+                        {stHasPrice ? <RatePill rate={st.changeRate} size="sm" /> : '-'}
                       </td>
                       <td className="num-col num">
-                        <strong>{st.todayMatchedCount}건</strong>
-                      </td>
-                      <td className="num-col">
-                        <span className="trend-badge trend-up num">
-                          긍정 {st.sentimentRatio.positive}%
-                        </span>
+                        {st.todayMatchedCount !== null ? <strong>{st.todayMatchedCount}건</strong> : '-'}
                       </td>
                       <td className="num-col">
                         <button
@@ -2377,7 +2321,7 @@ useEffect(() => {
                             }`}
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleToggleWatchlist(st.code);
+                            handleToggleWatchlist(st.code, st);
                           }}
                         >
                           {isInWatchlist(st.code) ? '★' : '☆'}
@@ -2884,7 +2828,6 @@ useEffect(() => {
                   <th className="num-col">현재가</th>
                   <th className="num-col">등락률</th>
                   <th className="num-col">오늘 매칭</th>
-                  <th className="num-col">AI 감성</th>
                   <th className="num-col">삭제</th>
                 </tr>
               </thead>
@@ -2909,26 +2852,19 @@ useEffect(() => {
                         <span className="stock-code num">{st.code}</span>
                       </td>
                       <td>
-                        <span className="source-pill">{st.market}</span> {st.sector} ·{' '}
-                        <span className="stock-meta">#{st.themes.slice(0, 2).join(' #')}</span>
+                        {st.market && <span className="source-pill">{st.market}</span>} {st.sector || '-'}
+                        {st.themes.length > 0 && (
+                          <span className="stock-meta"> · #{st.themes.slice(0, 2).join(' #')}</span>
+                        )}
                       </td>
                       <td className="num-col num">
                         {stHasPrice ? `${st.price.toLocaleString()}원` : '-'}
                       </td>
                       <td className={`num-col num ${tone}`}>
-                        {stHasPrice ? (
-                          <RatePill rate={st.changeRate} size="sm" />
-                        ) : (
-                          <span className="stock-meta">시세 대기</span>
-                        )}
+                        {stHasPrice ? <RatePill rate={st.changeRate} size="sm" /> : '-'}
                       </td>
                       <td className="num-col num">
-                        <strong>{st.todayMatchedCount}건</strong>
-                      </td>
-                      <td className="num-col">
-                        <span className="trend-badge trend-up num">
-                          긍정 {st.sentimentRatio.positive}%
-                        </span>
+                        {st.todayMatchedCount !== null ? <strong>{st.todayMatchedCount}건</strong> : '-'}
                       </td>
                       <td className="num-col">
                         <button
