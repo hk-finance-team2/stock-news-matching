@@ -14,8 +14,8 @@ import {
   normalizeMentionTrends,
   normalizeComments,
 } from '../mocks/mockData';
-import { stockApi, quoteApi } from '../api';
-import { toUiStock } from '../api/adapters';
+import { stockApi, quoteApi, articleApi } from '../api';
+import { toUiStock, toUiArticle } from '../api/adapters';
 import '../styles/dashboard.css';
 
 // 1계층: 왼쪽 사이드바 네비게이션 메뉴 (장소 이동 전용)
@@ -582,6 +582,7 @@ function ArticleDetail({
   article,
   allStocks,
   allArticles,
+  liveQuotes,
   onSelectStock,
   onSelectArticle,
   onClose,
@@ -630,14 +631,15 @@ function ArticleDetail({
     allStocks.find((s) => s.code === sortedRelatedStocks[0]?.code) ||
     allStocks[0];
 
-  const articleSentimentRatio =
-    article.sentimentRatio ||
-    primaryStock?.sentimentRatio ||
-    (article.sentiment === 'POSITIVE'
-      ? { positive: 72, neutral: 18, negative: 10 }
-      : article.sentiment === 'NEGATIVE'
-        ? { positive: 18, neutral: 22, negative: 60 }
-        : { positive: 45, neutral: 35, negative: 20 });
+  // const articleSentimentRatio =
+  //   article.sentimentRatio ||
+  //   primaryStock?.sentimentRatio ||
+  //   (article.sentiment === 'POSITIVE'
+  //     ? { positive: 72, neutral: 18, negative: 10 }
+  //     : article.sentiment === 'NEGATIVE'
+  //       ? { positive: 18, neutral: 22, negative: 60 }
+  //       : { positive: 45, neutral: 35, negative: 20 });
+  const articleSentimentRatio = article.sentimentRatio ?? null;
 
   const relatedSnsList = (() => {
     if (isSns) return [];
@@ -730,7 +732,10 @@ function ArticleDetail({
             <li key={idx}>{line}</li>
           ))}
         </ul>
-        <SentimentBar ratio={articleSentimentRatio} />
+        {/* <SentimentBar ratio={articleSentimentRatio} /> */}
+        {articleSentimentRatio && (
+  <SentimentBar ratio={articleSentimentRatio} />
+)}
         <div className="llm-notice">
           🤖 AI(LLM) 요약 및 감성 분석 결과는 원문과 차이가 있을 수 있습니다.
         </div>
@@ -756,9 +761,44 @@ function ArticleDetail({
               </thead>
               <tbody>
                 {sortedRelatedStocks.map((rel) => {
-                  const st = allStocks.find((s) => s.code === rel.code);
-                  const hasPrice = st?.price !== null && st?.price !== undefined;
+                  const stock = allStocks.find((s) => s.code === rel.code);
+                  const quote = liveQuotes[rel.code];
+                  
+                  const st = quote
+                    ? {
+                        ...stock,
+                        price: quote.price,
+                        changeRate: quote.changeRate,
+                        changeAmount: quote.changeAmount,
+                      }
+                    : stock;
+                  
+                  const hasPrice = st?.price != null;
                   const tone = rateTone(st?.changeRate);
+                  // return (
+                  //   <tr
+                  //     key={rel.code}
+                  //     onClick={() => onSelectStock(rel.code)}
+                  //     title={`${rel.name} 종목 상세 화면으로 이동`}
+                  //   >
+                  //     <td>
+                  //       <strong>{rel.name}</strong>{' '}
+                  //       <span className="stock-code num">{rel.code}</span>
+                  //     </td>
+                  //     <td className="num">
+                  //       <span className="source-pill">{rel.relationType}</span>{' '}
+                  //       <strong>{rel.relevance}%</strong>
+                  //     </td>
+                  //     <td className="num-col num">
+                  //       {hasPrice
+                  //         ? `${st.price.toLocaleString()}원`
+                  //         : `매칭 ${st?.todayMatchedCount ?? 0}건`}
+                  //     </td>
+                  //     <td className={`num-col num ${tone}`}>
+                  //       {hasPrice
+                  //         ? formatRate(st.changeRate)
+                  //         : `긍정 ${st?.sentimentRatio?.positive ?? 50}%`}
+                  //     </td>
                   return (
                     <tr
                       key={rel.code}
@@ -769,19 +809,22 @@ function ArticleDetail({
                         <strong>{rel.name}</strong>{' '}
                         <span className="stock-code num">{rel.code}</span>
                       </td>
+                  
                       <td className="num">
                         <span className="source-pill">{rel.relationType}</span>{' '}
                         <strong>{rel.relevance}%</strong>
                       </td>
+                  
                       <td className="num-col num">
                         {hasPrice
                           ? `${st.price.toLocaleString()}원`
-                          : `매칭 ${st?.todayMatchedCount ?? 0}건`}
+                          : '시세 준비 중'}
                       </td>
+                  
                       <td className={`num-col num ${tone}`}>
-                        {hasPrice
+                        {hasPrice && st.changeRate != null
                           ? formatRate(st.changeRate)
-                          : `긍정 ${st?.sentimentRatio?.positive ?? 50}%`}
+                          : '-'}
                       </td>
                     </tr>
                   );
@@ -821,7 +864,9 @@ function ArticleDetail({
                     <strong>연결 이유:</strong> {rel.reason}
                   </div>
                   <div className="evidence-quote">
-                    <strong>근거 원문:</strong> {rel.evidence}
+                    {/* <strong>근거 원문:</strong> {rel.evidence} */}
+                    <strong>근거 원문:</strong>{' '}
+{rel.evidence?.trim() || ''}
                   </div>
                 </div>
               ))}
@@ -954,9 +999,28 @@ const allStocks = useMemo(
 //   return () => {
 //     cancelled = true;
 //   };
-// }, [selectedStockCode, watchlistCodes]);
+// }, [selectedStockCode, watchlistCodes]); 
 
-  const allArticles = useMemo(() => normalizeArticles(ARTICLES_DATA), []);
+  // const allArticles = useMemo(() => normalizeArticles(ARTICLES_DATA), []);
+  const [allArticles, setAllArticles] = useState([]);
+
+useEffect(() => {
+  const controller = new AbortController();
+
+  articleApi
+    .list({ page: 1, size: 100 }, { signal: controller.signal })
+    .then((res) => {
+      setAllArticles((res.items || []).map(toUiArticle));
+    })
+    .catch((err) => {
+      if (err.name !== 'AbortError') {
+        console.error('뉴스 API 조회 실패:', err);
+      }
+    });
+
+  return () => controller.abort();
+}, []);
+
   const initialSummaries = useMemo(() => normalizeSummaries(STOCK_SUMMARIES_DATA), []);
   const initialTrends = useMemo(() => normalizeMentionTrends(MENTION_TRENDS_DATA), []);
 
@@ -1001,6 +1065,7 @@ useEffect(() => {
         quotes[codes[index]] = result.value;
       }
     });
+  
 
     setLiveQuotes((prev) => ({ ...prev, ...quotes }));
   });
@@ -1011,6 +1076,80 @@ useEffect(() => {
 }, [selectedStockCode, watchlistCodes]);
 
   const [selectedArticleId, setSelectedArticleId] = useState(null);
+
+  const [articleDetails, setArticleDetails] = useState({});
+// 선택한 뉴스에 매칭된 종목의 실제 주가 조회
+useEffect(() => {
+  if (!selectedArticleId) return undefined;
+
+  const article =
+    articleDetails[selectedArticleId] ||
+    allArticles.find((a) => a.id === selectedArticleId);
+
+  if (!article) return undefined;
+
+  const codes = [
+    ...new Set(
+      (article.relatedStocks || [])
+        .map((stock) => stock.code)
+        .filter(Boolean)
+    ),
+  ].slice(0, 5);
+
+  if (codes.length === 0) return undefined;
+
+  let cancelled = false;
+
+  Promise.allSettled(
+    codes.map((code) => quoteApi.get(code))
+  ).then((results) => {
+    if (cancelled) return;
+
+    const quotes = {};
+
+    results.forEach((result, index) => {
+      if (
+        result.status === 'fulfilled' &&
+        result.value?.price != null
+      ) {
+        quotes[codes[index]] = result.value;
+      }
+    });
+
+    if (Object.keys(quotes).length > 0) {
+      setLiveQuotes((prev) => ({
+        ...prev,
+        ...quotes,
+      }));
+    }
+  });
+
+  return () => {
+    cancelled = true;
+  };
+}, [selectedArticleId, articleDetails, allArticles]);
+
+useEffect(() => {
+  if (!selectedArticleId) return undefined;
+
+  const controller = new AbortController();
+
+  articleApi
+    .get(selectedArticleId, { signal: controller.signal })
+    .then((data) => {
+      setArticleDetails((prev) => ({
+        ...prev,
+        [selectedArticleId]: toUiArticle(data),
+      }));
+    })
+    .catch((err) => {
+      if (err.name !== 'AbortError') {
+        console.error('뉴스 상세 API 조회 실패:', err);
+      }
+    });
+
+  return () => controller.abort();
+}, [selectedArticleId]);
 
   // 홈 우측 랭킹 탭 필터: 'issue'(매칭 급증) | 'up'(급상승) | 'down'(급하락)
   const [homeRankFilter, setHomeRankFilter] = useState('issue');
@@ -1154,6 +1293,54 @@ useEffect(() => {
   // 통합 검색 2단 자동완성 결과: ① 매칭 종목 + ② 매칭 뉴스·SNS 글 (F-12)
   // 백엔드 종목 검색 결과 (검색어를 멈추고 0.25초 뒤 한 번, 이전 요청은 취소). null이면 서버 연결 안 됨
   const [remoteStockResult, setRemoteStockResult] = useState(null);
+  const requestedSearchQuotes = useRef(new Set());
+
+useEffect(() => {
+  if (!remoteStockResult?.items?.length) return;
+
+  const codes = remoteStockResult.items
+    .map((item) => item.stockCode)
+    .filter((code) => {
+      if (liveQuotes[code] || requestedSearchQuotes.current.has(code)) {
+        return false;
+      }
+
+      requestedSearchQuotes.current.add(code);
+      return true;
+    });
+
+  if (codes.length === 0) return;
+
+  let cancelled = false;
+
+  Promise.allSettled(
+    codes.map((code) => quoteApi.get(code))
+  ).then((results) => {
+    if (cancelled) return;
+
+    const quotes = {};
+
+    results.forEach((result, index) => {
+      const code = codes[index];
+
+      if (result.status === 'fulfilled' && result.value?.price != null) {
+        quotes[code] = result.value;
+      } else {
+        requestedSearchQuotes.current.delete(code);
+      }
+    });
+
+    if (Object.keys(quotes).length > 0) {
+      setLiveQuotes((prev) => ({ ...prev, ...quotes }));
+    }
+  });
+
+  return () => {
+    cancelled = true;
+    codes.forEach((code) => requestedSearchQuotes.current.delete(code));
+  };
+}, [remoteStockResult]);
+
   useEffect(() => {
     const q = searchQuery.trim();
     if (!q) return undefined;
@@ -1180,9 +1367,29 @@ useEffect(() => {
     // 가짜 데이터에 있는 종목은 그 정보(시세 등)를 그대로 보여 줌
     const remote =
       remoteStockResult && remoteStockResult.q.toLowerCase() === q ? remoteStockResult.items : null;
-    const matchedStocks = remote
-      ? remote.map((item) => allStocks.find((st) => st.code === item.stockCode) || toUiStock(item))
-      : allStocks.filter((st) => matchStockByQuery(st, q)).slice(0, 5);
+    
+      // const matchedStocks = remote
+      // ? remote.map((item) => allStocks.find((st) => st.code === item.stockCode) || toUiStock(item))
+      // : allStocks.filter((st) => matchStockByQuery(st, q)).slice(0, 5);
+      const matchedStocks = remote
+  ? remote.map((item) => {
+      const stock =
+        allStocks.find((st) => st.code === item.stockCode) ||
+        toUiStock(item);
+
+      const quote = liveQuotes[item.stockCode];
+
+      return quote
+        ? {
+            ...stock,
+            price: quote.price,
+            changeRate: quote.changeRate,
+            changeAmount: quote.changeAmount,
+          }
+        : stock;
+    })
+  : allStocks.filter((st) => matchStockByQuery(st, q)).slice(0, 5);
+  
 
     const matchedArticles = allArticles
       .filter((art) => {
@@ -1629,6 +1836,7 @@ useEffect(() => {
   const detailSharedProps = {
     allStocks,
     allArticles,
+    liveQuotes,
     regenerating,
     onRegenerateSummary: handleRegenerateSummary,
     showComments: true,
@@ -1905,7 +2113,9 @@ useEffect(() => {
   // ============================================================================
   const renderHomeView = () => {
     const selectedHomeArticle =
-      homeFeedArticles.find((a) => a.id === selectedArticleId) || null;
+    articleDetails[selectedArticleId] ||
+    homeFeedArticles.find((a) => a.id === selectedArticleId) ||
+    null;
 
     return (
       <div className="wrapper">

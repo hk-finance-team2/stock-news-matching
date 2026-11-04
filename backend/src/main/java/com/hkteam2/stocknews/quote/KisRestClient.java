@@ -18,6 +18,7 @@ import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import org.springframework.web.client.ResourceAccessException;
 
 /**
  * KIS 시세 조회 (REST). 조회 API만 둠 — 주문·계좌 API는 이 프로젝트에 넣지 않음
@@ -176,29 +177,54 @@ public class KisRestClient {
     // ----- 공통 -----
 
     /** 줄 서기 → 요청 → (초당 초과면 1초 쉬고 다시) */
-    private <T> T get(String path, String trId, Map<String, String> params, Class<T> type) {
-        UriComponentsBuilder uri = UriComponentsBuilder.fromUriString(props.baseUrl() + BASE_PATH + path);
-        params.forEach(uri::queryParam);
-        for (int attempt = 1; ; attempt++) {
-            limiter.acquire();
-            try {
-                return restClient.get()
-                        .uri(uri.build().toUri())
-                        .headers(h -> commonHeaders(h, trId))
-                        .retrieve()
-                        .body(type);
-            } catch (RestClientResponseException e) {
-                KisError err = e.getResponseBodyAs(KisError.class);
-                String code = err != null && err.msgCd() != null ? err.msgCd() : "HTTP_" + e.getStatusCode().value();
-                if (RATE_LIMIT.equals(code) && attempt < MAX_ATTEMPTS) {
-                    pause(1000);
-                    continue;
-                }
-                throw new KisApiException(code, err != null && err.msg1() != null ? err.msg1() : "KIS 응답 오류");
+  /** 줄 서기 → 요청 → 호출 제한 또는 일시적 연결 오류 시 재시도 */
+private <T> T get(String path, String trId, Map<String, String> params, Class<T> type) {
+    UriComponentsBuilder uri =
+            UriComponentsBuilder.fromUriString(props.baseUrl() + BASE_PATH + path);
+
+    params.forEach(uri::queryParam);
+
+    for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        limiter.acquire();
+
+        try {
+            return restClient.get()
+                    .uri(uri.build().toUri())
+                    .headers(h -> commonHeaders(h, trId))
+                    .retrieve()
+                    .body(type);
+
+        } catch (RestClientResponseException e) {
+            KisError err = e.getResponseBodyAs(KisError.class);
+
+            String code = err != null && err.msgCd() != null
+                    ? err.msgCd()
+                    : "HTTP_" + e.getStatusCode().value();
+
+            if (RATE_LIMIT.equals(code) && attempt < MAX_ATTEMPTS) {
+                pause(1000);
+                continue;
             }
+
+            throw new KisApiException(
+                    code,
+                    err != null && err.msg1() != null
+                            ? err.msg1()
+                            : "KIS 응답 오류"
+            );
+
+        } catch (ResourceAccessException e) {
+            if (attempt < MAX_ATTEMPTS) {
+                pause(1000);
+                continue;
+            }
+
+            throw e;
         }
     }
 
+    throw new KisApiException("RETRY_EXHAUSTED", "KIS API 재시도 횟수 초과");
+}
     private static void check(String rtCd, String msgCd, String msg1) {
         if (!"0".equals(rtCd)) {
             throw new KisApiException(msgCd == null ? "EMPTY" : msgCd, msg1 == null ? "응답 없음" : msg1);
