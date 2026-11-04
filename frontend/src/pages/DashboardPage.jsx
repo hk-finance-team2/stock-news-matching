@@ -1,7 +1,6 @@
 // src/pages/DashboardPage.jsx
 import { useState, useMemo, useEffect, useRef } from 'react';
 import {
-  INITIAL_SYSTEM_STATUS,
   INITIAL_WATCHLIST_CODES,
   STOCKS_DATA,
   ARTICLES_DATA,
@@ -14,8 +13,9 @@ import {
   normalizeMentionTrends,
   normalizeComments,
 } from '../mocks/mockData';
-import { stockApi, quoteApi } from '../api';
-import { toUiStock } from '../api/adapters';
+import { articleApi, quoteApi, statusApi, stockApi } from '../api';
+import { toClock, toUiStock } from '../api/adapters';
+import { useApi } from '../hooks/useApi';
 import { toArticleParams, useArticleDetail, usePagedArticles } from '../hooks/useArticles';
 import '../styles/dashboard.css';
 
@@ -35,33 +35,10 @@ const STOCK_TABS = [
   { key: 'board', icon: '🗣️', label: '종목 토론' },
 ];
 
-// 상단 시장 지수 3단 요약 데이터 (복원)
-const MARKET_INDICES_DATA = [
-  {
-    key: 'KOSPI',
-    name: 'KOSPI · 코스피 지수',
-    value: '2,612.45',
-    changeText: '▲ 30.42 (+1.18%)',
-    subText: '외국인·기관 동반 순매수 유입',
-    tone: 'up',
-  },
-  {
-    key: 'KOSDAQ',
-    name: 'KOSDAQ · 코스닥 지수',
-    value: '768.30',
-    changeText: '▲ 6.40 (+0.84%)',
-    subText: '반도체 소부장·바이오 강세',
-    tone: 'up',
-  },
-  {
-    key: 'USD_KRW',
-    name: 'USD/KRW · 원/달러 환율',
-    value: '1,368.50',
-    changeText: '▼ 4.20 (-0.31%)',
-    subText: '서울외국환중개 장중 고시 기준',
-    tone: 'down',
-  },
-];
+// 홈 이슈 종목 순위 개수
+const ISSUE_LIMIT = 7;
+// 마지막 뉴스 수집이 이보다 오래되면 "수집 지연" (AI는 5분마다 수집)
+const STALE_MINUTES = 15;
 
 const TREND_PERIODS = [
   { key: 'today', label: '오늘 (1시간)' },
@@ -988,9 +965,18 @@ const allStocks = useMemo(
   const [selectedStockCode, setSelectedStockCode] = useState(
     INITIAL_WATCHLIST_CODES[0] || allStocks[0]?.code || '005930'
   );
-  // 현재 선택한 종목과 관심종목의 실제 시세 조회
+  // 오늘의 이슈 종목 순위 (뉴스 기준, 1분마다 다시)
+  const issues = useApi((signal) => stockApi.issues({ limit: ISSUE_LIMIT }, { signal }), [], {
+    refreshMs: 60_000,
+  });
+  const issueItems = issues.data?.items || [];
+  const issueCodesKey = issueItems.map((it) => it.stockCode).join(',');
+
+  // 현재 선택한 종목·관심종목·이슈 종목의 실제 시세 조회 (시세가 꺼진 서버면 503 → 그냥 비워 둠)
 useEffect(() => {
-  const codes = [...new Set([selectedStockCode, ...watchlistCodes].filter(Boolean))];
+  const codes = [
+    ...new Set([selectedStockCode, ...watchlistCodes, ...issueCodesKey.split(',')].filter(Boolean)),
+  ];
   let cancelled = false;
 
   Promise.allSettled(
@@ -1012,12 +998,9 @@ useEffect(() => {
   return () => {
     cancelled = true;
   };
-}, [selectedStockCode, watchlistCodes]);
+}, [selectedStockCode, watchlistCodes, issueCodesKey]);
 
   const [selectedArticleId, setSelectedArticleId] = useState(null);
-
-  // 홈 우측 랭킹 탭 필터: 'issue'(매칭 급증) | 'up'(급상승) | 'down'(급하락)
-  const [homeRankFilter, setHomeRankFilter] = useState('issue');
 
   // 관심종목 검색 추가 입력 & 관리 모달
   const [watchAddQuery, setWatchAddQuery] = useState('');
@@ -1041,8 +1024,28 @@ useEffect(() => {
   const [articleSort, setArticleSort] = useState('latest'); // latest | relevance
   const [onlyWatchlistArticles, setOnlyWatchlistArticles] = useState(false);
 
-  // 시스템 상태 및 AI 요약 재생성 상태
-  const [sysStatus, setSysStatus] = useState(INITIAL_SYSTEM_STATUS);
+  // 데이터 상태: 마지막 뉴스·SNS 수집, 요약 시각 (GET /api/status, 1분마다)
+  const status = useApi((signal) => statusApi.get({ signal }), [], { refreshMs: 60_000 });
+  const newsCollectedAt = status.data?.newsCollectedAt;
+  const minutesSinceNews = newsCollectedAt ? (Date.now() - new Date(newsCollectedAt).getTime()) / 60_000 : null;
+  const collectState =
+    status.data?.lastRun?.status === 'RUNNING'
+      ? { cls: 'RECONNECTING', label: 'AI 수집·분석 중' }
+      : minutesSinceNews !== null && minutesSinceNews <= STALE_MINUTES
+        ? { cls: 'CONNECTED', label: 'AI 실시간 매칭' }
+        : { cls: 'DISCONNECTED', label: '수집 지연' };
+
+  // 홈 위쪽 숫자 카드: 오늘 분석한 뉴스·SNS 수 (목록 API의 totalCount, 1분마다)
+  const todayTotals = useApi(
+    (signal) =>
+      Promise.all([
+        articleApi.list({ source: 'NEWS', period: 'today', size: 1 }, { signal }),
+        articleApi.list({ source: 'SNS', period: 'today', size: 1 }, { signal }),
+      ]).then(([news, sns]) => ({ news: news.totalCount, sns: sns.totalCount })),
+    [],
+    { refreshMs: 60_000 }
+  );
+
   const [summariesByStock, setSummariesByStock] = useState(initialSummaries);
   const [regenerating, setRegenerating] = useState(false);
 
@@ -1127,7 +1130,19 @@ useEffect(() => {
   }, [showAuthModal, showAutocomplete, showWatchModal]);
 
   const stockByCode = (code) => allStocks.find((s) => s.code === code);
-  const selectedStock = stockByCode(selectedStockCode) || allStocks[0];
+
+  /** 화면 종목 목록에 없는 종목(검색·이슈 순위·글의 종목 칩)을 서버 종목 정보로 추가 */
+  const ensureStock = (uiStock) =>
+    setApiStocks((prev) =>
+      prev.some((s) => s.code === uiStock.code) || mockStocks.some((s) => s.code === uiStock.code)
+        ? prev
+        : [...prev, uiStock]
+    );
+
+  // 받아 오기 전에는 엉뚱한 종목 대신 코드만 있는 자리 표시 (예전에는 목록 첫 종목이 보였음)
+  const selectedStock =
+    stockByCode(selectedStockCode) ||
+    toUiStock({ stockCode: selectedStockCode, stockName: '불러오는 중…', market: '', sector: '' });
   const isInWatchlist = (code) => watchlistCodes.includes(code);
 
   const watchlistStocks = useMemo(
@@ -1138,6 +1153,12 @@ useEffect(() => {
   // 종목명·종목 행·#종목칩 클릭 시 즉시 종목 상세 대시보드(activeNav='stock', stockViewMode='detail')로 전환
   const navigateToStockDetail = (code, initialTab = 'summary', showFeedback = true) => {
     const st = stockByCode(code);
+    if (!st) {
+      stockApi
+        .get(code)
+        .then((item) => ensureStock(toUiStock(item)))
+        .catch(() => triggerToast(`종목 정보를 불러오지 못했습니다 (${code})`));
+    }
     setSelectedStockCode(code);
     setActiveNav('stock');
     setStockViewMode('detail');
@@ -1233,7 +1254,7 @@ useEffect(() => {
     summariesByStock[selectedStockCode] ||
     (selectedStock.analysisReady === false ? notReadySummary : null) ||
     summariesByStock.default || {
-      updatedAt: sysStatus.lastUpdated.summary,
+      updatedAt: toClock(status.data?.summaryGeneratedAt) || '-',
       headline: `${selectedStock.name} 당일 매칭 뉴스·SNS 종합 요약`,
       summary: selectedStock.summary,
       newsSummary: selectedStock.newsSummary,
@@ -1346,16 +1367,14 @@ useEffect(() => {
   }, [allStocks, stockListQuery, stockListMarket, stockListSort]);
 
   // 홈 우측 [🔥 오늘의 이슈 종목 TOP 7] 정렬 목록
-  const homeRankedStocks = useMemo(() => {
-    const list = [...allStocks];
-    if (homeRankFilter === 'up') {
-      return list.sort((a, b) => (b.changeRate ?? -999) - (a.changeRate ?? -999)).slice(0, 7);
-    }
-    if (homeRankFilter === 'down') {
-      return list.sort((a, b) => (a.changeRate ?? 999) - (b.changeRate ?? 999)).slice(0, 7);
-    }
-    return list.sort((a, b) => b.todayMatchedCount - a.todayMatchedCount).slice(0, 7);
-  }, [allStocks, homeRankFilter]);
+  // 홈 우측 [🔥 오늘의 이슈 종목]: 서버 순위(오늘 뉴스에 많이 나온 순) + 받아 둔 시세
+  const homeRankedStocks = issueItems.map((it) => ({
+    code: it.stockCode,
+    name: it.stockName,
+    todayMatchedCount: it.articleCount,
+    price: liveQuotes[it.stockCode]?.price ?? null,
+    changeRate: liveQuotes[it.stockCode]?.changeRate ?? null,
+  }));
 
   const currentComments = commentsByStock[selectedStockCode] || [];
 
@@ -1368,19 +1387,13 @@ useEffect(() => {
   };
 
   // 데이터 수동 새로고침
+  // 새로고침: 서버에 다시 물어봄 (AI가 새로 모은 글·순위·상태)
   const handleRefreshData = () => {
-    const nowStr = nowTimeShort();
-    setSysStatus((prev) => ({
-      ...prev,
-      streamStatus: 'CONNECTED',
-      analysisStatus: 'COMPLETED',
-      lastUpdated: {
-        quote: nowStr,
-        newsSns: nowStr,
-        summary: nowStr,
-      },
-    }));
-    triggerToast(`🔄 시세·뉴스 및 AI 매칭 데이터가 최신 상태로 갱신되었습니다 (${nowStr})`);
+    status.reload();
+    issues.reload();
+    todayTotals.reload();
+    homeFeed.reload();
+    triggerToast(`🔄 최신 뉴스·순위를 다시 불러왔습니다 (${nowTimeShort()})`);
   };
 
   // 당일 AI 종합 요약 다시 생성
@@ -1929,14 +1942,33 @@ useEffect(() => {
           </div>
         </section>
 
-        {/* 2. [복원 필수] 시장 지수 3단 요약 카드 (.market-indices > .index-card) */}
-        <section className="market-indices" aria-label="시장 지수 3단 요약">
-          {MARKET_INDICES_DATA.map((idxItem) => (
-            <div key={idxItem.key} className="index-card">
-              <div className="index-name">{idxItem.name}</div>
-              <div className={`index-value num ${idxItem.tone}`}>{idxItem.value}</div>
-              <div className={`index-change num ${idxItem.tone}`}>
-                {idxItem.changeText} · <span className="stock-meta">{idxItem.subText}</span>
+        {/* 2. 3단 요약 카드 (.market-indices > .index-card): 시장 지수 API가 없어 가짜 숫자 대신 오늘 수집·분석 현황 */}
+        <section className="market-indices" aria-label="오늘 수집·분석 현황">
+          {[
+            {
+              key: 'news',
+              name: '오늘 분석한 뉴스·공시',
+              value: todayTotals.data ? `${todayTotals.data.news.toLocaleString()}건` : '-',
+              sub: '언론사 RSS·DART · 5분마다 수집',
+            },
+            {
+              key: 'sns',
+              name: '오늘 SNS 반응 (참고용)',
+              value: todayTotals.data ? `${todayTotals.data.sns.toLocaleString()}건` : '-',
+              sub: '네이버 블로그·카페 · 1시간마다',
+            },
+            {
+              key: 'collect',
+              name: '마지막 뉴스 수집',
+              value: toClock(newsCollectedAt) || '-',
+              sub: `종목 요약 ${toClock(status.data?.summaryGeneratedAt) || '-'} · ${collectState.label}`,
+            },
+          ].map((card) => (
+            <div key={card.key} className="index-card">
+              <div className="index-name">{card.name}</div>
+              <div className="index-value num">{card.value}</div>
+              <div className="index-change">
+                <span className="stock-meta">{card.sub}</span>
               </div>
             </div>
           ))}
@@ -2095,31 +2127,14 @@ useEffect(() => {
                 {/* [2순위 - 아래 배치] 🔥 오늘의 이슈 종목 TOP 7 */}
                 <div className="content-card">
                   <div className="card-header">
-                    <div className="card-title">🔥 오늘의 이슈 종목 TOP 7</div>
-                    <div className="header-btn-group">
-                      <button
-                        type="button"
-                        className={`more-link2 ${homeRankFilter === 'issue' ? 'active' : ''}`}
-                        onClick={() => setHomeRankFilter('issue')}
-                      >
-                        이슈급증
-                      </button>
-                      <button
-                        type="button"
-                        className={`more-link2 ${homeRankFilter === 'up' ? 'active' : ''}`}
-                        onClick={() => setHomeRankFilter('up')}
-                      >
-                        급상승
-                      </button>
-                      <button
-                        type="button"
-                        className={`more-link2 ${homeRankFilter === 'down' ? 'active' : ''}`}
-                        onClick={() => setHomeRankFilter('down')}
-                      >
-                        급하락
-                      </button>
-                    </div>
+                    <div className="card-title">🔥 오늘의 이슈 종목 TOP {ISSUE_LIMIT}</div>
+                    <span className="card-caption">오늘 뉴스에 많이 나온 순</span>
                   </div>
+                  {issueItems.length === 0 && (
+                    <div className="empty-text">
+                      {issues.loading ? '불러오는 중…' : issues.error ? '순위를 불러오지 못했습니다.' : '오늘 아직 분석된 뉴스가 없습니다.'}
+                    </div>
+                  )}
 
                   <table className="stock-table compact-table">
                     <thead>
@@ -2156,9 +2171,7 @@ useEffect(() => {
                               {stHasPrice ? `${st.price.toLocaleString()}원` : '-'}
                             </td>
                             <td className={`num-col num ${tone}`}>
-                              {stHasPrice
-                                ? formatRate(st.changeRate)
-                                : `긍정 ${st.sentimentRatio.positive}%`}
+                              {stHasPrice ? formatRate(st.changeRate) : '-'}
                             </td>
                             <td className="num-col num">
                               <strong>{st.todayMatchedCount}건</strong>
@@ -3011,19 +3024,19 @@ useEffect(() => {
             )}
 
             <div className="user-actions">
-              <span className="live-indicator CONNECTED">
+              <span className={`live-indicator ${collectState.cls}`}>
                 <span className="live-dot" aria-hidden="true" />
-                AI 실시간 매칭
+                {collectState.label}
               </span>
               <button
                 type="button"
                 className="feed-badge"
-                title="클릭하여 시세·뉴스 데이터 새로고침"
+                title={`뉴스 ${toClock(status.data?.newsCollectedAt) || '-'} · SNS ${toClock(status.data?.snsCollectedAt) || '-'} · 요약 ${toClock(status.data?.summaryGeneratedAt) || '-'} (클릭하면 다시 불러옴)`}
                 aria-label="데이터 새로고침"
                 onClick={handleRefreshData}
               >
                 <span>
-                  최근 갱신 <b className="num">{sysStatus.lastUpdated.quote}</b>
+                  최근 수집 <b className="num">{toClock(newsCollectedAt) || '-'}</b>
                 </span>
                 <span>🔄</span>
               </button>

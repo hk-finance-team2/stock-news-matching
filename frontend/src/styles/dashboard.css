@@ -1653,6 +1653,15 @@ textarea:focus-visible,
     background-color: #10b981;
 }
 
+/* 수집 상태별 점 색: 수집 중(주황), 15분 넘게 새 글 없음(회색) */
+.live-indicator.RECONNECTING .live-dot {
+    background-color: #f59e0b;
+}
+
+.live-indicator.DISCONNECTED .live-dot {
+    background-color: #94a3b8;
+}
+
 .feed-badge {
     display: inline-flex;
     align-items: center;
