@@ -1,6 +1,11 @@
 # 팀 공용 실행 환경. 값은 .env 에서 읽습니다. (.env.example 참고)
-# DB + 백엔드 켜기: docker compose up -d --build   (Java 설치 필요 없음)
-# DB만 켜기:        docker compose up -d db       (백엔드를 gradlew bootRun으로 개발할 때)
+#
+# | 명령 | 켜지는 것 | 누가 |
+# | docker compose up -d --build                  | DB + 백엔드               | 모든 팀원 (진짜 AI 데이터는 백엔드가 켤 때 db/ai-data 에서 자동으로 들어감) |
+# | docker compose up -d db                       | DB 만                     | 백엔드를 gradlew bootRun 으로 개발할 때 |
+# | docker compose --profile ai up -d --build     | + AI 자동 수집 + AI 서버   | 데이터 담당 PC·시연 PC만 (OpenAI 비용, PC 마다 따로 모으면 데이터가 달라짐) |
+# | docker compose --profile full up -d --build   | + 프론트 (http://localhost:5173) | 시연 PC (한 줄로 전부) |
+# 끄기: docker compose --profile full down  (DB 데이터는 db-data 에 남음)
 services:
   db:
     image: mariadb:11.8.9
@@ -25,6 +30,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   backend:
     build: ./backend
@@ -34,12 +40,64 @@ services:
       # 상자끼리는 서비스 이름(db)과 컨테이너 안 포트(3306)로 연결
       DB_HOST: db
       DB_PORT: 3306
+      # "다시 생성" AI 서버 (ai 프로필을 안 켜면 그 버튼만 503, 다른 화면은 그대로)
+      AI_SERVER_URL: ${AI_SERVER_URL_IN_DOCKER:-http://ai-api:8000}
     ports:
       - "8080:8080"
+    volumes:
+      # KIS 접근 토큰 보관 (backend/data/kis, Git 제외). 다시 켜도 토큰을 재사용 → KIS 발급 1분 1회·알림톡 아낌
+      - ./backend/data:/app/data
     depends_on:
       # DB가 접속 가능해진 뒤에 백엔드 시작
       db:
         condition: service_healthy
+    restart: unless-stopped
+
+  # ----- AI (profile: ai, full) — 데이터 담당 PC·시연 PC만 -----
+  ai:
+    build: ./ai
+    # 5분마다 뉴스·공시 수집 → 요약 → 종목 매칭, 1시간마다 종목별 하루 요약 (ai/hk_llm/loop.py)
+    command: ["python", "-m", "hk_llm.loop"]
+    env_file: .env
+    environment:
+      DB_HOST: db
+      DB_PORT: 3306
+      # 로그 시각을 한국 시간으로 (slim 이미지엔 시간대 파일이 없어 POSIX 표기. DB 시각은 코드가 KST 로 계산)
+      TZ: KST-9
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles: ["ai", "full"]
+
+  ai-api:
+    build: ./ai
+    # "다시 생성" 서버 (ai/hk_llm/api.py). 백엔드만 부름, 브라우저에서 직접 부르지 않음
+    command: ["python", "-m", "uvicorn", "hk_llm.api:app", "--host", "0.0.0.0", "--port", "8000"]
+    env_file: .env
+    environment:
+      DB_HOST: db
+      DB_PORT: 3306
+      # 로그 시각을 한국 시간으로 (slim 이미지엔 시간대 파일이 없어 POSIX 표기. DB 시각은 코드가 KST 로 계산)
+      TZ: KST-9
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles: ["ai", "full"]
+
+  # ----- 프론트 (profile: full) — 시연 PC. 개발할 때는 frontend 폴더에서 npm run dev -----
+  frontend:
+    build: ./frontend
+    ports:
+      # http://localhost:5173 (개발 서버와 같은 주소). /api 는 nginx 가 backend 로 넘김 (frontend/nginx.conf)
+      - "5173:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    profiles: ["full"]
 
 volumes:
   db-data:

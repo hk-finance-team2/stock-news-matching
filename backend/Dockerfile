@@ -23,6 +23,8 @@ WORKDIR /app
 # 관리자(root)가 아닌 전용 계정으로 실행 (보안)
 RUN groupadd --system app && useradd --system --gid app app
 COPY --from=build /app/build/libs/*.jar app.jar
+# KIS 토큰 보관 폴더 (docker-compose.yml 이 backend/data 를 여기에 연결). 전용 계정이 쓸 수 있게
+RUN mkdir -p /app/data && chown app:app /app/data
 USER app
 
 EXPOSE 8080
