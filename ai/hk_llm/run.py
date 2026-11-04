@@ -16,7 +16,7 @@ from hk_llm.core.db import get_engine, to_db
 from hk_llm.steps.step1_rss import FEEDS, fetch_all
 from hk_llm.steps.step2_dedup import dedup_by_url
 from hk_llm.steps.step3_save import save_listed
-from hk_llm.steps.sns import TOP, run_sns
+from hk_llm.steps.sns import TOP, purge_old_sns, run_sns
 from hk_llm.steps.step4_body import fetch_bodies, purge_old_bodies
 from hk_llm.steps.step5_summary import BATCH, summarize_articles
 from hk_llm.steps.step6_match import match_articles
@@ -91,6 +91,7 @@ def _run(engine, limit, daily):
         raise
     finally:
         purge_old_bodies(engine)  # 실패해도 7일 지난 본문은 반드시 지움
+        purge_old_sns(engine)  # 7일 지난 SNS 글도 (네이버 키가 없어도)
     with engine.begin() as conn:
         conn.execute(finish, {"t": to_db(datetime.now(KST)), "status": "SUCCESS", "c": new, "s": summarized,
                               "err": " / ".join(errors) or None, "id": run_id})

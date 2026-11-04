@@ -14,6 +14,16 @@ def test_loop_wait():
     assert wait_seconds(1499.5) == 0.5
 
 
+def test_loop_run_hour():
+    from hk_llm.core.config import KST
+    from hk_llm.loop import run_hour
+
+    noon = datetime(2026, 11, 4, 12, tzinfo=KST)
+    assert run_hour(noon - timedelta(milliseconds=10)) == noon, "정각 직전에 깨도 12시 차례 (1시간 작업이 밀리지 않음)"
+    assert run_hour(noon + timedelta(minutes=55)) == noon
+    assert run_hour(noon - timedelta(minutes=5)) == noon - timedelta(hours=1), "11:55 차례는 11시"
+
+
 def test_loop_daily_once_per_hour():
     from hk_llm import loop
 
@@ -98,7 +108,7 @@ def test_sns_rules():
         assert check(Opinion(posts=[], summary=fine)).summary == fine, "금융 표현은 통과"
     for bad in ("오픈 채팅으로 오세요", "자세한 건 https://x.co", "010 1234 5678 로 연락"):
         assert check(Opinion(posts=[], summary=bad)).summary == "", f"광고 요약을 통과시킴: {bad}"
-    mixed = check(Opinion(posts=[Post(id=1, sentiment="POSITIVE", reason="카톡 방 안내"), Post(id=2, sentiment="NEGATIVE", reason="실적 걱정")], summary="기대 의견"))
+    mixed = check(Opinion(posts=[Post(id=1, about=True, sentiment="POSITIVE", reason="카톡 방 안내"), Post(id=2, about=True, sentiment="NEGATIVE", reason="실적 걱정")], summary="기대 의견"))
     assert mixed.posts[0].reason == "이유 표시 안 함" and mixed.posts[1].reason == "실적 걱정" and mixed.summary == "기대 의견"
     marks = cafe_marks(["https://cafe.naver.com/a/100", "https://cafe.naver.com/a/90", "https://blog.naver.com/x/5"])
     assert marks == {"a": 100}

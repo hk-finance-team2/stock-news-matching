@@ -110,7 +110,8 @@ def test_sns_db():
 
     def row(n, conn):
         return conn.execute(text("""SELECT a.article_id, a.status, a.description, a.summary, a.model, a.summarized_at,
-                                           (SELECT COUNT(*) FROM article_stock s WHERE s.article_id = a.article_id) AS links
+                                           (SELECT COUNT(*) FROM article_stock s WHERE s.article_id = a.article_id) AS links,
+                                           (SELECT MAX(s.relevance) FROM article_stock s WHERE s.article_id = a.article_id) AS relevance
                                     FROM article a WHERE a.url_key = :k"""), {"k": prefix + str(n)}).one()
 
     engine = get_engine()
@@ -126,9 +127,10 @@ def test_sns_db():
         assert base.status == "SKIPPED" and base.description is None and base.links == 0
         assert old.status == "SKIPPED" and old.links == 0, "번호가 작은 글은 오래된 글"
         assert new.status == "FETCHED" and new.links == 1
+        assert float(new.relevance) == sns.SNS_RELEVANCE, "SNS 는 뉴스보다 관련도를 낮게 (F-05)"
 
         item = SimpleNamespace(article_id=new.article_id, title="제목", description="상승 기대")
-        opinion = sns.Opinion(posts=[sns.Post(id=new.article_id, sentiment="POSITIVE", reason="실적 기대")], summary="기대 의견")
+        opinion = sns.Opinion(posts=[sns.Post(id=new.article_id, about=True, sentiment="POSITIVE", reason="실적 기대")], summary="기대 의견")
         assert sns.save_result(engine, code, [item], opinion, day) == 1
         summary_sql = text("SELECT sns_summary FROM stock_daily_summary WHERE stock_code = :c AND summary_date = :d")
         with engine.connect() as conn:
@@ -142,14 +144,29 @@ def test_sns_db():
         with engine.connect() as conn:
             assert conn.execute(summary_sql, {"c": code, "d": date(2000, 1, 1)}).scalar() == "기대 의견", "버린 요약은 덮어쓰지 않음"
 
+        with engine.begin() as conn:  # 같은 글을 다시 분석 전으로 돌려 "이 종목 이야기 아님" 답을 시험
+            conn.execute(text("UPDATE article SET status = 'FETCHED' WHERE article_id = :i"), {"i": new.article_id})
+        opinion = sns.Opinion(posts=[sns.Post(id=new.article_id, about=False, sentiment="POSITIVE", reason="급등종목 모음")], summary="")
+        assert sns.save_result(engine, code, [item], opinion, day) == 0
+        with engine.connect() as conn:
+            assert row(101, conn).status == "SKIPPED", "모음 글·이름이 출처로만 나온 글은 화면에 안 나감"
+
         old_spam = SimpleNamespace(article_id=old.article_id, title="제목", description="abc.com 으로 오세요")
         with engine.begin() as conn:
             conn.execute(text("UPDATE article SET status = 'FETCHED', description = :d WHERE article_id = :i"), {"d": old_spam.description, "i": old.article_id})
-        opinion = sns.Opinion(posts=[sns.Post(id=old.article_id, sentiment="NEUTRAL", reason="의견")], summary="")
+        opinion = sns.Opinion(posts=[sns.Post(id=old.article_id, about=True, sentiment="NEUTRAL", reason="의견")], summary="")
         assert sns.save_result(engine, code, [old_spam], opinion, day) == 0
         with engine.connect() as conn:
             hidden = row(99, conn)
         assert hidden.status == "SKIPPED" and hidden.description is None and hidden.summary is None, "원문이 화면에 나가면 안 됨"
+
+        with engine.begin() as conn:  # 101번만 8일 전에 모은 글로
+            conn.execute(text("UPDATE article SET collected_at = NOW() - INTERVAL 8 DAY WHERE article_id = :i"), {"i": new.article_id})
+        assert sns.purge_old_sns(engine) >= 1
+        with engine.connect() as conn:
+            left = conn.execute(text("SELECT COUNT(*) FROM article WHERE url_key LIKE :k"), {"k": prefix + "%"}).scalar()
+            links = conn.execute(text("SELECT COUNT(*) FROM article_stock WHERE article_id = :i"), {"i": new.article_id}).scalar()
+        assert left == 2 and links == 0, "7일 지난 SNS 글은 종목 연결과 함께 지움, 최근 글은 남김"
     finally:
         with engine.begin() as conn:
             conn.execute(text("DELETE s FROM article_stock s JOIN article a USING (article_id) WHERE a.url_key LIKE :k"), {"k": prefix + "%"})
