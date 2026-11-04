@@ -8,17 +8,20 @@ LangChain 체인: 프롬프트 → OpenAI(정해진 형식으로 답하게) → 
 저장: summary·sentiment·keywords·model·summarized_at, 회사 목록은 companies(JSON, V7) → 6단계 매칭의 입력
 """
 import json
+import os
 import re
+import threading
 from datetime import datetime, timedelta
 from typing import Literal
 
 import openai
+from langchain_core.callbacks import get_usage_metadata_callback
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
-from hk_llm.core.config import KST
+from hk_llm.core.config import KST, LOG_DIR
 from hk_llm.core.db import get_engine, to_db
 from hk_llm.core.util import get_logger
 
@@ -26,9 +29,21 @@ MODEL = "gpt-5.4-nano"  # 실측 1건 약 $0.0006 → 하루 1,000건 월 약 $1
 MAX_CHARS = 3000  # ponytail: 본문 앞 3,000자만 (한글 약 2,000토큰). 기사 핵심은 앞쪽. 길이 문제 생기면 토큰 단위로
 BATCH = 200  # 1번 실행에 최대 200건 (약 $0.13)
 MAX_TRIES = 3
+PRICE_IN, PRICE_OUT = 0.20 / 1_000_000, 1.25 / 1_000_000  # 달러/토큰. 200건 실측(입력 348,662·출력 49,042 = $0.1310)에 맞는 값, 캐시 할인 안 침
+USAGE_FILE = LOG_DIR / "llm_usage.json"  # 날짜별 토큰·추정 비용 (Git 제외). 재시작해도 오늘 쓴 금액을 기억
+DAILY_LIMIT = 2.0
+_usage_lock = threading.Lock()
+
+
+class BudgetExceeded(Exception):
+    """오늘 LLM 비용 상한(.env 의 LLM_DAILY_USD, 기본 $2)을 넘음"""
+
+
 # 기사 탓이 아니라 OpenAI 쪽 문제(키·한도·접속) → 기사를 실패 처리하지 않고 이번 실행을 멈춤
-STOP_ERRORS = (openai.AuthenticationError, openai.PermissionDeniedError, openai.RateLimitError,
+STOP_ERRORS = (BudgetExceeded, openai.AuthenticationError, openai.PermissionDeniedError, openai.RateLimitError,
                openai.APIConnectionError, openai.InternalServerError)
+TIMEOUT_STOP = 3  # 시간 초과가 이만큼 연달아 나면 OpenAI 쪽 문제로 보고 멈춤
+_timeouts = 0
 
 log = get_logger(__name__)
 
@@ -78,6 +93,72 @@ PROMPT = ChatPromptTemplate.from_messages([
 ])
 
 
+def _read_usage():
+    try:
+        return json.loads(USAGE_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def spent_today():
+    """오늘 추정 비용(달러)"""
+    return _read_usage().get(datetime.now(KST).date().isoformat(), {}).get("usd", 0.0)
+
+
+def _add_usage(by_model):
+    tokens_in = sum(u.get("input_tokens", 0) for u in by_model.values())
+    tokens_out = sum(u.get("output_tokens", 0) for u in by_model.values())
+    if not tokens_in and not tokens_out:
+        return
+    with _usage_lock:
+        usage = _read_usage()
+        day = usage.setdefault(datetime.now(KST).date().isoformat(), {"input": 0, "output": 0, "usd": 0.0})
+        day["input"] += tokens_in
+        day["output"] += tokens_out
+        day["usd"] = round(day["usd"] + tokens_in * PRICE_IN + tokens_out * PRICE_OUT, 6)
+        tmp = USAGE_FILE.with_name(f"{USAGE_FILE.stem}.{os.getpid()}.{threading.get_ident()}.tmp")  # 프로세스끼리 안 겹치게
+        try:
+            USAGE_FILE.parent.mkdir(exist_ok=True)
+            tmp.write_text(json.dumps(usage), encoding="utf-8")
+            tmp.replace(USAGE_FILE)
+        except OSError as e:  # 기록 때문에 이미 돈을 낸 LLM 답을 버리면 안 됨. ponytail: 동시에 쓰면 한쪽 기록이 빠질 수 있음 (추정치라 감수)
+            log.warning("LLM 비용 기록 실패: %s", e)
+            tmp.unlink(missing_ok=True)
+
+
+def daily_limit():
+    """오늘 비용 상한(달러). 값이 잘못됐으면 기본값 (글 실패로 번지면 안 됨)"""
+    try:
+        return float(os.environ.get("LLM_DAILY_USD") or DAILY_LIMIT)
+    except ValueError:
+        log.warning("LLM_DAILY_USD 값이 숫자가 아님, 기본값 $%s 사용", DAILY_LIMIT)
+        return DAILY_LIMIT
+
+
+def llm_call(fn):
+    """모든 LLM 호출이 지나는 곳. 하루 상한 확인, 토큰 기록
+    시간 초과는 STOP_ERRORS 에 속하지만 1건이면 그 글만 실패 처리 (ValueError), 연달아 나면 그대로 던져 실행을 멈춤
+    ponytail: 상한은 호출 전에 확인해서 동시 호출이면 조금 넘을 수 있음"""
+    global _timeouts
+    limit = daily_limit()
+    if spent_today() >= limit:
+        raise BudgetExceeded(f"오늘 LLM 비용 상한 ${limit} 도달")
+    try:
+        with get_usage_metadata_callback() as usage:
+            try:
+                out = fn()
+            finally:
+                _add_usage(usage.usage_metadata)
+    except openai.APITimeoutError as e:
+        _timeouts += 1
+        if _timeouts >= TIMEOUT_STOP:
+            _timeouts = 0
+            raise
+        raise ValueError("LLM 시간 초과") from e
+    _timeouts = 0
+    return out
+
+
 def chain(model=MODEL):
     llm = ChatOpenAI(model=model, timeout=60, max_retries=2, max_tokens=2000)  # 실측 출력 230~390 토큰
     return PROMPT | llm.with_structured_output(ArticleSummary, include_raw=True)  # raw: 토큰 수 확인용
@@ -85,7 +166,7 @@ def chain(model=MODEL):
 
 def summarize(title, body, model=MODEL):
     """(ArticleSummary, 토큰 사용량 dict) 를 돌려준다. 형식에 안 맞는 답이면 예외"""
-    out = chain(model).invoke({"title": _strip_tag(title), "body": _strip_tag(body[:MAX_CHARS])})
+    out = llm_call(lambda: chain(model).invoke({"title": _strip_tag(title), "body": _strip_tag(body[:MAX_CHARS])}))
     if out["parsed"] is None:
         raise ValueError(f"LLM 답이 형식에 안 맞음: {out['parsing_error']}")
     return check(out["parsed"], title, body), out["raw"].usage_metadata
@@ -125,6 +206,9 @@ def summarize_articles(engine=None, limit=BATCH, model=MODEL, since=None):
         try:
             s, _ = summarize(r.title, r.body, model)
             _save(engine, r.article_id, s, model)  # 저장 실패(값 이상 등)도 재시도 횟수에 넣음
+        except BudgetExceeded as e:  # 뉴스 수집·연결은 계속 돌아야 하니 실행 실패로 안 남김
+            log.warning("요약 중단 (%d건 요약 후): %s", done, e)
+            break
         except STOP_ERRORS:
             log.exception("OpenAI 쪽 문제로 요약 중단 (%d건 요약 후)", done)
             raise

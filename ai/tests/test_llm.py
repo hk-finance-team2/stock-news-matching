@@ -23,6 +23,28 @@ def test_step5_check():
     check(ArticleSummary(summary="2027년 말까지 공급한다", sentiment="NEUTRAL", keywords=[], companies=[]), "제목", "2027년 말까지")
 
 
+def test_step8_numbers():
+    from hk_llm.steps.step8_daily import unknown_numbers
+
+    assert unknown_numbers("영업이익 1,200억원, 3분기 12% 증가", "- 영업이익 1200억원, 12% 증가") == []
+    assert unknown_numbers("영업이익 1,500억원", "- 영업이익 1200억원") == ["1,500"]
+    assert unknown_numbers("3분기 실적", "- 실적") == [], "한 자리 수는 안 봄"
+
+
+def test_step8_rejected_keeps_summary():
+    from hk_llm.steps import step8_daily as s8
+
+    rows = [{"stock_name": "삼성전자", "is_main": True, "summary": "요약", "reason": "이유", "sentiment": "POSITIVE"}]
+    engine = mock.MagicMock()
+    conn = engine.begin.return_value.__enter__.return_value
+    with mock.patch.object(s8, "combine", side_effect=s8.RejectedAnswer("기사에 없는 숫자")):
+        assert s8._save_stock(engine, "005930", rows, "2026-11-04") == ""
+    params = conn.execute.call_args.args[1]
+    sql = str(conn.execute.call_args.args[0])
+    assert "news_summary" not in sql and "generated_at" not in sql, "기존 요약·시각을 안 건드림"
+    assert params["pos"] == 1, "기사 수는 저장해서 LLM 을 또 안 부름"
+
+
 def test_step8_rules():
     from hk_llm.steps.step8_daily import _line, combine, counts
 

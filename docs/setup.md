@@ -337,6 +337,7 @@ pip install -r requirements.txt
 | `DART_API_KEY` | 공시 |
 | `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET` | SNS |
 | `AI_INTERNAL_TOKEN` | "다시 생성" AI 서버 |
+| `LLM_DAILY_USD` | 선택. LLM 하루 비용 상한(달러, 추정치 기준), 없으면 2 |
 
 - DB를 켭니다. (3절) 테이블은 백엔드 Flyway가 만들므로, 없으면 백엔드를 한 번 켭니다. (4-1절)
 
@@ -347,9 +348,11 @@ pip install -r requirements.txt
 | 하고 싶은 것 | 명령 | OpenAI 비용 |
 |---|---|---|
 | 규칙 시험 (DB·인터넷 필요) | `python -m tests` | 없음 |
+| 시험, DB·인터넷이 필요한 것을 빼고 | `python -m tests offline` | 없음 |
 | 1~3단계 시험 | `python -m hk_llm.run --check` | 없음 |
 | 파이프라인 1번, 요약 n건까지만 | `python -m hk_llm.run --limit 30` | 있음 |
 | 자동 실행 (끌 때까지) | `python -m hk_llm.loop` | 있음 |
+| 자동 실행을 Docker 로 (레포 최상위에서) | `docker compose --profile ai up -d --build ai` | 있음 |
 | "다시 생성" AI 서버 | `uvicorn hk_llm.api:app --port 8000` | 호출할 때 |
 
 - **비용 주의:** `python -m hk_llm.run`을 옵션 없이 돌리면 뉴스·공시 요약이 최대 200건씩 됩니다. 시험은 `--check`나 `--limit`으로 합니다.

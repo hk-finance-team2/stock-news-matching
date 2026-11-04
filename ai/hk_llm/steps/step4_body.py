@@ -5,11 +5,13 @@
     purge_old_bodies()  # 7일 지난 본문 지우기 (요약은 남음)
 
 - robots.txt 가 막은 주소, 유료 기사 → SKIPPED (다시 안 함)
+- robots.txt 를 확인하지 못한 사이트 → LISTED 그대로, 재시도 횟수에 안 넣음 (금지와 구별)
 - 실패(네트워크·본문 못 찾음) → retry_count + 1, LISTED 그대로 → 다음 실행에서 다시. 3번째 실패면 FAILED
 - 사이트마다 요청 간격 지킴 (robots.txt Crawl-delay, 없으면 1초)
 """
 import re
 import time
+from collections import Counter
 from datetime import datetime, timedelta
 from urllib.parse import urlsplit
 
@@ -19,7 +21,7 @@ from sqlalchemy import text
 
 from hk_llm.core.config import KST, USER_AGENT
 from hk_llm.core.db import get_engine
-from hk_llm.steps.robots import allowed, crawl_delay
+from hk_llm.steps.robots import allowed, crawl_delay, reachable
 from hk_llm.core.util import get_logger, retry
 
 # 언론사가 적어서 범용 추출기 대신 사이트별 본문 칸을 직접 지정 (2026-11-02 기사 페이지 확인)
@@ -36,6 +38,7 @@ DROP = ".//figure | .//figcaption | .//aside | .//script | .//style | .//table" 
 PAYWALL = b"paywall-popup__body"  # 한경 프리미엄: 본문 대신 결제 안내만 옴 → 우회하지 않고 SKIPPED
 MIN_LEN = 100  # 이보다 짧으면 본문 없는 기사([속보] 등) → SKIPPED
 MAX_TRIES = 3
+BAD_HOST_FAILS = 3  # 한 실행에서 이만큼 실패하고 성공이 0건이면 사이트 구조 변경 등으로 보고 알림
 BATCH = 200  # ponytail: 1번 실행에 최대 200건 (사이트당 1초 → 최대 약 3분). 밀리면 다음 실행에서 이어감
 KEEP_DAYS = 7
 MAX_DELAY = 10  # robots.txt Crawl-delay 가 터무니없이 커도 1건당 최대 10초만 기다림
@@ -88,11 +91,15 @@ def fetch_bodies(engine=None, limit=BATCH):
                                     ORDER BY article_id DESC LIMIT :n"""), {"since": since, "n": limit}).all()
     done = {"FETCHED": 0, "SKIPPED": 0, "RETRY": 0, "FAILED": 0}
     last_hit = {}  # 사이트별 마지막 요청 시각
+    ok, bad = Counter(), Counter()  # 사이트별 본문 성공·실패
     for r in rows:
         p = urlsplit(r.url)
         if p.scheme != "https" or p.netloc not in BODY_XPATH:  # 정한 언론사 말고는 요청 자체를 안 보냄
             _update(engine, r.article_id, status="SKIPPED", error="모르는 사이트")
             done["SKIPPED"] += 1
+            continue
+        if not reachable(r.url):
+            done["RETRY"] += 1
             continue
         if not allowed(r.url):
             _update(engine, r.article_id, status="SKIPPED", error="robots.txt 금지")
@@ -120,12 +127,15 @@ def fetch_bodies(engine=None, limit=BATCH):
             tries = r.retry_count + 1
             status = "FAILED" if tries >= MAX_TRIES else "LISTED"
             _update(engine, r.article_id, status=status, error=str(e), tries=tries)
+            bad[host] += 1
             done["FAILED" if status == "FAILED" else "RETRY"] += 1
             log.warning("본문 실패 %d/%d %s: %s", tries, MAX_TRIES, r.url, e)
             continue
         _update(engine, r.article_id, status="FETCHED", body=body, tries=0)
         done["FETCHED"] += 1
-    log.info("본문: %d건 중 %s", len(rows), done)
+        ok[host] += 1
+    done["bad_hosts"] = sorted(h for h, n in bad.items() if n >= BAD_HOST_FAILS and not ok[h])
+    log.info("본문: %d건 중 %s, 사이트별 성공 %s 실패 %s", len(rows), done, dict(ok), dict(bad))
     return done
 
 

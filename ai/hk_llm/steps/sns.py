@@ -26,13 +26,16 @@ from hk_llm.core.config import KST
 from hk_llm.core.db import get_engine, to_db
 from hk_llm.core.util import get_logger
 from hk_llm.steps.step2_dedup import url_key
-from hk_llm.steps.step5_summary import MAX_TRIES, MODEL, STOP_ERRORS, _strip_tag
+from hk_llm.steps.step5_summary import MAX_TRIES, MODEL, STOP_ERRORS, _strip_tag, llm_call
 
 API = "https://naverapihub.apigw.ntruss.com/search/v1/"
 CHANNELS = {"cafearticle": "NAVER_CAFE", "blog": "NAVER_BLOG"}
 TOP = 50  # 종목 50개 x 2경로 x 24시간 = 하루 2,400번 (문서상 한도 25,000)
 DISPLAY = 20
 MAX_POSTS = 20  # 종목당 LLM 1번에 넣는 글 수 (비용 상한)
+KEEP_DAYS = 31  # 글 보관 기간. 백엔드 언급량 그래프가 최대 30일
+# 일반 단어와 같은 종목명: 제목에 있어도 그 회사 이야기인지 알 수 없어 SNS 에서 뺌. ponytail: 손으로 고른 목록, 잘못 걸리는 종목이 보이면 추가
+COMMON_NAMES = ["대상", "동서", "고려", "대성", "동양", "서연", "일진", "세방", "삼양"]
 BLOG_PRESS = "네이버 블로그"  # 블로거 이름은 저장하지 않음
 WORD = re.compile("주가|주식|매수|매도|종목|증시|실적|목표가|배당|급등|급락|투자")
 AD = re.compile(r"리딩|문의|모집|상담")  # 글에만 씀. 리딩뱅크·공모주 모집처럼 금융 표현일 수 있어 LLM 답에는 안 씀
@@ -41,8 +44,11 @@ FIN_CAFE = re.compile("주식|증시|재테크|투자|종목|차트|트레이더
 # 글과 LLM 답에 같이 씀. 카카오톡만 나오는 글은 카카오 종목 이야기일 수 있어 막지 않음
 SPAM_WORD = re.compile(r"https?://|www\.|닷컴|open\.kakao|kakaotalk|telegram|카톡|카카오톡(?:방|아이디|친구|문의|으로|오픈)|오픈채팅|텔레그램|무료추천|수익인증")  # 공백을 지운 글에
 # ponytail: 주소 끝은 목록으로 봄. 아무 영문이나 받으면 "1.SK하이닉스"·"상승.LG전자" 같은 정상 글이 걸림. 새 주소 끝이 보이면 추가
-SPAM_CONTACT = re.compile(  # 앞뒤 경계를 봐야 해서 공백을 남긴 글에
-    r"(?!\d+\.)[\w-]+\.(?:com|net|org|kr|co|me|ly|io|ai|gg|cc|tv|shop|xyz|site|info|biz|app|link|top|club|online|store|live)(?![a-z0-9])"
+TLD_ANY = "com net org shop xyz".split()  # 주소로만 쓰는 끝. 네이버.com 처럼 한글 주소도 잡음
+TLD_LATIN = "kr co me ly io gg cc tv site info biz app link top club online store live".split()  # 낱말로도 쓰여서 영문 주소만. 반도체.top 은 통과, ai 는 HBM.AI 때문에 뺌
+SPAM_CONTACT = re.compile(  # 앞뒤 경계를 봐야 해서 공백을 남긴 글에. 주소 끝 글자 사이 공백(c om)도 잡음. 1.top 같은 목록 번호(1~2자리)만 예외
+    r"(?!\d{1,2}\.)(?:[\w-]+\.(?:" + "|".join(r"\s*".join(t) for t in TLD_ANY) + r")"
+    r"|[a-z0-9-]+\.(?:" + "|".join(r"\s*".join(t) for t in TLD_LATIN) + r"))(?![a-z0-9])"
     r"|(?<!\d)0[\s.\-()/·]*1[\s.\-()/·]*[016-9](?:[\s.\-()/·]*\d){7,8}(?!\d)")
 FILLER = {"\u115f", "\u1160", "\u3164", "\uffa0"}  # 한글 채움 문자: 안 보이지만 글자로 취급됨
 CAFE_POST = re.compile(r"cafe\.naver\.com/([^/?#]+)/(\d+)")
@@ -96,6 +102,11 @@ def is_spam(value):
     return bool(SPAM_WORD.search(re.sub(r"\s+", "", text_)) or SPAM_CONTACT.search(re.sub(r"\s*\.\s*", ".", text_)))
 
 
+def named(name, title):
+    """제목에 종목명이 낱말 앞머리로 나오나 (조사는 붙어도 됨). 미대상 같은 다른 낱말 속이면 안 됨"""
+    return bool(re.search(r"(?<![가-힣A-Za-z0-9])" + re.escape(name), title))
+
+
 def keep(name, title, preview, cafe, all_names):
     """쓸 글인가: 제목에 종목명(더 긴 다른 종목명 안에 든 경우 제외), 주식 이야기, 광고·시황 모음 아님, 카페는 금융 카페만"""
     text_ = title + " " + preview
@@ -107,7 +118,7 @@ def keep(name, title, preview, cafe, all_names):
     for other in all_names:  # HLB 를 찾는데 제목이 HLB제약 이면 안 됨
         if name in other and other != name:
             rest = rest.replace(other, "")
-    return name in rest
+    return name not in COMMON_NAMES and named(name, rest)
 
 
 def published(postdate, now):
@@ -150,9 +161,10 @@ def search(kind, query):
 def top_stocks(engine, n):
     sql = text("""SELECT s.stock_code, i.stock_name FROM article_stock s JOIN article a USING (article_id) JOIN stock_info i USING (stock_code)
                   WHERE a.status = 'DONE' AND a.source_type = 'NEWS' AND a.channel = 'RSS' AND a.published_at >= :since
-                  GROUP BY s.stock_code, i.stock_name ORDER BY COUNT(*) DESC, s.stock_code LIMIT :n""")
+                    AND i.stock_name NOT IN :common
+                  GROUP BY s.stock_code, i.stock_name ORDER BY COUNT(*) DESC, s.stock_code LIMIT :n""").bindparams(bindparam("common", expanding=True))
     with engine.connect() as conn:
-        return conn.execute(sql, {"since": to_db(datetime.now(KST) - timedelta(hours=24)), "n": n}).all()
+        return conn.execute(sql, {"since": to_db(datetime.now(KST) - timedelta(hours=24)), "n": n, "common": COMMON_NAMES}).all()
 
 
 def fetch_posts(kind, channel, name, now, all_names, marks):
@@ -217,9 +229,9 @@ def check(result):
 
 def analyze(stock, previous, rows):
     posts = "\n".join(f"[{r.article_id}] {_strip_tag(r.title)} / {_strip_tag(r.description or '')[:300]}" for r in rows)
-    llm = ChatOpenAI(model=MODEL, timeout=60, max_retries=2, max_tokens=2000)
-    return check((PROMPT | llm.with_structured_output(Opinion)).invoke(
-        {"stock": _strip_tag(stock), "previous": "" if is_spam(previous) else _strip_tag(previous or ""), "posts": posts}))
+    llm = ChatOpenAI(model=MODEL, timeout=60, max_retries=2, max_tokens=3000)  # 글 20건의 이유 + 요약이 잘리지 않게
+    return check(llm_call(lambda: (PROMPT | llm.with_structured_output(Opinion)).invoke(
+        {"stock": _strip_tag(stock), "previous": "" if is_spam(previous) else _strip_tag(previous or ""), "posts": posts})))
 
 
 def save_result(engine, code, items, result, now):
@@ -246,8 +258,8 @@ def save_result(engine, code, items, result, now):
     return done
 
 
-def summarize(engine):
-    """분석한 글 수. 종목마다 새 글 최대 20건을 LLM 1번으로 처리해 DONE, 오늘 sns_summary 갱신"""
+def summarize(engine, stocks=TOP):
+    """분석한 글 수. 최대 stocks 종목, 종목마다 새 글 최대 20건을 LLM 1번으로 처리해 DONE, 오늘 sns_summary 갱신"""
     now = datetime.now(KST)
     since = now.date() - timedelta(days=1)
     sql = text("""SELECT a.article_id, a.title, a.description, a.retry_count, s.stock_code, i.stock_name
@@ -260,7 +272,7 @@ def summarize(engine):
     for r in rows:
         by.setdefault(r.stock_code, []).append(r)
     done = 0
-    for code, items in by.items():
+    for code, items in list(by.items())[:stocks]:
         items = items[:MAX_POSTS]
         with engine.connect() as conn:
             previous = conn.execute(text("SELECT sns_summary FROM stock_daily_summary WHERE stock_code = :c AND summary_date = :d"),
@@ -281,17 +293,48 @@ def summarize(engine):
     return done
 
 
+def purge_old_posts(engine):
+    """보관 기간이 지난 SNS 글을 지움, 지운 건수. 뉴스는 건드리지 않음"""
+    where = "a.source_type = 'SNS' AND a.collected_at < NOW() - INTERVAL :d DAY"
+    with engine.begin() as conn:
+        conn.execute(text(f"DELETE s FROM article_stock s JOIN article a USING (article_id) WHERE {where}"), {"d": KEEP_DAYS})
+        n = conn.execute(text(f"DELETE a FROM article a WHERE {where}"), {"d": KEEP_DAYS}).rowcount
+    if n:
+        log.info("보관 기간 지난 SNS 글 %d건 삭제", n)
+    return n
+
+
 def run_sns(engine=None, stocks=TOP):
-    """(새 글 수, 분석한 글 수). 네이버 키가 없으면 건너뜀. 검색이 일부 실패해도 분석까지 한 뒤 예외로 알림 (collect_run.error 에 남음)"""
-    if not os.environ.get("NAVER_CLIENT_ID"):
-        log.warning("네이버 키 없음: SNS 건너뜀")
-        return 0, 0
+    """(새 글 수, 분석한 글 수). 네이버 키가 없으면 건너뜀. 검색이 일부 실패해도 분석까지 한 뒤 예외로 알림. stocks 는 수집·분석 종목 수 상한"""
     engine = engine or get_engine()
-    new, failed = collect(engine, top_stocks(engine, stocks))
-    done = summarize(engine)
+    try:
+        if not os.environ.get("NAVER_CLIENT_ID"):
+            log.warning("네이버 키 없음: SNS 건너뜀")
+            return 0, 0
+        new, failed = collect(engine, top_stocks(engine, stocks))
+        done = summarize(engine, stocks)
+    finally:  # 키가 없거나 분석이 실패해도 보관 기간이 지난 글은 지움
+        purge_old_posts(engine)
     if failed:
         raise RuntimeError(f"네이버 검색 {failed}번 실패")
     return new, done
+
+
+def run_locked(engine, stocks=TOP):
+    """자동 실행용: 뉴스와 다른 잠금으로 1번 실행. 앞 실행이 돌고 있으면 건너뜀. 실패는 로그만
+    collect_run 에는 안 남김: 백엔드 "마지막 수집" 표시가 채널 구분 없이 최근 줄을 읽음"""
+    with engine.connect() as lock:
+        if not lock.execute(text("SELECT GET_LOCK('hk_llm_sns', 0)")).scalar():
+            log.warning("앞 SNS 실행이 안 끝나서 건너뜀")
+            return False
+        try:
+            run_sns(engine, stocks)
+            return True
+        except Exception:
+            log.exception("SNS 실패, 다음 시간에 다시")
+            return False
+        finally:
+            lock.execute(text("SELECT RELEASE_LOCK('hk_llm_sns')"))
 
 
 if __name__ == "__main__":

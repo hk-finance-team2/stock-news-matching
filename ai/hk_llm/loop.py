@@ -5,8 +5,10 @@
 
 - 5분 정각에 맞춰 시작. 실행이 5분을 넘으면 지나간 차례는 건너뜀
 - 실행이 실패해도 멈추지 않고 다음 차례에 다시
+- SNS 는 따로 돎: 오래 걸려도 5분 주기 뉴스 수집을 막지 않음. 실패는 로그에만 남음
 """
 import sys
+import threading
 import time
 from datetime import datetime
 
@@ -14,6 +16,7 @@ from hk_llm.core.config import KST
 from hk_llm.core.db import get_engine
 from hk_llm.core.util import get_logger
 from hk_llm.run import run
+from hk_llm.steps.sns import TOP, run_locked
 from hk_llm.steps.step5_summary import BATCH
 
 INTERVAL = 300  # 초
@@ -28,9 +31,13 @@ def wait_seconds(now, interval=INTERVAL):
 def main(limit=BATCH):
     engine = get_engine()
     done_hour = None  # 하루 요약을 마지막으로 돌린 시 (시작하자마자 1번 돎)
+    sns_hour = None
     log.info("자동 실행 시작")
     while True:
         hour = datetime.now(KST).replace(minute=0, second=0, microsecond=0)
+        if hour != sns_hour:
+            sns_hour = hour
+            threading.Thread(target=run_locked, args=(engine, min(limit, TOP)), daemon=True).start()
         try:
             if run(engine, limit, daily=hour != done_hour):
                 done_hour = hour

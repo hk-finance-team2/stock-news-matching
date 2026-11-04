@@ -1,0 +1,41 @@
+# AI 자동 검사 (CI)
+# ai/ 를 바꾼 PR을 열거나 push가 더 생기면, 그리고 main에 merge되면 돌아감
+# DB·인터넷·OpenAI 없이 규칙 시험만 돌린다 (비용 없음). DB 시험은 각자 python -m tests
+
+name: ai-ci
+
+on:
+  pull_request:
+    paths:
+      - "ai/**"
+      - ".github/workflows/ai-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "ai/**"
+      - ".github/workflows/ai-ci.yml"
+
+# 코드를 읽기만 함 (레포에 쓰기 권한 없음)
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: ai
+    steps:
+      - name: 코드 받기
+        uses: actions/checkout@v7
+      - name: Python 준비
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: 패키지 설치
+        run: pip install -r requirements.txt
+      - name: 규칙 시험
+        run: python -m tests offline
+        env:
+          OPENAI_API_KEY: not-used

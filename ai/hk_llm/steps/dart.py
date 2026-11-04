@@ -26,7 +26,7 @@ from sqlalchemy import bindparam, text
 from hk_llm.core.config import KST
 from hk_llm.core.db import get_engine, to_db
 from hk_llm.steps.step2_dedup import url_key
-from hk_llm.steps.step5_summary import MAX_CHARS, MAX_TRIES, MODEL, STOP_ERRORS, Sentiment, _strip_tag
+from hk_llm.steps.step5_summary import MAX_CHARS, MAX_TRIES, MODEL, STOP_ERRORS, Sentiment, _strip_tag, llm_call
 from hk_llm.core.util import get_logger
 
 API = "https://opendart.fss.or.kr/api/list.json"
@@ -197,8 +197,8 @@ def fetch_document(key, rcept_no):
 
 def summarize_one(title, body):
     llm = ChatOpenAI(model=MODEL, timeout=60, max_retries=2, max_tokens=1000)
-    s = (PROMPT | llm.with_structured_output(DisclosureSummary)).invoke(
-        {"title": _strip_tag(title), "body": _strip_tag(body[:MAX_CHARS])})
+    s = llm_call(lambda: (PROMPT | llm.with_structured_output(DisclosureSummary)).invoke(
+        {"title": _strip_tag(title), "body": _strip_tag(body[:MAX_CHARS])}))
     wrong = [y for y in re.findall(r"(?<!\d)((?:19|20)\d\d)년", s.summary + s.reason) if y not in title + body[:MAX_CHARS]]
     if wrong:
         raise ValueError(f"공시에 없는 연도: {wrong}")
