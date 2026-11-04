@@ -18,6 +18,10 @@ public enum ErrorCode {
 
     // 종목
     STOCK_NOT_FOUND(HttpStatus.NOT_FOUND, "종목을 찾을 수 없습니다."),
+    // 종합 요약 다시 생성 (AI 서버)
+    AI_NOT_CONFIGURED(HttpStatus.SERVICE_UNAVAILABLE, "이 서버에서는 요약 다시 생성이 설정되지 않았습니다. (AI_INTERNAL_TOKEN)"),
+    AI_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "요약 서버를 지금 쓸 수 없습니다. 잠시 후 다시 시도해 주세요."),
+    AI_BUSY(HttpStatus.TOO_MANY_REQUESTS, "요약 요청이 많습니다. 잠시 후 다시 시도해 주세요."),
 
     // 기사
     ARTICLE_NOT_FOUND(HttpStatus.NOT_FOUND, "글을 찾을 수 없습니다."),

@@ -9,6 +9,7 @@
 - 점수 (match_setting 가중치 사용): 이름이 맞으면 기본 통과, 테마가 맞으면 점수만 올림 🧪 (2026-11-02)
   키워드가 테마와 안 맞아도 깎지 않음: 삼성전자 '3분기 실적' 기사가 테마 때문에 탈락하면 안 되므로
 - 주제 확인 (on_topic) 🧪 (2026-11-03): 시황·전망·지표 기사와 명단 기사는 연결 안 함, 그 밖에는 제목이나 본문 앞부분에 이름이 있거나 본문에 2번 이상 나와야 연결 (2번 조건 2026-11-03 추가)
+- 근거 문장 (evidence, F-06) 🧪 (2026-11-04): 그 종목 이름이 나온 본문 문장 중 LLM 이유와 단어가 가장 많이 겹치는 문장. LLM 비용 0
 - 관련도 (relevance) 🧪 (2026-11-03): 제목 0.40 / 첫 부분 0.20 + 주인공 0.25 + 언급 횟수 최대 0.25 + 테마 0.10. 연결 여부와 별개로 화면 순서용
 - 결과: article_stock 에 기사 1 : 종목 N. 다시 매칭하면 그 기사의 연결을 지우고 새로 넣음
 """
@@ -135,6 +136,30 @@ def mentions(text_, code, name, names):
     return max(text_.count(w) for w in words if w)
 
 
+EVIDENCE_MAX = 300  # 근거 문장 최대 글자
+
+
+def sentences(body):
+    """본문 → 문장 목록 (마침표·물음표·느낌표 뒤 공백, 또는 줄바꿈에서 나눔)"""
+    return [s.strip() for s in re.split(r"(?<=[.!?])\s+|\n+", body or "") if len(s.strip()) >= 10]
+
+
+def evidence(body, item, names):
+    """근거 문장 (F-06): 그 종목 이름이 나온 문장 중 LLM 이유와 단어가 가장 많이 겹치는 문장 (같으면 앞 문장). LLM 비용 0
+    이름이 나온 문장이 없으면 None"""
+    code, c, _, name = item
+    words = {norm(name)} | {n for n, cc in names.items() if cc == code and len(n) >= 2}
+    reason = set(re.findall(r"[가-힣A-Za-z0-9]{2,}", c.get("reason", "")))
+    best, best_score = None, -1
+    for s in sentences(body):
+        if not any(w in norm(s) for w in words):
+            continue
+        overlap = sum(1 for w in reason if w in s)
+        if overlap > best_score:
+            best, best_score = s, overlap
+    return best[:EVIDENCE_MAX] if best else None
+
+
 def match_articles(engine=None, statuses=("SUMMARIZED",)):
     engine = engine or get_engine()
     dictionary = load_dictionary(engine)
@@ -149,14 +174,18 @@ def match_articles(engine=None, statuses=("SUMMARIZED",)):
         found = match_one(json.loads(r.companies), keywords, dictionary, missing)
         found = on_topic(r.title, r.body, found, dictionary[0])
         with engine.begin() as conn:  # 한 기사의 연결 지우기·넣기·상태 바꾸기를 한 번에
+            # 본문이 7일 지나 지워진 기사는 근거를 다시 뽑을 수 없으므로 예전 근거를 이어 씀
+            old = dict(conn.execute(text("SELECT stock_code, evidence FROM article_stock WHERE article_id = :id"),
+                                    {"id": r.article_id}).all())
             conn.execute(text("DELETE FROM article_stock WHERE article_id = :id"), {"id": r.article_id})
             for item in found:
                 code, c, sc, name = item
                 conn.execute(text("""INSERT INTO article_stock (article_id, stock_code, is_main, sentiment, reason,
-                                         match_type, relevance, matched_keywords)
-                                     VALUES (:id, :code, :main, :sent, :reason, 'DIRECT', :rel, :kw)"""),
+                                         match_type, relevance, evidence, matched_keywords)
+                                     VALUES (:id, :code, :main, :sent, :reason, 'DIRECT', :rel, :ev, :kw)"""),
                              {"id": r.article_id, "code": code, "main": c["is_main"], "sent": c["sentiment"],
                               "reason": reason_text(c)[:500], "rel": relevance(r.title, r.body, item, keywords, dictionary),
+                              "ev": evidence(r.body, item, dictionary[0]) if r.body else old.get(code),
                               "kw": name[:300]})
             conn.execute(text("UPDATE article SET status = :st WHERE article_id = :id"),
                          {"st": "DONE" if found else "NO_STOCK", "id": r.article_id})

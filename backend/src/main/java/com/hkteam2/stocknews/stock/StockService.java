@@ -26,9 +26,11 @@ public class StockService {
     private static final int SEARCH_MENTION_DAYS = 7;
 
     private final StockMapper stockMapper;
+    private final AiSummaryClient aiSummaryClient;
 
-    public StockService(StockMapper stockMapper) {
+    public StockService(StockMapper stockMapper, AiSummaryClient aiSummaryClient) {
         this.stockMapper = stockMapper;
+        this.aiSummaryClient = aiSummaryClient;
     }
 
     /** 종목 검색. q가 비어 있으면 전체를 이름순으로. 같은 순위끼리는 최근 7일 많이 언급된 종목 먼저 */
@@ -85,6 +87,16 @@ public class StockService {
                 .collect(Collectors.toMap(SentimentCountRow::sentiment, SentimentCountRow::articleCount));
 
         return StockSummaryResponse.of(stock, today, summary, SentimentRatioResponse.from(counts));
+    }
+
+    /**
+     * 종합 요약 다시 생성 (F-08): AI 서버에 오늘 요약을 새로 만들게 하고, 저장된 요약을 다시 읽어 돌려줌
+     * 없는 종목은 AI 서버를 부르기 전에 404 (LLM 비용을 쓰지 않게)
+     */
+    public SummaryRegenerateResponse regenerateSummary(String stockCode) {
+        getStock(stockCode);   // 없는 종목이면 404
+        boolean regenerated = aiSummaryClient.regenerate(stockCode);
+        return new SummaryRegenerateResponse(regenerated, getSummary(stockCode, null));
     }
 
     /**
