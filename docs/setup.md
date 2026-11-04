@@ -182,6 +182,24 @@ cd backend
 - 끄기: `Ctrl + C`
 - 4-1로 백엔드 상자를 켜 둔 상태라면 먼저 `docker compose stop backend`
 
+### 4-3. 한 줄로 전부 켜기 (AI·프론트까지, 시연 PC)
+
+`docker-compose.yml`의 **프로필(profile)**로 켤 묶음을 고릅니다. 프로필을 안 붙이면 지금처럼 DB + 백엔드만 켜집니다.
+
+| 명령 (저장소 최상위) | 켜지는 것 | 누가 |
+|---|---|---|
+| `docker compose up -d --build` | DB + 백엔드 | **모든 팀원** (진짜 AI 데이터는 2절대로 자동으로 들어감) |
+| `docker compose --profile ai up -d --build` | + AI 자동 수집(`ai`) + "다시 생성" AI 서버(`ai-api`, 8000) | 데이터 담당 PC·시연 PC만 |
+| `docker compose --profile full up -d --build` | + 프론트 화면(`frontend`) → **http://localhost:5173** | 시연 PC (한 줄로 전부) |
+| `docker compose --profile full down` | 전부 끄기 (DB 데이터는 남음) | |
+
+- **`--profile ai`·`full`은 아무나 켜지 않습니다.** 켜 두는 동안 OpenAI 비용이 들고(하루 약 $0.5), PC마다 따로 모으면 팀원끼리 데이터가 달라집니다. 수집 데이터는 데이터 담당이 PR로 올립니다(2절).
+- `full`의 프론트는 **완성본(빌드한 화면)**을 nginx가 보여 주고, `/api` 요청은 백엔드 상자로 넘깁니다(`frontend/nginx.conf`). 화면 코드를 고치면서 볼 때는 11절 `npm run dev`(같은 5173 포트라 `full`과 동시에 켜지 않기).
+- 끌 때도 같은 `--profile`을 붙여야 합니다. `docker compose down`만 하면 AI·프론트 상자는 남습니다.
+- 상자마다 `restart: unless-stopped`라서, 꺼지면 Docker가 다시 켜 줍니다. PC를 다시 켜도 Docker Desktop만 켜지면 직전 상태로 돌아옵니다.
+- 상태 보기: `docker compose --profile full ps`, 로그: `docker compose logs -f ai` (`backend`, `ai-api`, `frontend`)
+- 시연 날 확인할 것: [시연 체크리스트](demo-checklist.md)
+
 ## 5. 확인
 
 | 주소 | 무엇이 보이나 |
@@ -256,8 +274,8 @@ Swagger(http://localhost:8080/swagger-ui.html)에서:
 
 ### 8-3. AI 파트
 
-- **"다시 생성" AI 서버 켜기 (F-08):** `ai` 폴더에서 `python -m uvicorn hk_llm.api:app --port 8000`. 백엔드와 같은 `.env`의 `AI_INTERNAL_TOKEN`을 씀 (비워 두면 버튼만 503)
-  - 백엔드를 Docker로 켰다면 `.env`에 `AI_SERVER_URL=http://host.docker.internal:8000`, AI 서버는 `--host 0.0.0.0`
+- **"다시 생성" AI 서버 켜기 (F-08):** Docker로는 4-3의 `--profile ai` (상자 이름 `ai-api`, 설정 없이 백엔드와 연결됨). 내 PC에서 직접 켤 때는 `ai` 폴더에서 `python -m uvicorn hk_llm.api:app --port 8000`. 백엔드와 같은 `.env`의 `AI_INTERNAL_TOKEN`을 씀 (비워 두면 버튼만 503)
+  - 백엔드는 Docker, AI 서버는 내 PC에서 직접 켰다면 `.env`에 `AI_SERVER_URL_IN_DOCKER=http://host.docker.internal:8000`, AI 서버는 `--host 0.0.0.0`
 
 - **DB 접속 (내 PC에서 Python 실행 시):** 호스트 `localhost`, 포트 `3308`, DB `stocknews`, 계정은 `.env`의 `DB_USERNAME`·`DB_PASSWORD`
   - 나중에 AI 서버도 Docker로 묶으면 그 안에서는 호스트 `db`, 포트 `3306`
