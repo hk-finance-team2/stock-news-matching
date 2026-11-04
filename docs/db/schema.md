@@ -356,7 +356,7 @@ erDiagram
 | 15 | model | VARCHAR(50) | | N | | 요약한 모델 (AI 생성 표시용) |
 | 16 | summarized_at | DATETIME | | N | | 요약 시각 |
 | 17 | source_type | VARCHAR(10) | CHECK | Y | 'NEWS' | [확장] `NEWS`, `SNS` |
-| 18 | channel | VARCHAR(20) | | Y | 'RSS' | [확장] 세부 출처: `RSS`, `NAVER_NEWS`, `NAVER_BLOG`, `NAVER_CAFE` |
+| 18 | channel | VARCHAR(20) | | Y | 'RSS' | [확장] 세부 출처: `RSS`(언론사 RSS), `SITEMAP`(지난 기사 채우기), `DART`(공시, `source_type`은 `NEWS`), `NAVER_BLOG`·`NAVER_CAFE`(SNS). `NAVER_NEWS`는 예약(아직 안 씀). V5 주석은 처음 목록 그대로 (실행된 Flyway 파일은 고치지 않음) |
 | 19 | collect_mode | VARCHAR(10) | CHECK | Y | 'REALTIME' | [확장] `REALTIME` 실시간, `BACKFILL` 과거 보충 수집 |
 | 20 | keywords | VARCHAR(500) | | N | | [확장] 핵심 키워드 (쉼표 구분) |
 | 21 | sentiment | VARCHAR(10) | CHECK | N | | [확장] 글 전체 감성: `POSITIVE`, `NEGATIVE`, `NEUTRAL` |
