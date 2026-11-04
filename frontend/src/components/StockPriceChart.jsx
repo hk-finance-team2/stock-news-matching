@@ -124,6 +124,10 @@ export default function StockPriceChart({ stockCode, stockName }) {
       rightPriceScale: { borderVisible: false },
       timeScale: { borderVisible: false },
       localization: { locale: 'ko-KR', priceFormatter: fmt, timeFormatter: formatTime },
+      // 그냥 휠·세로 밀기는 페이지 스크롤에 양보 (차트가 큰 종목 화면에서 스크롤이 막히던 문제, QA #3)
+      // 이동은 끌기, 확대는 Ctrl+휠(아래에서 직접)·두 손가락 벌리기·가격 축 끌기
+      handleScroll: { mouseWheel: false, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
+      handleScale: { mouseWheel: false, pinch: true, axisPressedMouseMove: true, axisDoubleClickReset: true },
     });
     const candles = chart.addSeries(CandlestickSeries, {
       upColor: c.up,
@@ -149,8 +153,27 @@ export default function StockPriceChart({ stockCode, stockName }) {
       if (range && range.from < LOAD_MORE_MARGIN) loadOlderRef.current();
     };
     chart.timeScale().subscribeVisibleLogicalRangeChange(onRange);
+
+    // Ctrl+휠일 때만 확대·축소 (지도 퍼가기와 같은 방식). 마우스가 있는 봉을 기준으로 넓히고 좁힘
+    // passive: false 여야 preventDefault로 브라우저 화면 확대(Ctrl+휠)를 막을 수 있음
+    const box = boxRef.current;
+    const onWheel = (e) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      const ts = chart.timeScale();
+      const r = ts.getVisibleLogicalRange();
+      if (!r) return;
+      const span = r.to - r.from;
+      const nextSpan = Math.min(2000, Math.max(10, span * (e.deltaY > 0 ? 1.15 : 1 / 1.15)));
+      const anchor = ts.coordinateToLogical(e.clientX - box.getBoundingClientRect().left) ?? r.to;
+      const from = anchor - ((anchor - r.from) * nextSpan) / span;
+      ts.setVisibleLogicalRange({ from, to: from + nextSpan });
+    };
+    box.addEventListener('wheel', onWheel, { passive: false });
+
     chartRef.current = { chart, candles, volume, colors: c };
     return () => {
+      box.removeEventListener('wheel', onWheel);
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(onRange);
       chart.remove();
       chartRef.current = null;
@@ -343,7 +366,7 @@ export default function StockPriceChart({ stockCode, stockName }) {
         )}
       </div>
       <div className="llm-notice">
-        캔들: 빨강 상승 · 파랑 하락, 아래는 거래량. 끌어서 이동·휠로 확대, 왼쪽 끝까지 끌면 이전 데이터를 이어 받음.
+        캔들: 빨강 상승 · 파랑 하락, 아래는 거래량. 끌어서 이동·Ctrl+휠로 확대, 왼쪽 끝까지 끌면 이전 데이터를 이어 받음.
         시세 출처 한국투자증권(KIS), 차트 그리기 TradingView Lightweight Charts
       </div>
     </div>
