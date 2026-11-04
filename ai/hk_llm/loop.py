@@ -8,7 +8,7 @@
 """
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from hk_llm.core.config import KST
 from hk_llm.core.db import get_engine
@@ -17,6 +17,7 @@ from hk_llm.run import run
 from hk_llm.steps.step5_summary import BATCH
 
 INTERVAL = 300  # 초
+EARLY_WAKE = 5  # 초. 정각 차례가 이만큼 일찍 시작해도 그 시의 차례로 봄
 log = get_logger(__name__)
 
 
@@ -25,12 +26,17 @@ def wait_seconds(now, interval=INTERVAL):
     return interval - now % interval
 
 
+def run_hour(now):
+    """이번 차례가 몇 시 차례인가. 몇 밀리초 일찍 깨면(11:59:59.99) 아직 11시로 쳐서 1시간 작업이 5분 밀려서 여유를 둠"""
+    return (now + timedelta(seconds=EARLY_WAKE)).replace(minute=0, second=0, microsecond=0)
+
+
 def main(limit=BATCH):
     engine = get_engine()
     done_hour = None  # 하루 요약을 마지막으로 돌린 시 (시작하자마자 1번 돎)
     log.info("자동 실행 시작")
     while True:
-        hour = datetime.now(KST).replace(minute=0, second=0, microsecond=0)
+        hour = run_hour(datetime.now(KST))
         try:
             if run(engine, limit, daily=hour != done_hour):
                 done_hour = hour
