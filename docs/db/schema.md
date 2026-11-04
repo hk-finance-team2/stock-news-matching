@@ -356,7 +356,7 @@ erDiagram
 | 15 | model | VARCHAR(50) | | N | | 요약한 모델 (AI 생성 표시용) |
 | 16 | summarized_at | DATETIME | | N | | 요약 시각 |
 | 17 | source_type | VARCHAR(10) | CHECK | Y | 'NEWS' | [확장] `NEWS`, `SNS` |
-| 18 | channel | VARCHAR(20) | | Y | 'RSS' | [확장] 세부 출처: `RSS`, `NAVER_NEWS`, `NAVER_BLOG`, `NAVER_CAFE` |
+| 18 | channel | VARCHAR(20) | | Y | 'RSS' | [확장] 세부 출처: `RSS`(언론사 RSS), `SITEMAP`(지난 기사 채우기), `DART`(공시, `source_type`은 `NEWS`), `NAVER_BLOG`·`NAVER_CAFE`(SNS). `NAVER_NEWS`는 예약(아직 안 씀). V5 주석은 처음 목록 그대로 (실행된 Flyway 파일은 고치지 않음) |
 | 19 | collect_mode | VARCHAR(10) | CHECK | Y | 'REALTIME' | [확장] `REALTIME` 실시간, `BACKFILL` 과거 보충 수집 |
 | 20 | keywords | VARCHAR(500) | | N | | [확장] 핵심 키워드 (쉼표 구분) |
 | 21 | sentiment | VARCHAR(10) | CHECK | N | | [확장] 글 전체 감성: `POSITIVE`, `NEGATIVE`, `NEUTRAL` |
@@ -472,7 +472,8 @@ KIS 시세는 재배포 금지라 이 표의 데이터는 Git·외부에 내보�
 | 10 | received_at | DATETIME(3) | | Y | | 우리 서버가 받은 시각 (지연 = received_at − traded_at) |
 
 - UK① `uk_quote_tick (stock_code, trade_date, acc_volume)` + `INSERT IGNORE`: 재접속 후 같은 체결이 또 와도 한 번만 저장 (Idempotent Write)
-- IDX `idx_quote_tick_time (stock_code, traded_at)`: 다시 보기·녹화된 날 목록
+- IDX `idx_quote_tick_time (stock_code, traded_at)`: 녹화된 날 목록·시각 조회
+- IDX `idx_quote_tick_replay (stock_code, trade_date, tick_id)` (V11): 다시 보기 쪽 나누기. 쿼리는 `ORDER BY stock_code, trade_date, tick_id`로 이 순서를 그대로 씀 (11/04 삼성전자 첫 쪽 500건: 31,720행 → 499행, 쿼리 테스트 QT-57)
 - 1초마다 모아서 트랜잭션 한 번에 저장 (체결 이력 + 현재가). 쓰는 곳: 다시 보기, 수집 점검(누적 거래량으로 빠진 비율 계산)
 - 용량: 생중계 종목 수 × 하루 수만 건. 보관 기간은 실제 양을 보고 정함 (2026-11-03 삼성전자 약 1시간 반에 5천 건)
 
@@ -503,3 +504,4 @@ KIS 시세는 재배포 금지라 이 표의 데이터는 Git·외부에 내보�
 | 2026-11-02 | V9 | stock_group, stock_alias_context (아이디어: 임호현 PR #33) |
 | 2026-11-02 | R__ 4개 | 별칭 496개(헷갈림은 후보마다 한 줄), 테마 37개·연결 1,114개(업종·이름 규칙 포함), 그룹 84개·연결 374개, 문맥 키워드 122개 |
 | 2026-11-03 | V10 | quote_snapshot, quote_tick, quote_quarantine (실시간 시세 확장 ①②, KIS를 켠 서버만 채움) |
+| 2026-11-04 | V11 | quote_tick 다시 보기 인덱스 `idx_quote_tick_replay` (쿼리 테스트 QT-57에서 찾은 느린 쿼리) |

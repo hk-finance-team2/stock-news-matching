@@ -129,7 +129,10 @@
         ORDER BY trade_date DESC
     </select>
 
-    <!-- 다시 보기: from 시각 이후 체결을 받은 순서(tick_id)대로 limit건씩. afterId로 다음 쪽 -->
+    <!-- 다시 보기: from 시각 이후 체결을 받은 순서(tick_id)대로 limit건씩. afterId로 다음 쪽
+        정렬을 인덱스(V11 idx_quote_tick_replay: stock_code, trade_date, tick_id) 순서 그대로 씀.
+        종목·날짜는 = 조건이라 결과는 tick_id 순과 같음. ORDER BY tick_id 만 쓰면 DB가 표 전체를 tick_id 순으로 훑어
+        지난 날짜 체결까지 지나침 (11/04 삼성전자 첫 쪽 500건: 31,720행 → 499행, 쿼리 테스트 QT-57) -->
     <select id="findReplayTicks" resultMap="tickRow">
         SELECT tick_id, stock_code, traded_at, price, volume, change_rate, acc_volume
         FROM quote_tick
@@ -137,7 +140,7 @@
           AND trade_date = #{tradeDate}
           AND traded_at &gt;= #{from}
           AND tick_id &gt; #{afterId}
-        ORDER BY tick_id
+        ORDER BY stock_code, trade_date, tick_id
         LIMIT #{limit}
     </select>
 

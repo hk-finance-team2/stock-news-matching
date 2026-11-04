@@ -78,6 +78,24 @@ class QuoteMapperTest extends ApiTestSupport {
     }
 
     @Test
+    void 다시_보기는_그날_그_종목_체결만_받은_순서대로_쪽을_이어서() {
+        // V11 인덱스에 맞춰 정렬 문구를 바꿨어도(ORDER BY stock_code, trade_date, tick_id) 결과는 tick_id 순 그대로
+        jdbc.update("DELETE FROM quote_tick WHERE trade_date IN (?, ?)", DAY, DAY.plusDays(1));
+        mapper.insertTicks(List.of(todayTick(DAY.plusDays(1), 216000, 9_000_000)));   // 다른 날 체결은 빠져야 함
+        mapper.insertTicks(List.of(tick(222000, 100, 1), tick(221500, 101, 2), tick(221750, 105, 3)));
+        LocalDateTime from = DAY.atTime(11, 50, 2);   // 11:50:01 체결은 빠짐
+
+        List<TickRow> first = mapper.findReplayTicks("005930", DAY, from, 0, 1);
+        List<TickRow> next = mapper.findReplayTicks("005930", DAY, from, first.get(0).tickId(), 1);
+        List<TickRow> end = mapper.findReplayTicks("005930", DAY, from, next.get(0).tickId(), 1);
+
+        assertThat(first).extracting(TickRow::price).containsExactly(221500L);
+        assertThat(next).extracting(TickRow::price).containsExactly(221750L);
+        assertThat(end).isEmpty();
+        assertThat(mapper.countReplayTicks("005930", DAY, from)).isEqualTo(2);
+    }
+
+    @Test
     void 읽지_못한_메시지는_격리함에() {
         long before = mapper.countQuarantine();
         mapper.insertQuarantine("0|H0STCNT0|002|깨진 줄", "칸 개수가 맞지 않음", LocalDateTime.of(2026, 11, 3, 11, 50));

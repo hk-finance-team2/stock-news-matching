@@ -82,4 +82,6 @@ export const quoteApi = {
   get: (stockCode, options) => apiGet(`/api/quotes/${stockCode}`, undefined, options),
   /** 최대 10종목 */
   many: (codes, options) => apiGet('/api/quotes', { codes: codes.join(',') }, options),
+  /** 봉 차트. unit: 1m | 5m | 10m | 30m | day | week | month | year → { unit, items: [{ time, open, high, low, close, volume }] } */
+  chart: (stockCode, unit = 'day', options) => apiGet(`/api/quotes/${stockCode}/chart`, { unit }, options),
 };

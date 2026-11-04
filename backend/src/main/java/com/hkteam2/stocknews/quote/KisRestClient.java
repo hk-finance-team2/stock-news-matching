@@ -1,6 +1,9 @@
 package com.hkteam2.stocknews.quote;
 
 import java.math.BigDecimal;
+import java.net.SocketTimeoutException;
+import java.net.http.HttpConnectTimeoutException;
+import java.net.http.HttpTimeoutException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -13,6 +16,7 @@ import java.util.Map;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.util.UriComponentsBuilder;
@@ -29,7 +33,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * | 일·주·월·년봉 | /quotations/inquire-daily-itemchartprice | FHKST03010100 | 100개 |
  * | 최근 체결 | /quotations/inquire-ccnl | FHKST01010300 | 30건 |
  * 모든 응답: rt_cd "0"이면 성공, 아니면 msg_cd·msg1 에 이유. 숫자도 문자열로 옴
- * 모든 호출은 KisRateLimiter 줄을 서고, EGW00201(초당 초과)이면 1초 쉬고 2번까지 다시 시도
+ * 모든 호출은 KisRateLimiter 줄을 서고, EGW00201(초당 초과)이면 1초 쉬고 2번까지, 연결 실패면 1번 다시 시도 (get 참고)
  */
 @Component
 @ConditionalOnProperty(name = "KIS_ENABLED", havingValue = "true")
@@ -38,6 +42,8 @@ public class KisRestClient {
     private static final String BASE_PATH = "/uapi/domestic-stock/v1/quotations";
     private static final String RATE_LIMIT = "EGW00201";
     private static final int MAX_ATTEMPTS = 3;
+    /** 연결 실패는 1번만 다시 (일시 끊김 대비). 응답이 느린 경우는 다시 안 함 → get() 설명 */
+    private static final int MAX_NETWORK_RETRIES = 1;
     private static final DateTimeFormatter YMD = DateTimeFormatter.BASIC_ISO_DATE;
     private static final DateTimeFormatter HMS = DateTimeFormatter.ofPattern("HHmmss");
 
@@ -175,10 +181,17 @@ public class KisRestClient {
 
     // ----- 공통 -----
 
-    /** 줄 서기 → 요청 → (초당 초과면 1초 쉬고 다시) */
+    /**
+     * 줄 서기 → 요청 → 실패하면 경우에 따라 다시
+     * - 초당 초과(EGW00201): 1초 쉬고 최대 MAX_ATTEMPTS번
+     * - 연결 실패(연결 거부·주소 못 찾음·연결 시간 초과처럼 금방 끝나는 것): 1초 쉬고 1번만 다시 (일시 끊김 대비)
+     * - 응답이 느림(연결은 됐는데 읽기 시간 초과): 다시 안 함. 모든 호출이 한 줄로 서므로 느린 KIS를 또 기다리면
+     *   뒤에 선 다른 종목 요청까지 밀림 (전에는 최악 약 32초 → 지금 약 16초 이하)
+     */
     private <T> T get(String path, String trId, Map<String, String> params, Class<T> type) {
         UriComponentsBuilder uri = UriComponentsBuilder.fromUriString(props.baseUrl() + BASE_PATH + path);
         params.forEach(uri::queryParam);
+        int networkRetries = 0;
         for (int attempt = 1; ; attempt++) {
             limiter.acquire();
             try {
@@ -195,8 +208,28 @@ public class KisRestClient {
                     continue;
                 }
                 throw new KisApiException(code, err != null && err.msg1() != null ? err.msg1() : "KIS 응답 오류");
+            } catch (ResourceAccessException e) {
+                if (networkRetries < MAX_NETWORK_RETRIES && !isSlowResponse(e)) {
+                    networkRetries++;
+                    pause(1000);
+                    continue;
+                }
+                throw e;   // QuoteExceptionHandler가 502 QUOTE_UNREACHABLE로
             }
         }
+    }
+
+    /** 연결은 됐는데 응답이 시간 안에 안 온 경우 (연결 시간 초과는 금방 끝나서 여기에 넣지 않음) */
+    static boolean isSlowResponse(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof HttpConnectTimeoutException) {
+                return false;
+            }
+            if (t instanceof HttpTimeoutException || t instanceof SocketTimeoutException) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static void check(String rtCd, String msgCd, String msg1) {

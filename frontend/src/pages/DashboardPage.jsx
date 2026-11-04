@@ -601,6 +601,7 @@ function StockComments({
 function ArticleDetail({
   article,
   allStocks,
+  liveQuotes,
   onSelectStock,
   onClose,
   showComments = true,
@@ -750,7 +751,8 @@ function ArticleDetail({
               </thead>
               <tbody>
                 {sortedRelatedStocks.map((rel) => {
-                  const st = allStocks.find((s) => s.code === rel.code);
+                  const quote = liveQuotes?.[rel.code];
+                  const st = quote ? { price: quote.price, changeRate: quote.changeRate } : allStocks.find((s) => s.code === rel.code);
                   const hasPrice = st?.price !== null && st?.price !== undefined;
                   const tone = rateTone(st?.changeRate);
                   return (
@@ -894,6 +896,319 @@ function ArticleDetail({
   );
 }
 
+// 종목 주가 차트 (#61 호현님 작성을 가져옴): 일·주·월봉 종가 선, 기간 버튼, 마우스 위치 값
+function StockPriceChart({ stockCode, stockName }) {
+  const [period, setPeriod] = useState('3m');
+  const [unit, setUnit] = useState('day');
+  const [candles, setCandles] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+  const [hoveredIndex, setHoveredIndex] = useState(null);
+
+  const periods = [
+    { key: '1m', label: '1개월' },
+    { key: '3m', label: '3개월' },
+    { key: '6m', label: '6개월' },
+    { key: '1y', label: '1년' },
+  ];
+
+  const units = [
+    { key: 'day', label: '일봉' },
+    { key: 'week', label: '주봉' },
+    { key: 'month', label: '월봉' },
+  ];
+
+  useEffect(() => {
+    if (!stockCode) return undefined;
+
+    const controller = new AbortController();
+
+    setLoading(true);
+    setError(false);
+    setHoveredIndex(null);
+    setCandles([]);
+
+    quoteApi.chart(stockCode, unit, {
+      signal: controller.signal,
+    })
+      .then((res) => {
+        if (!controller.signal.aborted) {
+          setCandles(res.items || []);
+        }
+      })
+      .catch((err) => {
+        if (!controller.signal.aborted) {
+          console.error('차트 조회 실패:', err);
+          setError(true);
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
+      });
+
+    return () => controller.abort();
+  }, [stockCode, unit]);
+
+  const visibleData = useMemo(() => {
+    if (!candles.length) return [];
+
+    // 조회된 데이터의 가장 최근 날짜를 기준으로 기간 계산
+    const latest = new Date(candles[candles.length - 1].time);
+    const cutoff = new Date(latest);
+
+    if (period === '1m') cutoff.setMonth(cutoff.getMonth() - 1);
+    if (period === '3m') cutoff.setMonth(cutoff.getMonth() - 3);
+    if (period === '6m') cutoff.setMonth(cutoff.getMonth() - 6);
+    if (period === '1y') cutoff.setFullYear(cutoff.getFullYear() - 1);
+
+    return candles.filter((item) => new Date(item.time) >= cutoff);
+  }, [candles, period]);
+
+  const width = 800;
+  const height = 310;
+  const left = 75;
+  const right = 20;
+  const top = 25;
+  const bottom = 55;
+  const plotWidth = width - left - right;
+  const plotHeight = height - top - bottom;
+
+  const prices = visibleData.map((d) => Number(d.close));
+  const minPrice = prices.length ? Math.min(...prices) : 0;
+  const maxPrice = prices.length ? Math.max(...prices) : 0;
+  const range = Math.max(maxPrice - minPrice, 1);
+
+  const xAt = (i) =>
+    left + (i / Math.max(visibleData.length - 1, 1)) * plotWidth;
+
+  const yAt = (price) =>
+    top + (1 - (Number(price) - minPrice) / range) * plotHeight;
+
+  const points = visibleData
+    .map((d, i) => `${xAt(i)},${yAt(d.close)}`)
+    .join(' ');
+
+  const selected =
+    hoveredIndex != null ? visibleData[hoveredIndex] : null;
+
+  const fmt = (value) => Number(value || 0).toLocaleString('ko-KR');
+  const dateLabel = (time) => String(time).slice(5, 10);
+
+  const changePeriod = (nextPeriod) => {
+    setPeriod(nextPeriod);
+    setHoveredIndex(null);
+
+    // 일봉은 최대 100개이므로 긴 기간은 주봉 사용
+    setUnit(
+      nextPeriod === '6m' || nextPeriod === '1y'
+        ? 'week'
+        : 'day'
+    );
+  };
+
+  return (
+    <div className="content-card">
+      <div
+        className="card-header"
+        style={{ flexWrap: 'wrap', gap: 12 }}
+      >
+        <div className="card-title">
+          📈 {stockName} 주식 가격 차트
+        </div>
+
+        <div className="header-btn-group">
+          {periods.map((p) => (
+            <button
+              key={p.key}
+              type="button"
+              className={`more-link2 ${period === p.key ? 'active' : ''}`}
+              onClick={() => changePeriod(p.key)}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div
+        className="header-btn-group"
+        style={{ padding: '10px 16px', justifyContent: 'flex-end' }}
+      >
+        {units.map((u) => (
+          <button
+            key={u.key}
+            type="button"
+            className={`more-link2 ${unit === u.key ? 'active' : ''}`}
+            onClick={() => setUnit(u.key)}
+          >
+            {u.label}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="empty-text">차트 불러오는 중...</div>
+      ) : error ? (
+        <div className="empty-text">
+          주가 차트 API 조회에 실패했습니다.
+        </div>
+      ) : visibleData.length === 0 ? (
+        <div className="empty-text">
+          표시할 주가 데이터가 없습니다.
+        </div>
+      ) : (
+        <>
+          <svg
+            viewBox={`0 0 ${width} ${height}`}
+            style={{ width: '100%', display: 'block' }}
+            role="img"
+            aria-label={`${stockName} ${period} 주가 추이`}
+            onMouseLeave={() => setHoveredIndex(null)}
+          >
+            {/* Y축 가격 눈금 및 가로선 */}
+            {Array.from({ length: 5 }, (_, i) => {
+              const price = maxPrice - (range * i) / 4;
+              const y = yAt(price);
+
+              return (
+                <g key={i}>
+                  <line
+                    x1={left}
+                    y1={y}
+                    x2={width - right}
+                    y2={y}
+                    stroke="#e5e7eb"
+                    strokeDasharray="4 4"
+                  />
+                  <text
+                    x={left - 10}
+                    y={y + 4}
+                    textAnchor="end"
+                    fontSize="12"
+                    fill="#64748b"
+                  >
+                    {fmt(Math.round(price))}
+                  </text>
+                </g>
+              );
+            })}
+
+            {/* X축 날짜 */}
+            {Array.from({ length: 5 }, (_, i) => {
+              const index = Math.round(
+                (i / 4) * (visibleData.length - 1)
+              );
+
+              return (
+                <text
+                  key={i}
+                  x={xAt(index)}
+                  y={height - 20}
+                  textAnchor="middle"
+                  fontSize="12"
+                  fill="#64748b"
+                >
+                  {dateLabel(visibleData[index].time)}
+                </text>
+              );
+            })}
+
+            {/* 종가 그래프 */}
+            <polyline
+              points={points}
+              fill="none"
+              stroke="#4f63ed"
+              strokeWidth="2.5"
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
+
+            {/* 마우스 위치 확인 */}
+            <rect
+              x={left}
+              y={top}
+              width={plotWidth}
+              height={plotHeight}
+              fill="transparent"
+              onMouseMove={(e) => {
+                const rect =
+                  e.currentTarget.ownerSVGElement.getBoundingClientRect();
+
+                const relativeX =
+                  ((e.clientX - rect.left) / rect.width) * width;
+
+                const ratio = Math.max(
+                  0,
+                  Math.min(1, (relativeX - left) / plotWidth)
+                );
+
+                const index = Math.round(
+                  ratio * (visibleData.length - 1)
+                );
+
+                setHoveredIndex(index);
+              }}
+            />
+
+            {selected && (
+              <g>
+                <line
+                  x1={xAt(hoveredIndex)}
+                  y1={top}
+                  x2={xAt(hoveredIndex)}
+                  y2={top + plotHeight}
+                  stroke="#94a3b8"
+                  strokeDasharray="4 4"
+                />
+                <circle
+                  cx={xAt(hoveredIndex)}
+                  cy={yAt(selected.close)}
+                  r="5"
+                  fill="#4f63ed"
+                  stroke="white"
+                  strokeWidth="2"
+                />
+              </g>
+            )}
+          </svg>
+
+          <div style={{ padding: '8px 20px 20px' }}>
+            {selected ? (
+              <div
+                style={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  gap: 14,
+                  fontSize: 13,
+                }}
+              >
+                <strong>{String(selected.time).slice(0, 10)}</strong>
+                <span>시가 {fmt(selected.open)}원</span>
+                <span>고가 {fmt(selected.high)}원</span>
+                <span>저가 {fmt(selected.low)}원</span>
+                <span>종가 {fmt(selected.close)}원</span>
+                <span>거래량 {fmt(selected.volume)}주</span>
+              </div>
+            ) : (
+              <span style={{ color: '#64748b', fontSize: 13 }}>
+                그래프에 마우스를 올리면 날짜별 상세 시세가 표시됩니다.
+              </span>
+            )}
+            <div style={{ color: '#64748b', fontSize: 12, marginTop: 8 }}>
+              조회된 {unit === 'day' ? '일봉' : unit === 'week' ? '주봉' : '월봉'}
+              {' '}데이터 기준 · {visibleData.length}개 봉
+              {' '}· {String(visibleData[0].time).slice(0, 10)}
+              {' '}~ {String(visibleData[visibleData.length - 1].time).slice(0, 10)}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   // 화면에 쓰는 종목 = 서버에서 받은 종목 (검색·이슈 순위·글의 종목 칩에서 고른 것) + 받아 둔 시세
   // 데이터 흐름: 백엔드 API(src/api) → 화면 모양 변환(api/adapters.js) → 이 화면. 가짜 데이터(mocks)는 쓰지 않음
@@ -988,6 +1303,23 @@ useEffect(() => {
 }, [selectedStockCode, watchlistKey, issueCodesKey]);
 
   const [selectedArticleId, setSelectedArticleId] = useState(null);
+
+  // 화면에 새로 나온 종목(글 상세의 연결 종목·검색 결과)의 현재가를 한 번 받음 (#58 아이디어)
+  // 이미 받았거나 받는 중인 종목은 건너뜀 → 같은 종목을 겹쳐 부르지 않음 (KIS 초당 제한). 실패하면 다음에 다시
+  const requestedQuotes = useRef(new Set());
+  const ensureQuotes = useCallback((codes) => {
+    const todo = [...new Set(codes)].filter((c) => c && !requestedQuotes.current.has(c)).slice(0, 5);
+    if (todo.length === 0) return;
+    todo.forEach((c) => requestedQuotes.current.add(c));
+    Promise.allSettled(todo.map((code) => quoteApi.get(code))).then((results) => {
+      const quotes = {};
+      results.forEach((r, i) => {
+        if (r.status === 'fulfilled' && r.value?.price != null) quotes[todo[i]] = r.value;
+        else requestedQuotes.current.delete(todo[i]);
+      });
+      if (Object.keys(quotes).length > 0) setLiveQuotes((prev) => ({ ...prev, ...quotes }));
+    });
+  }, []);
 
   // 관심종목 검색 추가 입력 & 관리 모달
   const [watchAddQuery, setWatchAddQuery] = useState('');
@@ -1197,6 +1529,10 @@ useEffect(() => {
           matchedArticles: searchResult.res.articles.items.map(toUiArticle),
         }
       : { matchedStocks: [], matchedArticles: [] };
+  const searchCodesKey = integratedSearchResults.matchedStocks.map((s) => s.code).join(',');
+  useEffect(() => {
+    if (searchCodesKey) ensureQuotes(searchCodesKey.split(','));
+  }, [searchCodesKey, ensureQuotes]);
 
   // 관심종목 추가 검색 후보
   // 관심 종목 추가 후보: 전 종목(2,655개)에서 서버 검색 (이름·코드·별칭 "삼전"). 검색어가 없으면 이슈 종목
@@ -1306,6 +1642,10 @@ useEffect(() => {
         ? firstNewsId(watchlistFeedArticles)
         : null);
   const articleDetail = useArticleDetail(detailId);
+  const detailCodesKey = (articleDetail.article?.relatedStocks || []).map((r) => r.code).join(',');
+  useEffect(() => {
+    if (detailCodesKey) ensureQuotes(detailCodesKey.split(','));
+  }, [detailCodesKey, ensureQuotes]);
 
   // 종목 찾기(stockViewMode === 'list'): 검색어가 없으면 오늘의 이슈 30위, 있으면 전 종목(2,655개) 서버 검색
   const stockListQ = stockListQuery.trim();
@@ -1605,7 +1945,6 @@ useEffect(() => {
   const activeNavItem = NAV_ITEMS.find((n) => n.key === activeNav) || NAV_ITEMS[0];
 
   const commentsProps = {
-    key: selectedStockCode,
     stock: selectedStock,
     comments: currentComments,
     user,
@@ -1619,6 +1958,7 @@ useEffect(() => {
   // ArticleDetail에 공통 전달할 댓글·요약 연동 props
   const detailSharedProps = {
     allStocks,
+    liveQuotes,
     showComments: true,
     preferredStockCode: selectedStockCode,
     commentsByStock,
@@ -2446,6 +2786,8 @@ useEffect(() => {
         {/* [탭 1] 요약·감성 (summary) */}
         {stockTab === 'summary' && (
           <>
+            <StockPriceChart stockCode={selectedStockCode} stockName={selectedStock?.name || selectedStockCode} />
+
             <div className="content-card">
               <div className="card-header">
                 <div className="card-title">
@@ -2755,7 +3097,7 @@ useEffect(() => {
         )}
 
         {/* [탭 5] 종목 토론 (board) */}
-        {stockTab === 'board' && <StockComments {...commentsProps} />}
+        {stockTab === 'board' && <StockComments key={selectedStockCode} {...commentsProps} />}
       </div>
     );
   };
