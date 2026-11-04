@@ -1,5 +1,5 @@
 // 백엔드 응답 → 화면(DashboardPage)이 쓰는 모양으로 바꾸기
-// 화면은 mocks/mockData.js 의 normalize* 함수가 만든 모양을 씀. 같은 칸 이름을 맞춰 주면 화면 코드를 안 고쳐도 됨
+// 화면 조각(글 카드·상세·감성 막대 등)이 처음 만들어질 때 쓰던 칸 이름에 맞춤 → 화면 코드를 덜 고치고 연결
 // 원칙: 백엔드에 없는 값은 지어내지 않음 (가짜 감성 %·가짜 연결 이유 금지) → 비워 두고 화면에서 "준비 중"
 
 const EMPTY_RATIO = Object.freeze({ positive: 0, neutral: 0, negative: 0 });
@@ -69,8 +69,9 @@ export function toUiArticle(item) {
   }));
   // 글 전체 감성은 상세에만 있음. 목록에서는 주인공 종목(isMain)에 대한 감성으로 대신함
   const main = relatedStocks.find((s) => s.isMain) || relatedStocks[0];
-  const summaryLines = String(item.summary || '')
-    .split('\n')
+  // AI 요약은 2~3문장이 한 줄로 옴 → 문장마다 한 줄 (화면의 "3줄 요약"). 줄바꿈이 있으면 그대로
+  const rawSummary = String(item.summary || '').trim();
+  const summaryLines = (rawSummary.includes('\n') ? rawSummary.split('\n') : rawSummary.split(/(?<=[.!?])\s+/))
     .map((line) => line.trim())
     .filter(Boolean);
 
@@ -120,6 +121,25 @@ export function toUiSummary(res) {
     snsSummary: res?.snsSummary || '',
     sentimentRatio: ratio,
     sentiment: ratio,
+    // 감성 비율을 센 글 수. 0이면 비율이 없으므로 화면에서 "오늘 글 없음"
+    sentimentCount: s?.articleCount ?? 0,
+  };
+}
+
+/**
+ * 종목 토론 게시판 글 → 화면 댓글 모양 (화면은 댓글형, 서버는 게시판: 댓글 하나 = 게시판 글 하나, 내용은 제목 칸)
+ * likedByMe 는 목록 API에 없어서 처음에는 false, 공감을 누르면 서버 답으로 바뀜
+ */
+export function toUiBoardComment(item, stockCode) {
+  return {
+    commentId: item.postId,
+    id: item.postId,
+    stockCode,
+    author: item.authorLoginId,
+    content: item.title,
+    createdAt: item.createdAt,
+    likes: item.likeCount,
+    likedByMe: false,
   };
 }
 

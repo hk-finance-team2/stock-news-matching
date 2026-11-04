@@ -48,12 +48,17 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 
 | | 방식 | 주소 | 설명 |
 |---|---|---|---|
-| 🔓 | GET | `/api/stocks?q=삼성&page=1&size=20` | **종목 검색**. 종목명(포함)·종목코드(시작)·별칭(포함)으로 찾음. 이름이 딱 맞는 것 → 별칭이 딱 맞는 것(`현대차` → 현대자동차) → 이름이 q로 시작 → 코드 순. 같은 순위 안에서는 **최근 7일 분석이 끝난 글에 많이 나온 종목 먼저**(`삼성` → 삼성전자가 삼성공조보다 앞), 그다음 이름이 짧은 순. `q`가 없으면 전체 2,655개를 이름순으로 페이지 |
+| 🔓 | GET | `/api/stocks?q=삼성&page=1&size=20` | **종목 검색**. 종목명(포함)·종목코드(시작)·별칭(포함)·**테마(q와 딱 같을 때)**로 찾음. 이름이 딱 맞는 것 → 별칭이 딱 맞는 것(`현대차` → 현대자동차) → 이름이 q로 시작 → 코드 → 나머지(가운데 글자·**테마**) 순. 같은 순위 안에서는 **최근 7일 분석이 끝난 글에 많이 나온 종목 먼저**(`삼성` → 삼성전자가 삼성공조보다 앞), 그다음 이름이 짧은 순. `q`가 없으면 전체 2,655개를 이름순으로 페이지. 항목 `{ stockCode, stockName, market, sector, matchedTheme }` — 아래 참고 |
 | 🔓 | GET | `/api/stocks/issues?source=&limit=10` | **오늘의 이슈 종목 순위**. 아래 참고 |
 | 🔓 | GET | `/api/stocks/{stockCode}` | 종목 하나 `{ stockCode, stockName, market, sector }` |
 | 🔓 | GET | `/api/stocks/{stockCode}/summary?source=` | **오늘의 종합 요약·감성 비율**. 아래 참고 |
 | 🔒 | POST | `/api/stocks/{stockCode}/summary` | **종합 요약 다시 생성** (F-08). AI 서버가 오늘 기사로 새로 만들고 다시 읽은 요약을 돌려줌. 아래 참고 |
 | 🔓 | GET | `/api/stocks/{stockCode}/mentions?period=today` | **언급량 추이 (그래프)**. 아래 참고 |
+
+**종목 검색의 테마** (2026-11-04 추가)
+- `반도체`처럼 q가 테마 이름과 **딱 같으면** 그 테마 종목도 나옴. 이름 가운데에 든 종목(한미반도체 등)과 **같은 순위**라 최근 언급 순 → 뉴스에 많이 나온 삼성전자·SK하이닉스가 앞. `반도` 처럼 일부만 같으면 테마로는 안 찾음
+- `matchedTheme`: 이름·코드·별칭으로는 안 맞고 **테마로만** 찾은 종목이면 그 테마(`"반도체"`), 아니면 `null` → 화면에 "테마: 반도체"처럼 이유를 보여 줄 때
+- 종목 상세(`/api/stocks/{stockCode}`)에는 이 칸이 없음 (검색 결과에만)
 
 **오늘의 이슈 종목** (홈 오른쪽, 종목별 조회 왼쪽 목록)
 - 오늘(한국 시간 **0시 ~ 지금**) 작성된 글에 **많이 나온 종목** 순. 글 수가 같으면 평균 관련도가 높은 순
@@ -113,6 +118,7 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 | `minRelevance` | 0~100 (%). 관련도가 이 값 이상인 종목이 있는 글만. `stockCode`와 같이 쓰면 그 종목 기준 | 관련도 필터 |
 | `q` | 검색어 (50자 이하). 제목·요약·키워드에 들어 있는 글만 | 검색 |
 | `period` | `today` / `7d` / `30d` (없으면 전체). 7d = 오늘 포함 7일 (언급량 그래프와 같은 뜻) | 기간 버튼 |
+| `sentiment` | `POSITIVE` / `NEGATIVE` / `NEUTRAL` (없으면 전체). `stockCode`가 있으면 그 종목에 대한 감성, 없으면 주인공 종목의 감성 (카드에 보이는 감성과 같은 뜻). 관심 종목 글(`/api/watchlist/articles`)도 같음 | 감성 버튼 |
 | `page`, `size` | 1부터, 1~100 (기본 20) | |
 
 예: 홈 `GET /api/articles` · 삼성전자 화면 `GET /api/articles?stockCode=005930` · SNS만 관련도순 `GET /api/articles?source=SNS&sort=relevance`
@@ -167,7 +173,7 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 }
 ```
 
-- `stocks`: 위에서 **5개만**. 규칙은 `GET /api/stocks?q=`와 같음. `totalCount`가 5보다 크면 "종목 더 보기" → `GET /api/stocks?q=삼성&page=1`
+- `stocks`: 위에서 **5개만**. 규칙·칸(`matchedTheme` 포함)은 `GET /api/stocks?q=`와 같음. `totalCount`가 5보다 크면 "종목 더 보기" → `GET /api/stocks?q=삼성&page=1`
 - `articles`: 한 페이지. 규칙·칸은 `GET /api/articles?q=`와 같음. 조건 `period`, `source`, `sort`, `page`, `size`
 - `q`는 **필수** (없거나 공백뿐이거나 50자 넘으면 400)
 - 글은 **제목·요약·키워드에 검색어가 글자로 들어 있어야** 나옴. 종목과 연결됐어도 글자가 없으면 안 나옴 (그런 글은 종목 화면에서)
@@ -182,7 +188,7 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 | 🔒 | DELETE | `/api/watchlist/{stockCode}` | 삭제 |
 
 - `todayArticleCount`: 오늘(한국 시간 0시~) 이 종목이 나온 글 수, `lastMatchedAt`: 이 종목이 나온 가장 최근 글 시각 (오늘이 아니어도, 한 번도 없으면 `null`)
-- `/api/watchlist/articles`: 조건(`source`, `sort`, `minRelevance`, `page`, `size`)과 응답 모양은 `GET /api/articles`와 같음 (`stockCode`만 없음). 관심 종목 두 개에 걸친 글도 **한 번만** 나옴. 관심 종목이 없으면 `items: []`
+- `/api/watchlist/articles`: 조건(`source`, `sort`, `minRelevance`, `sentiment`, `period`, `page`, `size`)과 응답 모양은 `GET /api/articles`와 같음 (`stockCode`만 없음). 관심 종목 두 개에 걸친 글도 **한 번만** 나옴. 관심 종목이 없으면 `items: []`
 
 ### 종목 토론 게시판
 

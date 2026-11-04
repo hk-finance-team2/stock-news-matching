@@ -35,6 +35,6 @@ public class SearchService {
         }
         return new SearchResponse(keyword,
                 stockService.getStocks(keyword, new PageQuery(1, STOCK_LIMIT)),
-                articleService.getArticles(source, sort, null, null, keyword, period, articlePage));
+                articleService.getArticles(source, sort, null, null, keyword, period, null, articlePage));
     }
 }
