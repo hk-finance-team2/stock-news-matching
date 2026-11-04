@@ -76,8 +76,22 @@ export const statusApi = {
 };
 
 /** 시세 (서버에서 KIS_ENABLED=true 일 때만, 아니면 503 QUOTE_DISABLED → "시세 준비 중") */
+// export const quoteApi = {
+//   get: (stockCode, options) => apiGet(`/api/quotes/${stockCode}`, undefined, options),
+//   /** 최대 10종목 */
+//   many: (codes, options) => apiGet('/api/quotes', { codes: codes.join(',') }, options),
+// };
 export const quoteApi = {
-  get: (stockCode, options) => apiGet(`/api/quotes/${stockCode}`, undefined, options),
-  /** 최대 10종목 */
-  many: (codes, options) => apiGet('/api/quotes', { codes: codes.join(',') }, options),
+  // 종목 현재가 조회
+  get: (stockCode, options) =>
+    apiGet(`/api/quotes/${stockCode}`, undefined, options),
+
+  // 여러 종목 현재가 조회 (최대 10개)
+  many: (codes, options) =>
+    apiGet('/api/quotes', { codes: codes.join(',') }, options),
+
+  // 주식 차트 조회
+  // unit: 1m, 5m, 10m, 30m, day, week, month, year
+  chart: (stockCode, unit = 'day', options) =>
+    apiGet(`/api/quotes/${stockCode}/chart`, { unit }, options),
 };

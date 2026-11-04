@@ -602,20 +602,78 @@ function ArticleDetail({
     [article]
   );
 
-  // 상세 패널 하단 댓글을 작성할 대상 종목 (기본값: 현재 선택 종목이 매칭 종목에 있으면 해당 종목, 아니면 최상위 관련도 종목)
   const [commentTargetCode, setCommentTargetCode] = useState(
     preferredStockCode || sortedRelatedStocks[0]?.code || '005930'
   );
-
+  
   useEffect(() => {
     if (!article) return;
-    const hasPreferred = sortedRelatedStocks.some((r) => r.code === preferredStockCode);
+  
+    const hasPreferred = sortedRelatedStocks.some(
+      (r) => r.code === preferredStockCode
+    );
+  
     setCommentTargetCode(
       hasPreferred
         ? preferredStockCode
         : sortedRelatedStocks[0]?.code || preferredStockCode || '005930'
     );
   }, [article, preferredStockCode, sortedRelatedStocks]);
+
+//   // 상세 패널 하단 댓글을 작성할 대상 종목 (기본값: 현재 선택 종목이 매칭 종목에 있으면 해당 종목, 아니면 최상위 관련도 종목)
+//   // const [commentTargetCode, setCommentTargetCode] = useState(
+//   //   preferredStockCode || sortedRelatedStocks[0]?.code || '005930'
+//   // );
+// // 주식 가격 차트 데이터
+const [selectedStockCode, setSelectedStockCode] = useState(
+INITIAL_WATCHLIST_CODES[0] || allStocks[0]?.code || '005930'
+);
+
+// // 주식 가격 차트 상태
+// const [priceChartUnit, setPriceChartUnit] = useState('day');
+// const [priceChartData, setPriceChartData] = useState([]);
+// const [priceChartLoading, setPriceChartLoading] = useState(false);
+// const [priceChartError, setPriceChartError] = useState(false);
+
+// // 여기에 기존 차트 조회 useEffect 코드
+// useEffect(() => {
+//   if (!selectedStockCode) return undefined;
+
+//   const controller = new AbortController();
+//   setPriceChartLoading(true);
+//   setPriceChartError(false);
+
+//   quoteApi.chart(selectedStockCode, priceChartUnit, {
+//     signal: controller.signal,
+//   })
+//     .then((res) => {
+//       setPriceChartData(res.items || []);
+//     })
+//     .catch((err) => {
+//       if (err.name !== 'AbortError') {
+//         console.error('주식 차트 조회 실패:', err);
+//         setPriceChartData([]);
+//         setPriceChartError(true);
+//       }
+//     })
+//     .finally(() => {
+//       if (!controller.signal.aborted) {
+//         setPriceChartLoading(false);
+//       }
+//     });
+
+//   return () => controller.abort();
+// }, [selectedStockCode, priceChartUnit]);
+
+//   useEffect(() => {
+//     if (!article) return;
+//     const hasPreferred = sortedRelatedStocks.some((r) => r.code === preferredStockCode);
+//     setCommentTargetCode(
+//       hasPreferred
+//         ? preferredStockCode
+//         : sortedRelatedStocks[0]?.code || preferredStockCode || '005930'
+//     );
+//   }, [article, preferredStockCode, sortedRelatedStocks]);
 
   if (!article) {
     return (
@@ -945,6 +1003,320 @@ function ArticleDetail({
   );
 }
 
+
+function StockPriceChart({ stockCode, stockName }) {
+  const [period, setPeriod] = useState('3m');
+  const [unit, setUnit] = useState('day');
+  const [candles, setCandles] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+  const [hoveredIndex, setHoveredIndex] = useState(null);
+
+  const periods = [
+    { key: '1m', label: '1개월' },
+    { key: '3m', label: '3개월' },
+    { key: '6m', label: '6개월' },
+    { key: '1y', label: '1년' },
+  ];
+
+  const units = [
+    { key: 'day', label: '일봉' },
+    { key: 'week', label: '주봉' },
+    { key: 'month', label: '월봉' },
+  ];
+
+  useEffect(() => {
+    if (!stockCode) return undefined;
+
+    const controller = new AbortController();
+
+    setLoading(true);
+    setError(false);
+    setHoveredIndex(null);
+    setCandles([]);
+
+    quoteApi.chart(stockCode, unit, {
+      signal: controller.signal,
+    })
+      .then((res) => {
+        if (!controller.signal.aborted) {
+          setCandles(res.items || []);
+        }
+      })
+      .catch((err) => {
+        if (!controller.signal.aborted) {
+          console.error('차트 조회 실패:', err);
+          setError(true);
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
+      });
+
+    return () => controller.abort();
+  }, [stockCode, unit]);
+
+  const visibleData = useMemo(() => {
+    if (!candles.length) return [];
+
+    // 조회된 데이터의 가장 최근 날짜를 기준으로 기간 계산
+    const latest = new Date(candles[candles.length - 1].time);
+    const cutoff = new Date(latest);
+
+    if (period === '1m') cutoff.setMonth(cutoff.getMonth() - 1);
+    if (period === '3m') cutoff.setMonth(cutoff.getMonth() - 3);
+    if (period === '6m') cutoff.setMonth(cutoff.getMonth() - 6);
+    if (period === '1y') cutoff.setFullYear(cutoff.getFullYear() - 1);
+
+    return candles.filter((item) => new Date(item.time) >= cutoff);
+  }, [candles, period]);
+
+  const width = 800;
+  const height = 310;
+  const left = 75;
+  const right = 20;
+  const top = 25;
+  const bottom = 55;
+  const plotWidth = width - left - right;
+  const plotHeight = height - top - bottom;
+
+  const prices = visibleData.map((d) => Number(d.close));
+  const minPrice = prices.length ? Math.min(...prices) : 0;
+  const maxPrice = prices.length ? Math.max(...prices) : 0;
+  const range = Math.max(maxPrice - minPrice, 1);
+
+  const xAt = (i) =>
+    left + (i / Math.max(visibleData.length - 1, 1)) * plotWidth;
+
+  const yAt = (price) =>
+    top + (1 - (Number(price) - minPrice) / range) * plotHeight;
+
+  const points = visibleData
+    .map((d, i) => `${xAt(i)},${yAt(d.close)}`)
+    .join(' ');
+
+  const selected =
+    hoveredIndex != null ? visibleData[hoveredIndex] : null;
+
+  const fmt = (value) => Number(value || 0).toLocaleString('ko-KR');
+  const dateLabel = (time) => String(time).slice(5, 10);
+
+  const changePeriod = (nextPeriod) => {
+    setPeriod(nextPeriod);
+    setHoveredIndex(null);
+
+    // 일봉은 최대 100개이므로 긴 기간은 주봉 사용
+    setUnit(
+      nextPeriod === '6m' || nextPeriod === '1y'
+        ? 'week'
+        : 'day'
+    );
+  };
+
+  return (
+    <div className="content-card">
+      <div
+        className="card-header"
+        style={{ flexWrap: 'wrap', gap: 12 }}
+      >
+        <div className="card-title">
+          📈 {stockName} 주식 가격 차트
+        </div>
+
+        <div className="header-btn-group">
+          {periods.map((p) => (
+            <button
+              key={p.key}
+              type="button"
+              className={`more-link2 ${period === p.key ? 'active' : ''}`}
+              onClick={() => changePeriod(p.key)}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div
+        className="header-btn-group"
+        style={{ padding: '10px 16px', justifyContent: 'flex-end' }}
+      >
+        {units.map((u) => (
+          <button
+            key={u.key}
+            type="button"
+            className={`more-link2 ${unit === u.key ? 'active' : ''}`}
+            onClick={() => setUnit(u.key)}
+          >
+            {u.label}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="empty-text">차트 불러오는 중...</div>
+      ) : error ? (
+        <div className="empty-text">
+          주가 차트 API 조회에 실패했습니다.
+        </div>
+      ) : visibleData.length === 0 ? (
+        <div className="empty-text">
+          표시할 주가 데이터가 없습니다.
+        </div>
+      ) : (
+        <>
+          <svg
+            viewBox={`0 0 ${width} ${height}`}
+            style={{ width: '100%', display: 'block' }}
+            role="img"
+            aria-label={`${stockName} ${period} 주가 추이`}
+            onMouseLeave={() => setHoveredIndex(null)}
+          >
+            {/* Y축 가격 눈금 및 가로선 */}
+            {Array.from({ length: 5 }, (_, i) => {
+              const price = maxPrice - (range * i) / 4;
+              const y = yAt(price);
+
+              return (
+                <g key={i}>
+                  <line
+                    x1={left}
+                    y1={y}
+                    x2={width - right}
+                    y2={y}
+                    stroke="#e5e7eb"
+                    strokeDasharray="4 4"
+                  />
+                  <text
+                    x={left - 10}
+                    y={y + 4}
+                    textAnchor="end"
+                    fontSize="12"
+                    fill="#64748b"
+                  >
+                    {fmt(Math.round(price))}
+                  </text>
+                </g>
+              );
+            })}
+
+            {/* X축 날짜 */}
+            {Array.from({ length: 5 }, (_, i) => {
+              const index = Math.round(
+                (i / 4) * (visibleData.length - 1)
+              );
+
+              return (
+                <text
+                  key={i}
+                  x={xAt(index)}
+                  y={height - 20}
+                  textAnchor="middle"
+                  fontSize="12"
+                  fill="#64748b"
+                >
+                  {dateLabel(visibleData[index].time)}
+                </text>
+              );
+            })}
+
+            {/* 종가 그래프 */}
+            <polyline
+              points={points}
+              fill="none"
+              stroke="#4f63ed"
+              strokeWidth="2.5"
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
+
+            {/* 마우스 위치 확인 */}
+            <rect
+              x={left}
+              y={top}
+              width={plotWidth}
+              height={plotHeight}
+              fill="transparent"
+              onMouseMove={(e) => {
+                const rect =
+                  e.currentTarget.ownerSVGElement.getBoundingClientRect();
+
+                const relativeX =
+                  ((e.clientX - rect.left) / rect.width) * width;
+
+                const ratio = Math.max(
+                  0,
+                  Math.min(1, (relativeX - left) / plotWidth)
+                );
+
+                const index = Math.round(
+                  ratio * (visibleData.length - 1)
+                );
+
+                setHoveredIndex(index);
+              }}
+            />
+
+            {selected && (
+              <g>
+                <line
+                  x1={xAt(hoveredIndex)}
+                  y1={top}
+                  x2={xAt(hoveredIndex)}
+                  y2={top + plotHeight}
+                  stroke="#94a3b8"
+                  strokeDasharray="4 4"
+                />
+                <circle
+                  cx={xAt(hoveredIndex)}
+                  cy={yAt(selected.close)}
+                  r="5"
+                  fill="#4f63ed"
+                  stroke="white"
+                  strokeWidth="2"
+                />
+              </g>
+            )}
+          </svg>
+
+          <div style={{ padding: '8px 20px 20px' }}>
+            {selected ? (
+              <div
+                style={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  gap: 14,
+                  fontSize: 13,
+                }}
+              >
+                <strong>{String(selected.time).slice(0, 10)}</strong>
+                <span>시가 {fmt(selected.open)}원</span>
+                <span>고가 {fmt(selected.high)}원</span>
+                <span>저가 {fmt(selected.low)}원</span>
+                <span>종가 {fmt(selected.close)}원</span>
+                <span>거래량 {fmt(selected.volume)}주</span>
+              </div>
+            ) : (
+              <span style={{ color: '#64748b', fontSize: 13 }}>
+                그래프에 마우스를 올리면 날짜별 상세 시세가 표시됩니다.
+              </span>
+            )}
+            <div style={{ color: '#64748b', fontSize: 12, marginTop: 8 }}>
+              조회된 {unit === 'day' ? '일봉' : unit === 'week' ? '주봉' : '월봉'}
+              {' '}데이터 기준 · {visibleData.length}개 봉
+              {' '}· {String(visibleData[0].time).slice(0, 10)}
+              {' '}~ {String(visibleData[visibleData.length - 1].time).slice(0, 10)}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+
 export default function DashboardPage() {
   // 양방향 정규화된 초기 데이터
   // 화면 연결 진행 상황은 src/api/README.md 참고. 아직 연결하지 않은 화면은 가짜 데이터(mockData)를 씀
@@ -1045,9 +1417,47 @@ useEffect(() => {
   const [stockListSort, setStockListSort] = useState('issue'); // 'issue' | 'up' | 'down' | 'name'
 
   const [watchlistCodes, setWatchlistCodes] = useState(INITIAL_WATCHLIST_CODES);
+
   const [selectedStockCode, setSelectedStockCode] = useState(
     INITIAL_WATCHLIST_CODES[0] || allStocks[0]?.code || '005930'
   );
+//   // 주식 가격 차트 상태
+// const [priceChartUnit, setPriceChartUnit] = useState('day');
+// const [priceChartData, setPriceChartData] = useState([]);
+// const [priceChartLoading, setPriceChartLoading] = useState(false);
+// const [priceChartError, setPriceChartError] = useState(false);
+
+// // 선택한 종목의 실제 주가 차트 조회
+// useEffect(() => {
+//   if (!selectedStockCode) return undefined;
+
+//   const controller = new AbortController();
+
+//   setPriceChartLoading(true);
+//   setPriceChartError(false);
+
+//   quoteApi.chart(selectedStockCode, priceChartUnit, {
+//     signal: controller.signal,
+//   })
+//     .then((res) => {
+//       setPriceChartData(res.items || []);
+//     })
+//     .catch((err) => {
+//       if (err.name !== 'AbortError') {
+//         console.error('주식 차트 조회 실패:', err);
+//         setPriceChartData([]);
+//         setPriceChartError(true);
+//       }
+//     })
+//     .finally(() => {
+//       if (!controller.signal.aborted) {
+//         setPriceChartLoading(false);
+//       }
+//     });
+
+//   return () => controller.abort();
+// }, [selectedStockCode, priceChartUnit]);
+
   // 현재 선택한 종목과 관심종목의 실제 시세 조회
 useEffect(() => {
   const codes = [...new Set([selectedStockCode, ...watchlistCodes].filter(Boolean))];
@@ -1079,14 +1489,15 @@ useEffect(() => {
 
   const [articleDetails, setArticleDetails] = useState({});
 // 선택한 뉴스에 매칭된 종목의 실제 주가 조회
+// 선택한 뉴스에 매칭된 종목의 실제 주가 조회
 useEffect(() => {
-  if (!selectedArticleId) return undefined;
+  if (!selectedArticleId) return;
 
   const article =
     articleDetails[selectedArticleId] ||
-    allArticles.find((a) => a.id === selectedArticleId);
+    allArticles.find((a) => String(a.id) === String(selectedArticleId));
 
-  if (!article) return undefined;
+  if (!article) return;
 
   const codes = [
     ...new Set(
@@ -1094,33 +1505,32 @@ useEffect(() => {
         .map((stock) => stock.code)
         .filter(Boolean)
     ),
-  ].slice(0, 5);
+  ];
 
-  if (codes.length === 0) return undefined;
+  // 이미 조회한 종목은 다시 요청하지 않음
+  const missingCodes = codes.filter((code) => !liveQuotes[code]);
+
+  if (missingCodes.length === 0) return;
 
   let cancelled = false;
 
   Promise.allSettled(
-    codes.map((code) => quoteApi.get(code))
+    missingCodes.map((code) => quoteApi.get(code))
   ).then((results) => {
     if (cancelled) return;
 
     const quotes = {};
 
     results.forEach((result, index) => {
-      if (
-        result.status === 'fulfilled' &&
-        result.value?.price != null
-      ) {
-        quotes[codes[index]] = result.value;
+      if (result.status === 'fulfilled' && result.value?.price != null) {
+        quotes[missingCodes[index]] = result.value;
+      } else {
+        console.warn('주가 조회 실패:', missingCodes[index], result.reason);
       }
     });
 
     if (Object.keys(quotes).length > 0) {
-      setLiveQuotes((prev) => ({
-        ...prev,
-        ...quotes,
-      }));
+      setLiveQuotes((prev) => ({ ...prev, ...quotes }));
     }
   });
 
@@ -1490,6 +1900,55 @@ useEffect(() => {
   ]);
 
   // [화면 B] 개별 종목 상세(news / sns 탭) 전용 소식 필터링
+  // 선택한 종목의 뉴스·SNS를 백엔드에서 직접 조회
+useEffect(() => {
+  if (
+    activeNav !== 'stock' ||
+    stockViewMode !== 'detail' ||
+    (stockTab !== 'news' && stockTab !== 'sns')
+  ) {
+    return;
+  }
+
+  const controller = new AbortController();
+  const source = stockTab === 'sns' ? 'SNS' : 'NEWS';
+
+  articleApi
+    .list(
+      {
+        stockCode: selectedStockCode,
+        source,
+        page: 1,
+        size: 30,
+      },
+      { signal: controller.signal }
+    )
+    .then((res) => {
+      const articles = (res.items || []).map(toUiArticle);
+
+      // 기존 뉴스는 유지하고, 새로 가져온 기사를 추가
+      // 같은 기사는 중복 저장하지 않음
+      setAllArticles((prev) => {
+        const merged = new Map(
+          prev.map((article) => [String(article.id), article])
+        );
+
+        articles.forEach((article) => {
+          merged.set(String(article.id), article);
+        });
+
+        return [...merged.values()];
+      });
+    })
+    .catch((err) => {
+      if (err.name !== 'AbortError') {
+        console.error('종목별 뉴스 조회 실패:', err);
+      }
+    });
+
+  return () => controller.abort();
+}, [activeNav, stockViewMode, stockTab, selectedStockCode]);
+
   const stockFeedArticles = useMemo(() => {
     const targetSource = stockTab === 'sns' ? 'SNS' : 'NEWS';
     const relevanceOf = (art) =>
@@ -2670,6 +3129,11 @@ useEffect(() => {
         {/* [탭 1] 요약·감성 (summary) */}
         {stockTab === 'summary' && (
           <>
+         <StockPriceChart
+  stockCode={selectedStockCode}
+  stockName={selectedStock?.name || selectedStockCode}
+/>
+
             <div className="content-card">
               <div className="card-header">
                 <div className="card-title">
