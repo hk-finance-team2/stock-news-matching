@@ -41,7 +41,7 @@ public class StockController {
                     + " avgRelevance는 %(관련도가 아직 없으면 null). 페이지 없이 위에서 limit개 (1~50, 기본 10)")
     @GetMapping("/issues")
     public ListResponse<StockIssueResponse> getIssues(
-            @Parameter(description = "출처: NEWS 또는 SNS (없으면 둘 다)", example = "NEWS")
+            @Parameter(description = "출처: NEWS 또는 SNS (없으면 NEWS. SNS는 뉴스 많은 종목만 모아서 섞지 않음)", example = "NEWS")
             @RequestParam(required = false) String source,
             @Parameter(description = "몇 개까지 (1~50)", example = "10")
             @RequestParam(defaultValue = "10") int limit) {

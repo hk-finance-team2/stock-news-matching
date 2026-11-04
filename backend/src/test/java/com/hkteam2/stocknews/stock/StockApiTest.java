@@ -93,6 +93,22 @@ class StockApiTest extends ApiTestSupport {
     }
 
     @Test
+    void 이슈_순위는_기본이_뉴스만_SNS는_따로() throws Exception {
+        link(insertArticle("기아 뉴스", "NEWS", "DONE", today(1)), KIA, 0.9);
+        for (int i = 1; i <= 3; i++) {   // SNS가 더 많아도 기본 순위에는 안 들어감
+            link(insertArticle("네이버 블로그" + i, "SNS", "DONE", today(i + 1)), NAVER, 0.5);
+        }
+
+        mvc.perform(get("/api/stocks/issues"))
+                .andExpect(jsonPath("$.items", hasSize(1)))
+                .andExpect(jsonPath("$.items[0].stockCode").value(KIA));
+        mvc.perform(get("/api/stocks/issues").param("source", "SNS"))
+                .andExpect(jsonPath("$.items", hasSize(1)))
+                .andExpect(jsonPath("$.items[0].stockCode").value(NAVER))
+                .andExpect(jsonPath("$.items[0].articleCount").value(3));
+    }
+
+    @Test
     void 이슈_순위_글_수가_같으면_평균_관련도_높은_순() throws Exception {
         link(insertArticle("네이버", "NEWS", "DONE", today(1)), NAVER, 0.95);
         link(insertArticle("기아", "NEWS", "DONE", today(2)), KIA, 0.50);

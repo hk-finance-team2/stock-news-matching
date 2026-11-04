@@ -57,7 +57,8 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 
 **오늘의 이슈 종목** (홈 오른쪽, 종목별 조회 왼쪽 목록)
 - 오늘(한국 시간 **0시 ~ 지금**) 작성된 글에 **많이 나온 종목** 순. 글 수가 같으면 평균 관련도가 높은 순
-- `source`: `NEWS` / `SNS` (없으면 둘 다), `limit`: 1~50 (기본 10). 페이지 없음
+- `source`: `NEWS` / `SNS` (**없으면 `NEWS`**), `limit`: 1~50 (기본 10). 페이지 없음
+  - 기본이 뉴스만인 이유: AI가 SNS를 "최근 뉴스가 많은 종목"만 골라 모으므로, 섞어서 세면 같은 종목을 두 번 세게 됨. SNS 순위는 `source=SNS`로 따로
 - 한 건: `{ rank, stockCode, stockName, articleCount, avgRelevance, lastPublishedAt }`
   - `articleCount`: 오늘 이 종목이 나온 글 수, `avgRelevance`: 평균 관련도 %(없으면 `null`), `lastPublishedAt`: 가장 최근 글 시각
 - 오늘 글이 없으면 `items: []`. 0시가 막 지나면 비어 있을 수 있음
@@ -132,6 +133,9 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 - `stocks`는 관련도 높은 순. `relevance`는 **%(정수)**, `matchType`은 `DIRECT`(직접)·`INDIRECT`(간접)
 - `matchType`·`relevance`는 AI가 아직 안 채웠으면 `null` → 화면에서 칩 모양·% 표시를 생략
 - `sourceType`이 `SNS`면 "참고용 · 확인되지 않은 정보" 표시 (요구사항 N-05)
+  - **SNS 글은 네이버 검색 결과 그대로 보여 주기:** `summary`는 네이버 검색 미리보기(AI 요약 아님). 카드에 관련도·직접/간접·감성을 붙이지 않고, 제목은 `url`(원문)로 바로 연결 (네이버 검색 API 약관 특약 2.1 "검색 결과에 다른 내용을 끼워 넣지 않음"). SNS 감성은 종목 화면의 감성 비율(`source=SNS`)과 `snsSummary`로 따로 보여 줌. 예: 데모 화면
+  - SNS 글은 모은 지 **7일이 지나면 지워집니다** (약관 7.3 "별도 DB로 쌓아 두지 않음"). 그래서 30일 언급량 그래프의 SNS는 최근 7일만 있음. 종목 하루 요약의 `snsSummary`는 남음
+  - SNS 글의 시각은 **모은 시각**(카페는 작성 시각이 없고 블로그는 날짜만)이라 뉴스와 한 줄로 세우지 않고 출처 탭 기본은 뉴스로
 - 기사 본문은 내보내지 않습니다. 요약과 원문 링크(`url`)만
 - 개발 중에 글이 없으면 [setup.md](setup.md) 2절의 **예시 기사**를 켜세요
 
