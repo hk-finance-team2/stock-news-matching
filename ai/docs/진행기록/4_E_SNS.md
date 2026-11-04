@@ -108,3 +108,9 @@
   - 백엔드: 이슈 순위 기본을 뉴스만 (SNS 가 뉴스 많은 종목만 모아 두 번 셈)
 - 시험: `python -m tests` 19/19 (상자 안, 새 시험 2개), 백엔드 `StockApiTest` 14개
 - 1시간 안 기다리고 시험: `docker compose exec ai python -m hk_llm.steps.sns 3`
+
+## 약관 반영 (2026-11-04 오후, 백엔드1, 사용자 결정)
+
+- NAVER API 서비스 이용약관 원문(2026-06-25 시행)을 읽고 원안 유지 + 2가지 수정 (`docs/decisions.md` 2026-11-04 "SNS 글은 네이버 검색 결과 그대로")
+- `purge_old_sns`: 모은 지 7일 지난 SNS 글을 종목 연결과 함께 지움. `run.py` 마무리에서 `purge_old_bodies` 다음에 5분마다 (네이버 키가 없어도). 시험 `test_sns_db` 에 추가, `python -m tests` 19/19
+- 화면(데모): SNS 카드에 관련도·감성을 붙이지 않고 제목은 원문으로 바로. React 는 프론트에 알림
