@@ -1,7 +1,5 @@
 package com.hkteam2.stocknews.stock;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.everyItem;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.hasItem;
@@ -14,12 +12,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Map;
 
 import org.junit.jupiter.api.Test;
-
-import com.jayway.jsonpath.JsonPath;
 
 import com.hkteam2.stocknews.common.TimeUtils;
 import com.hkteam2.stocknews.support.ApiTestSupport;
@@ -73,37 +67,28 @@ class StockApiTest extends ApiTestSupport {
     }
 
     @Test
-    void 테마_이름과_딱_같으면_그_테마_종목도_나오고_글자로_맞은_종목_뒤에_온다() throws Exception {
-        // 이름에 "반도체"가 든 종목(한미반도체 등)이 먼저, matchedTheme 없음
-        String body = mvc.perform(get("/api/stocks").param("q", "반도체").param("size", "100"))
+    void 테마_이름과_딱_같으면_그_테마_종목도_나오고_많이_언급된_종목이_앞() throws Exception {
+        // 이름에 "반도체"가 든 종목(matchedTheme 없음)과 테마로만 찾은 종목(matchedTheme "반도체")이 함께
+        mvc.perform(get("/api/stocks").param("q", "반도체").param("size", "100"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.items[0].stockName", containsString("반도체")))
-                .andExpect(jsonPath("$.items[0].matchedTheme", nullValue()))
-                .andExpect(jsonPath("$.items[?(@.stockCode == '005930')].matchedTheme", hasItem("반도체")))
-                .andReturn().getResponse().getContentAsString();
-        List<Map<String, Object>> items = JsonPath.read(body, "$.items");
-        int firstTheme = -1;
-        for (int i = 0; i < items.size(); i++) {
-            boolean byTheme = items.get(i).get("matchedTheme") != null;
-            if (byTheme && firstTheme < 0) {
-                firstTheme = i;
-            }
-            // 테마로만 찾은 종목이 나온 뒤에 글자로 찾은 종목이 다시 나오면 안 됨
-            assertThat(byTheme || firstTheme < 0).as("%d번째 %s", i, items.get(i).get("stockName")).isTrue();
+                .andExpect(jsonPath("$.totalCount", greaterThanOrEqualTo(100)))
+                .andExpect(jsonPath("$.items[?(@.stockName == '한미반도체')].matchedTheme", hasItem(nullValue())))
+                .andExpect(jsonPath("$.items[?(@.stockCode == '005930')].matchedTheme", hasItem("반도체")));
+
+        // 이름 가운데 글자와 테마는 같은 순위 → 최근 언급이 많은 SK하이닉스가 1위 (테마를 맨 뒤로 보내면 11번째라 통합 검색 5개에 안 나옴)
+        for (int i = 1; i <= 3; i++) {
+            link(insertArticle("SK하이닉스 소식 " + i, "NEWS", "DONE", today(i)), "000660", 0.9);
         }
-        assertThat(firstTheme).isPositive();
-
-        // 테마 종목끼리는 최근 언급 순: SK하이닉스 글이 생기면 테마 종목 중 맨 앞
-        link(insertArticle("SK하이닉스 오늘", "NEWS", "DONE", today(1)), "000660", 0.9);
-        String after = mvc.perform(get("/api/stocks").param("q", "반도체").param("size", "100"))
-                .andReturn().getResponse().getContentAsString();
-        List<String> themeCodes = JsonPath.read(after, "$.items[?(@.matchedTheme == '반도체')].stockCode");
-        assertThat(themeCodes.get(0)).isEqualTo("000660");
-
-        // 통합 검색 종목 칸에도 같은 칸
+        mvc.perform(get("/api/stocks").param("q", "반도체"))
+                .andExpect(jsonPath("$.items[0].stockCode").value("000660"))
+                .andExpect(jsonPath("$.items[0].matchedTheme").value("반도체"));
         mvc.perform(get("/api/search").param("q", "반도체"))
-                .andExpect(jsonPath("$.stocks.totalCount", greaterThanOrEqualTo(100)))
-                .andExpect(jsonPath("$.stocks.items[0].matchedTheme", nullValue()));
+                .andExpect(jsonPath("$.stocks.items[0].stockCode").value("000660"))
+                .andExpect(jsonPath("$.stocks.items[0].matchedTheme").value("반도체"));
+
+        // 이름이 q로 시작하는 순위는 그대로 우선: "서울반도체"는 서울반도체가 1위
+        mvc.perform(get("/api/stocks").param("q", "서울반도체"))
+                .andExpect(jsonPath("$.items[0].stockName").value("서울반도체"));
     }
 
     @Test
