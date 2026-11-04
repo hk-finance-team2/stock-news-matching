@@ -140,7 +140,8 @@ public class QuoteService {
      * 범위는 100개를 넘지 않게: 일봉 150일, 주봉 95주, 월봉 95개월, 년봉 99년
      */
     public ChartResponse periodChart(String stockCode, ChartUnit unit) {
-        return cache.get(unit.code() + ":" + stockCode, DAY_TTL, () -> {
+        // 이름표 앞에 용도(chart:)를 붙임. 예전에는 "year:"가 아래 yearDailyCandles와 겹쳐 년봉이 일봉 목록을 꺼내 500이 났음
+        return cache.get("chart:" + unit.code() + ":" + stockCode, DAY_TTL, () -> {
             LocalDate today = today();
             LocalDate from = switch (unit) {
                 case WEEK -> today.minusWeeks(95);
@@ -159,7 +160,7 @@ public class QuoteService {
      * 오늘부터 거꾸로 140일씩 나눠 KIS에 물음 (3번). 경계에서 겹치는 날은 하나로
      */
     public List<KisCandle> yearDailyCandles(String stockCode) {
-        return cache.get("year:" + stockCode, DAY_TTL, () -> {
+        return cache.get("daily1y:" + stockCode, DAY_TTL, () -> {
             LocalDate today = LocalDate.now(clock);
             LocalDate start = today.minusDays(YEAR_DAYS);
             Map<LocalDateTime, KisCandle> byDate = new TreeMap<>();
