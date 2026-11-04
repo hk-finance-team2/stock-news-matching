@@ -760,7 +760,8 @@ async function renderStock(code) {
     + '<section class="box"><div class="box-head"><h2>오늘의 종합 요약</h2><span id="sumAt"></span></div><div id="sSum"></div>'
     + '<h3 class="sec" style="margin-top:16px">감성 비율 <small id="sentiCnt" style="font-weight:400;color:var(--muted)"></small></h3>'
     + segHtml('sentiSrc', [['', '전체'], ['NEWS', '뉴스'], ['SNS', 'SNS']], '') + '<div id="sSenti"></div>'
-    + '<p class="notice" style="margin-top:10px">요약 "다시 생성"(F-08)은 AI 서버 API 형식이 정해지면 붙어요. 지금은 AI가 저장한 요약을 읽기만 해요.</p></section>'
+    + '<div class="row-gap" id="regenRow" style="margin-top:12px;font-size:13px"></div>'
+    + '<p class="notice" style="margin-top:10px">요약은 AI가 1시간마다 만들어요. "다시 생성"(F-08)은 백엔드가 AI 서버에 지금 기사로 새로 만들어 달라고 부탁해요 (같은 종목은 10분에 한 번).</p></section>'
     + '<section class="box"><div class="box-head"><h2>언급량 추이</h2>' + segHtml('period', [['today', '오늘'], ['7d', '7일'], ['30d', '30일']], 'today') + '</div><div id="sMent"></div></section>'
     + '<section class="box"><div class="box-head"><h2>연결된 뉴스·SNS</h2></div>'
     + '<div class="row-gap" style="margin-bottom:10px">' + segHtml('artSrc', [['', '전체'], ['NEWS', '뉴스'], ['SNS', 'SNS']], '')
@@ -797,8 +798,10 @@ async function renderStock(code) {
   loadBigMoves(code, moveOpt);
   bindSeg('movePeriod', function (v) { moveOpt.period = v; loadBigMoves(code, moveOpt); });
   bindSeg('moveTh', function (v) { moveOpt.threshold = v; loadBigMoves(code, moveOpt); });
-  loadSummary(code, '');
-  bindSeg('sentiSrc', function (v) { loadSummary(code, v); });
+  var sentiSrc = '';
+  loadSummary(code, sentiSrc);
+  bindSeg('sentiSrc', function (v) { sentiSrc = v; loadSummary(code, v); });
+  loadRegenButton(code, function () { return sentiSrc; });
   loadMentions(code, 'today');
   bindSeg('period', function (v) { loadMentions(code, v); });
   var arts = articleList('sArts', 'sArtsMore', '/api/articles', { stockCode: code });
@@ -826,6 +829,25 @@ async function loadWatchButton(code) {
       } catch (e) { alert(e.message); }
     });
   } catch (e) { box.innerHTML = ''; }
+}
+
+/** 종합 요약 "다시 생성" (F-08, docs/api.md). 실패해도 지금 요약은 그대로 둠 */
+function loadRegenButton(code, currentSource) {
+  var row = document.getElementById('regenRow');
+  if (!loggedIn()) { row.innerHTML = '<a class="btn-sm" style="display:inline-flex;align-items:center" href="' + esc(loginLink()) + '">↻ 다시 생성 (로그인)</a>'; return; }
+  row.innerHTML = '<button type="button" class="btn-sm" id="regenBtn">↻ 다시 생성</button><span id="regenMsg" style="color:var(--muted)"></span>';
+  var btn = document.getElementById('regenBtn'), msg = document.getElementById('regenMsg');
+  btn.addEventListener('click', async function () {
+    btn.disabled = true; btn.textContent = '만드는 중… (최대 30초)'; msg.textContent = '';
+    try {
+      var r = await api('/api/stocks/' + encodeURIComponent(code) + '/summary', { method: 'POST' });
+      msg.textContent = r.regenerated ? '오늘 기사로 새로 만들었어요' : '10분 안에 이미 만들었거나 오늘 기사가 없어서 저장된 요약 그대로예요';
+      await loadSummary(code, currentSource());   // 고른 출처(전체·뉴스·SNS)의 감성 비율로 다시 그림
+    } catch (e) {
+      msg.textContent = (e.code === 'AI_BUSY' ? '요청이 많아요' : e.status === 401 ? '로그인이 끝났어요. 다시 로그인해 주세요' : 'AI 서버가 응답하지 않아요')
+        + '. 지금 요약은 그대로예요, 잠시 후 다시 눌러 주세요' + (e.code ? ' (' + e.code + ')' : '');
+    } finally { btn.disabled = false; btn.textContent = '↻ 다시 생성'; }
+  });
 }
 
 async function loadSummary(code, source) {
