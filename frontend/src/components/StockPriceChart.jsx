@@ -98,7 +98,7 @@ const formatTime = (t) => {
 
 const EMPTY = { key: null, items: [], error: null, more: false, cursor: null, tried: 0 };
 
-export default function StockPriceChart({ stockCode, stockName }) {
+export default function StockPriceChart({ stockCode, stockName, onLastTradeDate }) {
   const [unit, setUnit] = useState('day');
   // items: 오래된 것부터. more: 더 옛날을 받을 수 있는지. cursor: 일봉은 가장 옛 날짜, 분봉은 가장 옛날 물어본 날
   const [data, setData] = useState(EMPTY);
@@ -264,6 +264,12 @@ export default function StockPriceChart({ stockCode, stockName }) {
       });
   };
 
+  // 일봉 첫 화면의 마지막 날짜 = 가장 최근 거래일 → 부모에 알림 (평일 휴장일 표시용, DashboardPage offSessionLabel)
+  useEffect(() => {
+    if (unit !== 'day' || data.key !== key || data.items.length === 0) return;
+    onLastTradeDate?.(String(data.items[data.items.length - 1].time).slice(0, 10));
+  }, [data, key, unit, onLastTradeDate]);
+
   // 받은 데이터를 차트에 그림
   useEffect(() => {
     dataRef.current = data;
@@ -304,7 +310,9 @@ export default function StockPriceChart({ stockCode, stockName }) {
   const last = data.items.length ? data.items[data.items.length - 1] : null;
   const shown = legend || last;
   const message = loading
-    ? '차트 불러오는 중…'
+    ? isIntraday(unit)
+      ? '분봉 불러오는 중… (하루치를 나눠 받아 2~3초 걸려요)'
+      : '차트 불러오는 중…'
     : data.error
       ? data.error.code === 'QUOTE_DISABLED'
         ? '시세가 꺼진 서버입니다 (KIS_ENABLED).'

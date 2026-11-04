@@ -107,13 +107,28 @@ const formatPercent = (value) => `${(Math.round(value * 10) / 10).toFixed(1)}%`;
 /**
  * 지금(한국 시간)이 정규장(평일 09:00~15:30) 밖이면 표시 문구, 안이면 null (QA #6)
  * 15:30 뒤에도 거래가 실시간 시세에 들어와 가격이 바뀜 (11/04 삼성전자: 15:30 종가 218,000 → 19시 221,000까지 체결 기록)
- * 공휴일은 따지지 않음 (평일 공휴일에는 "장 시작 전·마감 후"로 보임)
+ *
+ * 평일 공휴일(12/25 등)은 날짜 목록을 넣지 않고 데이터로 알아냄: lastTrade = 일봉 차트의 마지막 날짜와 그걸 본 시각
+ * 장이 열리고 한참(09:20) 지나 받은 일봉에도 오늘 봉이 없으면 오늘은 거래가 없는 날 = 휴장일
+ * (09:20 여유: 백엔드 일봉 캐시가 10분이라 장 전에 받아 둔 답이 09:10까지 남을 수 있음)
+ * 공식 휴장일 목록은 확인한 출처가 블로그뿐이라 넣지 않음 (추측 금지)
  */
-const offSessionLabel = (now = new Date()) => {
-  const kst = new Date(now.getTime() + 9 * 3600 * 1000);
-  const day = kst.getUTCDay();
+const kstParts = (ms) => {
+  const kst = new Date(ms + 9 * 3600 * 1000);
+  return {
+    ymd: kst.toISOString().slice(0, 10),
+    day: kst.getUTCDay(),
+    minutes: kst.getUTCHours() * 60 + kst.getUTCMinutes(),
+  };
+};
+const HOLIDAY_CHECK_AFTER = 9 * 60 + 20;
+const offSessionLabel = (now = new Date(), lastTrade = null) => {
+  const { ymd, day, minutes } = kstParts(now.getTime());
   if (day === 0 || day === 6) return '휴장일';
-  const minutes = kst.getUTCHours() * 60 + kst.getUTCMinutes();
+  if (lastTrade && lastTrade.date < ymd) {
+    const seen = kstParts(lastTrade.seenAt);
+    if (seen.ymd === ymd && seen.minutes >= HOLIDAY_CHECK_AFTER) return '휴장일';
+  }
   if (minutes < 9 * 60) return '장 시작 전';
   if (minutes >= 15 * 60 + 30) return '장 마감 후';
   return null;
@@ -990,6 +1005,12 @@ export default function DashboardPage() {
   const watchlistKey = watchlistCodes.join(',');
 
   const [selectedStockCode, setSelectedStockCode] = useState('005930');
+  // 일봉 차트에서 본 가장 최근 거래일 + 본 시각 (평일 휴장일 알아내기, offSessionLabel 참고)
+  // 거래 정지 종목은 마지막 날짜가 옛날이라, 지금까지 본 것 중 가장 최근 날짜를 남김
+  const [lastTrade, setLastTrade] = useState(null);
+  const noteLastTradeDate = useCallback((date) => {
+    setLastTrade((prev) => ({ date: prev && prev.date > date ? prev.date : date, seenAt: Date.now() }));
+  }, []);
   // 오늘의 이슈 종목 순위 (뉴스 기준, 1분마다 다시)
   const issues = useApi((signal) => stockApi.issues({ limit: ISSUE_LIMIT }, { signal }), [], {
     refreshMs: 60_000,
@@ -2181,8 +2202,8 @@ useEffect(() => {
                 <div className="content-card">
                   <div className="card-header">
                     <div className="card-title">🔥 오늘의 이슈 종목 TOP {ISSUE_LIMIT}</div>
-                    <span className="card-caption" title={offSessionLabel() ? OFF_SESSION_HELP : undefined}>
-                      오늘 뉴스에 많이 나온 순{offSessionLabel() && ` · 시세는 ${offSessionLabel()} 시간외 포함`}
+                    <span className="card-caption" title={offSessionLabel(new Date(), lastTrade) ? OFF_SESSION_HELP : undefined}>
+                      오늘 뉴스에 많이 나온 순{offSessionLabel(new Date(), lastTrade) && ` · 시세는 ${offSessionLabel(new Date(), lastTrade)} 시간외 포함`}
                     </span>
                   </div>
                   {issueItems.length === 0 && (
@@ -2464,9 +2485,9 @@ useEffect(() => {
                       {selectedStock.price.toLocaleString()}원
                     </span>
                     <RatePill rate={selectedStock.changeRate} size="lg" />
-                    {offSessionLabel() && (
+                    {offSessionLabel(new Date(), lastTrade) && (
                       <span className="off-session-badge" title={OFF_SESSION_HELP}>
-                        {offSessionLabel()} · 시간외 거래 포함
+                        {offSessionLabel(new Date(), lastTrade)} · 시간외 거래 포함
                       </span>
                     )}
                   </>
@@ -2520,7 +2541,11 @@ useEffect(() => {
         {/* [탭 1] 요약·감성 (summary) */}
         {stockTab === 'summary' && (
           <>
-            <StockPriceChart stockCode={selectedStockCode} stockName={selectedStock?.name || selectedStockCode} />
+            <StockPriceChart
+              stockCode={selectedStockCode}
+              stockName={selectedStock?.name || selectedStockCode}
+              onLastTradeDate={noteLastTradeDate}
+            />
 
             <div className="content-card">
               <div className="card-header">
