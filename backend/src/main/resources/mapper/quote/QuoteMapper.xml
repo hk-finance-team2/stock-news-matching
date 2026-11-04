@@ -20,7 +20,8 @@
     <!--
         현재가 넣기·덮어쓰기 (종목당 1줄)
         이미 있으면: 새 체결의 누적 거래량이 더 클 때만 값을 바꿈 (늦게 도착한 옛 체결이 새 값을 덮지 않게)
-        IF(조건, 새 값, 옛 값)은 위에서부터 차례로 계산되므로, acc_volume은 맨 마지막에 바꿈
+        IF(조건, 새 값, 옛 값)은 위에서부터 차례로 계산되므로, 조건에 쓰는 acc_volume·trade_date 는 맨 끝에 (trade_date 가 가장 마지막)
+        trade_date 를 먼저 바꾸면 날이 바뀐 첫 체결에서 acc_volume 이 어제 값(더 큼)으로 남아 그날 내내 현재가가 안 바뀜 (11/04 리허설에서 발견)
     -->
     <insert id="upsertSnapshots">
         INSERT INTO quote_snapshot
@@ -42,8 +43,8 @@
             acc_amount    = IF(VALUES(acc_volume) >= acc_volume OR VALUES(trade_date) > trade_date, VALUES(acc_amount), acc_amount),
             traded_at     = IF(VALUES(acc_volume) >= acc_volume OR VALUES(trade_date) > trade_date, VALUES(traded_at), traded_at),
             updated_at    = IF(VALUES(acc_volume) >= acc_volume OR VALUES(trade_date) > trade_date, VALUES(updated_at), updated_at),
-            trade_date    = IF(VALUES(acc_volume) >= acc_volume OR VALUES(trade_date) > trade_date, VALUES(trade_date), trade_date),
-            acc_volume    = IF(VALUES(acc_volume) >= acc_volume OR VALUES(trade_date) > trade_date, VALUES(acc_volume), acc_volume)
+            acc_volume    = IF(VALUES(acc_volume) >= acc_volume OR VALUES(trade_date) > trade_date, VALUES(acc_volume), acc_volume),
+            trade_date    = IF(VALUES(acc_volume) >= acc_volume OR VALUES(trade_date) > trade_date, VALUES(trade_date), trade_date)
     </insert>
 
     <insert id="insertQuarantine">

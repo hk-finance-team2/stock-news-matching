@@ -52,6 +52,32 @@ class QuoteMapperTest extends ApiTestSupport {
     }
 
     @Test
+    void 날이_바뀌면_어제_누적_거래량이_커도_오늘_체결로_바뀐다() {
+        // 11/04 리허설에서 발견: 어제 마지막 현재가(누적 1,300만)가 남은 채 오늘 첫 체결(누적 520만)이 오면
+        // 날짜만 바뀌고 누적 거래량은 어제 값으로 남아, 그날 내내 현재가가 안 바뀌던 문제
+        jdbc.update("DELETE FROM quote_snapshot WHERE stock_code = '005930'");
+        LocalDateTime now = LocalDateTime.of(2026, 11, 3, 15, 30);
+        mapper.upsertSnapshots(List.of(tick(216000, 13_066_765, 0)), now);   // 어제(DAY) 장 마감 값
+
+        LocalDate today = DAY.plusDays(1);
+        RealtimeTick first = todayTick(today, 216250, 5_200_000);
+        RealtimeTick second = todayTick(today, 216750, 5_300_000);
+        mapper.upsertSnapshots(List.of(first), now.plusHours(19));
+        mapper.upsertSnapshots(List.of(second), now.plusHours(19).plusSeconds(1));
+
+        QuoteSnapshotRow s = mapper.findSnapshot("005930");
+        assertThat(s.tradedAt().toLocalDate()).isEqualTo(today);
+        assertThat(s.price()).isEqualTo(216750);   // 두 번째 체결까지 반영
+        assertThat(s.accVolume()).isEqualTo(5_300_000);
+    }
+
+    static RealtimeTick todayTick(LocalDate day, long price, long accVolume) {
+        LocalDateTime at = day.atTime(10, 33);
+        return new RealtimeTick("005930", day, at, price, "5", price - 219500, new BigDecimal("-1.25"),
+                226500, 228000, 215500, 1, accVolume, 1_000_000L, "1", at.plusNanos(50_000_000));
+    }
+
+    @Test
     void 읽지_못한_메시지는_격리함에() {
         long before = mapper.countQuarantine();
         mapper.insertQuarantine("0|H0STCNT0|002|깨진 줄", "칸 개수가 맞지 않음", LocalDateTime.of(2026, 11, 3, 11, 50));
