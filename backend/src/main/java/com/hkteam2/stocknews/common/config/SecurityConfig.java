@@ -31,6 +31,7 @@ public class SecurityConfig {
     /** 보기(GET)는 공개, 쓰기만 로그인이 필요한 주소 */
     private static final String[] AUTHENTICATED_POST_PATHS = {
             "/api/stocks/*/posts",
+            "/api/stocks/*/summary",   // 종합 요약 다시 생성 (LLM 비용이 나가서 로그인한 사람만)
             "/api/posts/*/comments",
             "/api/posts/*/like",
     };

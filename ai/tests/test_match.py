@@ -55,6 +55,14 @@ def test_step6_match():
     assert relevance("실적 기사", "두산이 수주했다", side, [], d) == 0.26, "첫 부분 0.20 + 1번 0.06"
     assert relevance("삼성전자 투자", None, main, [], d) == 1.0, "본문이 지워졌으면 예전 점수"
 
+    # 근거 문장: 이름이 나온 문장 중 LLM 이유와 단어가 가장 많이 겹치는 문장
+    from hk_llm.steps.step6_match import evidence
+    body = "삼성전자가 행사에 참석했다. 삼성전자는 HBM 공급 계약을 맺어 실적 개선이 기대된다. 두산은 별도 소식이다."
+    item = ("A", {"is_main": True, "reason": "HBM 공급 계약으로 실적 개선"}, 1.0, "삼성전자")
+    assert evidence(body, item, names) == "삼성전자는 HBM 공급 계약을 맺어 실적 개선이 기대된다.", "이유와 겹치는 문장"
+    assert evidence("삼전이 강세를 보였다. 다른 문장이다.", item, names) == "삼전이 강세를 보였다.", "별칭으로도 찾음"
+    assert evidence("다른 회사 이야기만 있는 본문입니다.", item, names) is None, "이름이 없으면 None"
+
 
 def test_step7_group():
     from datetime import timedelta
