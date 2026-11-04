@@ -160,6 +160,7 @@ def test_sns_db():
             hidden = row(99, conn)
         assert hidden.status == "SKIPPED" and hidden.description is None and hidden.summary is None, "원문이 화면에 나가면 안 됨"
 
+        sns.top_stocks(engine, 1)  # 쿼리가 DB 에서 돌아가는지
         with engine.begin() as conn:  # 101번만 8일 전에 모은 글로
             conn.execute(text("UPDATE article SET collected_at = NOW() - INTERVAL 8 DAY WHERE article_id = :i"), {"i": new.article_id})
         assert sns.purge_old_sns(engine) >= 1
@@ -167,6 +168,15 @@ def test_sns_db():
             left = conn.execute(text("SELECT COUNT(*) FROM article WHERE url_key LIKE :k"), {"k": prefix + "%"}).scalar()
             links = conn.execute(text("SELECT COUNT(*) FROM article_stock WHERE article_id = :i"), {"i": new.article_id}).scalar()
         assert left == 2 and links == 0, "7일 지난 SNS 글은 종목 연결과 함께 지움, 최근 글은 남김"
+
+        with mock.patch.object(sns, "run_sns") as run_sns:
+            with engine.connect() as other:
+                assert other.execute(text("SELECT GET_LOCK('hk_llm_sns', 0)")).scalar() == 1
+                assert sns.run_locked(engine) is False and not run_sns.called, "앞 실행이 돌면 건너뜀"
+                other.execute(text("SELECT RELEASE_LOCK('hk_llm_sns')"))
+            assert sns.run_locked(engine) is True and run_sns.called
+            run_sns.side_effect = RuntimeError("실패")
+            assert sns.run_locked(engine) is False, "실패해도 예외가 스레드 밖으로 안 나감"
     finally:
         with engine.begin() as conn:
             conn.execute(text("DELETE s FROM article_stock s JOIN article a USING (article_id) WHERE a.url_key LIKE :k"), {"k": prefix + "%"})
@@ -194,6 +204,45 @@ def test_robots():
     assert not allowed("https://www.hankyung.com/print/2026103049506")
     assert not allowed("https://news.mt.co.kr/mtview.php?no=2025092114541910435")
     assert allowed("https://www.yna.co.kr/view/AKR20261030097100055")
+
+
+def test_robots_failure_not_cached():
+    from types import SimpleNamespace
+
+    import requests
+
+    from hk_llm.steps import robots, step4_body
+
+    url = "https://www.hankyung.com/article/1"
+    ok = SimpleNamespace(ok=True, status_code=200, text="User-agent: *\nDisallow: /print/\n")
+    robots._parser.cache_clear()
+    robots._down.clear()
+    try:
+        with mock.patch.object(robots.requests, "get", side_effect=requests.ConnectionError("끊김")) as get:
+            assert not robots.reachable(url) and not robots.allowed(url), "실패는 수집 안 함"
+            assert get.call_count == 1, "실패한 사이트를 URL 마다 다시 묻지 않음 (backfill)"
+        robots._down.clear()
+        with mock.patch.object(robots.requests, "get", return_value=SimpleNamespace(ok=False, status_code=503, text="")):
+            assert not robots.reachable(url), "5xx 도 일시적"
+        robots._down.clear()  # 기다리는 시간이 지났다고 치고
+        with mock.patch.object(robots.requests, "get", return_value=ok) as get:
+            assert robots.reachable(url) and robots.allowed(url), "실패가 굳으면 안 됨"
+            assert not robots.allowed("https://www.hankyung.com/print/1")
+            assert get.call_count == 1, "성공은 캐시"
+
+        robots._parser.cache_clear()
+        robots._down.clear()
+        row = SimpleNamespace(article_id=1, url=url, retry_count=0)
+        engine = mock.MagicMock()
+        engine.connect.return_value.__enter__.return_value.execute.return_value.all.return_value = [row, row]
+        with mock.patch.object(robots.requests, "get", side_effect=requests.ConnectionError("끊김")) as get, \
+                mock.patch.object(step4_body, "_get") as page, mock.patch.object(step4_body, "_update") as update:
+            assert step4_body.fetch_bodies(engine)["RETRY"] == 2
+        assert get.call_count == 1, "같은 실행에서 다시 안 물어봄"
+        assert not page.called and not update.called, "SKIPPED 로 굳지 않고 LISTED 그대로"
+    finally:
+        robots._parser.cache_clear()
+        robots._down.clear()
 
 
 def test_dart_rules():

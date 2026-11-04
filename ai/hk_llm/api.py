@@ -36,6 +36,12 @@ def claim(code, now):
         return True
 
 
+def release(code):
+    """LLM 을 안 불렀으니 10분을 기다릴 이유가 없음 (기사가 없었던 경우)"""
+    with _tries_lock:
+        _tries.pop(code, None)
+
+
 def stored(engine, code, day):
     """(요약 문장, 생성 시각 KST) 또는 None"""
     sql = text("SELECT news_summary, generated_at FROM stock_daily_summary WHERE stock_code = :c AND summary_date = :d")
@@ -46,7 +52,7 @@ def stored(engine, code, day):
 
 def body(code, day, row, regenerated):
     return {"stockCode": code, "summaryDate": day.isoformat(), "newsSummary": row[0] if row else None,
-            "generatedAt": row[1].isoformat() if row else None, "regenerated": regenerated}
+            "generatedAt": row[1].isoformat() if row and row[0] else None, "regenerated": regenerated}  # SNS 요약만 있으면 뉴스 요약 시각이 아님
 
 
 @app.get("/health")
@@ -70,4 +76,6 @@ def regenerate_summary(stock_code: Annotated[str, Path(pattern=r"^[0-9A-Z]{6}$")
         made = regenerate(engine, stock_code, day)
     except STOP_ERRORS as e:
         raise HTTPException(429 if isinstance(e, openai.RateLimitError) else 503, "요약 서버를 지금 쓸 수 없음") from None
-    return body(stock_code, day, stored(engine, stock_code, day), made is not None)
+    if made is None:
+        release(stock_code)
+    return body(stock_code, day, stored(engine, stock_code, day), bool(made))

@@ -376,7 +376,7 @@ erDiagram
 | `SKIPPED` | robots.txt 금지 등 수집 제외 | |
 | `NO_STOCK` | 요약했지만 연결된 종목 없음 | |
 
-- 버린 기사(`FAILED`·`SKIPPED`·`NO_STOCK`)도 행은 지우지 않음. 지우면 다시 받아서 다시 요약함 (비용 낭비)
+- 버린 기사(`FAILED`·`SKIPPED`·`NO_STOCK`)도 행은 지우지 않음. 지우면 다시 받아서 다시 요약함 (비용 낭비) 예외: SNS 글(`source_type = 'SNS'`)은 모은 지 7일 뒤 행을 지움 (네이버 약관, `decisions.md`)
 - **백엔드는 `status = 'DONE'`인 기사만 화면에 보여 주고, `body`는 조회하지 않음**
 - `companies` (V7): AI 요약 단계에서 LLM이 뽑은 "회사 이름 + 회사별 감성·이유". 매칭 단계가 이것을 종목코드로 바꿔 `article_stock`에 저장
   - 예: `[{"name": "포스코퓨처엠", "is_main": true, "sentiment": "POSITIVE", "reason": "..."}]` (JSON 안의 키 이름은 AI 파트가 정함)

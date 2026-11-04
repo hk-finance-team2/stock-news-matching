@@ -10,7 +10,7 @@
 | 문서 | 내용 |
 |---|---|
 | [docs/팀공유.md](docs/팀공유.md) | AI 쪽에서 정한 것, 화면용 기사 데이터 예시 |
-| [docs/AI테이블_제안.md](docs/AI테이블_제안.md) | **백엔드에 드리는** AI 테이블(`article`, `article_stock`, `collect_run`) 컬럼 제안 |
+| [docs/AI테이블_제안.md](docs/AI테이블_제안.md) | 처음 드린 AI 테이블 제안. 지금 기준은 레포 `docs/db/schema.md` |
 | [docs/결정사항.md](docs/결정사항.md) | 지금 기준 AI 설계 한눈에 보기 |
 
 ## 지금 상태 (2026-11-04)
@@ -19,17 +19,18 @@
 - 연결 정확도: 정답지 100건 기준 Precision 90.2%, Recall 85.6% (`ai/eval/`, LLM 심판 기준)
 
 - 끝: RSS 수집(15) → 중복 제거(16) → DB 저장(18) → 본문(20~22) → LLM 요약(27~34) → 종목 매칭(23·25), 공시 수집·요약, 종목별 하루 요약(32), 자동 실행 코드(35), AI 서버 ([docs/개발순서.md](docs/개발순서.md))
-- SNS: 네이버 카페·블로그 최소 구현 (1시간마다, [docs/조사/SNS_조사.md](docs/조사/SNS_조사.md)). `feature/ai-sns` 에서 PR 전
+- SNS: 네이버 카페·블로그 최소 구현 (1시간마다, [docs/조사/SNS_조사.md](docs/조사/SNS_조사.md)). main 병합 (PR #53)
 - 다음: 자동 실행 켜기, 프론트 연결 뒤 E2E(36). 남은 한계는 [docs/한계와_실험.md](docs/한계와_실험.md)
 - 뉴스: **언론사 7곳 RSS 11개** (한경·연합·서경·파이낸셜·전자신문·연합인포맥스·비즈워치, 하루 최대 약 1,600건 추정). 주기 5분, **자동 실행은 켜야 돎** (`python -m hk_llm.loop`)
 - 흐름: RSS 목록 → 중복 제거 → 원문 본문 → LLM 요약 → 요약에서 종목 연결 + 주제 확인 → 공시 요약 → 기사 묶기, 1시간마다 SNS·하루 요약
 - 단계끼리는 `article.status` 로 넘김: `LISTED` → `FETCHED` → `SUMMARIZED` → `DONE` / `NO_STOCK`
-- 백엔드와는 **DB 로만** 주고받음 (AI 가 쓰고 백엔드가 읽음). 테이블은 백엔드 Flyway V5·V7
+- 백엔드와는 **DB 로** 주고받음 (AI 가 쓰고 백엔드가 읽음), "다시 생성" 만 API. 테이블은 백엔드 Flyway V5·V7
 - 화면에는 **요약 + 원문 링크만** (본문은 7일 후 삭제, 언론사 AI 정책)
 - 기다리는 것: 비슷한 기사 저장(17, 백엔드 칸이 생기면 자동 시작), 프론트 화면 연결. 백엔드 "다시 생성" 은 연결됨 (PR #49)
 - 공시: DART 주요 공시 원문을 LLM 으로 요약·감성 판단. 실패하면 제목·NEUTRAL 로 남음
 - 🧪 팀 공유 필요: 매칭 점수(이름 통과 + 테마 가산점), 주제 확인 규칙, 공시 표시 방식
 - 보류: 네이버 API(과거 기록용)
+- 비용: 호출마다 토큰 기록, 하루 상한 $2 (`LLM_DAILY_USD`, 추정치 기준)
 
 ## 폴더
 
@@ -39,6 +40,7 @@
 ai/
 ├── README.md
 ├── requirements.txt
+├── Dockerfile           자동 실행을 Docker 로 (docker-compose 프로필 ai)
 ├── hk_llm/
 │   ├── run.py               ★ 파이프라인 1번 실행 (실행 기록 collect_run)
 │   ├── loop.py              ★ 자동 실행: 5분마다 run, 1시간마다 SNS·하루 요약 (35번)
@@ -89,10 +91,14 @@ pip install -r requirements.txt
 |---|---|
 | **자동 실행** (끌 때까지, OpenAI 비용. 처음엔 밀린 기사까지 요약, 금액은 [docs/할일.md](docs/할일.md)) | `python -m hk_llm.loop` |
 | AI 서버 (`.env` 에 `AI_INTERNAL_TOKEN`) | `uvicorn hk_llm.api:app --port 8000` |
-| 파이프라인 1번 (OpenAI 비용) | `python -m hk_llm.run` |
+| 파이프라인 1번 (OpenAI 비용, SNS 는 안 돎) | `python -m hk_llm.run` |
+| SNS 1번, 종목 n개 (OpenAI 비용) | `python -m hk_llm.steps.sns 3` |
 | 파이프라인 1번, 요약은 n건까지만 (시험용) | `python -m hk_llm.run --limit 30` |
 | 요약 n건 미리보기 (저장 안 함, 건당 약 $0.0006) | `python -m hk_llm.steps.step5_summary 3` |
 | 규칙 시험 전체 (LLM 비용 없음, DB·인터넷 필요) | `python -m tests` |
+| DB·인터넷이 필요한 시험을 빼고 (CI 와 같음) | `python -m tests offline` |
+| 자동 실행 + AI 서버를 Docker 로 (레포 최상위에서, OpenAI 비용) | `docker compose --profile ai up -d --build` |
+| 오늘까지 쓴 LLM 추정 비용 보기 | Docker: `docker compose exec ai cat hk_llm/logs/llm_usage.json`, 직접 실행: `hk_llm/logs/llm_usage.json` (둘은 따로 셈) |
 | 실제 공시 수집 (비용 없음, DB 저장, `DART_API_KEY` 필요) | `python -m hk_llm.steps.dart` |
 | 오늘 종목별 요약 (2건 이상인 종목만 비용) | `python -m hk_llm.steps.step8_daily --run` |
 | 1~3단계 시험 | `python -m hk_llm.run --check` |

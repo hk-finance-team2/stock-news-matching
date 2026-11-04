@@ -279,7 +279,7 @@ Swagger(http://localhost:8080/swagger-ui.html)에서:
   - 백엔드는 Docker, AI 서버는 내 PC에서 직접 켰다면 `.env`에 `AI_SERVER_URL_IN_DOCKER=http://host.docker.internal:8000`, AI 서버는 `--host 0.0.0.0`
 
 - **DB 접속 (내 PC에서 Python 실행 시):** 호스트 `localhost`, 포트 `3308`, DB `stocknews`, 계정은 `.env`의 `DB_USERNAME`·`DB_PASSWORD`
-  - 나중에 AI 서버도 Docker로 묶으면 그 안에서는 호스트 `db`, 포트 `3306`
+  - AI를 Docker로 켜면(4-3절) 그 안에서는 호스트 `db`, 포트 `3306`
 - **어느 DB에 저장하나:** 팀 Docker DB(`localhost:3308`, `stocknews`)에 저장해야 백엔드가 읽을 수 있습니다. 수업용 DB(3306)나 각자 설치한 MySQL에 저장하면 백엔드·프론트에서 보이지 않습니다.
 - **어떤 계정으로:** `.env`의 앱 전용 계정(`DB_USERNAME`). 관리자 계정(root)은 쓰지 않습니다. (`.env.example`의 "root 금지"는 이 뜻이고, MariaDB를 쓰지 말라는 뜻이 아닙니다)
 - **SQL로 할 수 있는 것 / 백엔드에 요청할 것:**
@@ -356,6 +356,7 @@ pip install -r requirements.txt
 | `DART_API_KEY` | 공시 |
 | `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET` | SNS |
 | `AI_INTERNAL_TOKEN` | "다시 생성" AI 서버 |
+| `LLM_DAILY_USD` | 선택. LLM 하루 비용 상한(달러, 추정치 기준), 없으면 2 |
 
 - DB를 켭니다. (3절) 테이블은 백엔드 Flyway가 만들므로, 없으면 백엔드를 한 번 켭니다. (4-1절)
 
@@ -366,14 +367,16 @@ pip install -r requirements.txt
 | 하고 싶은 것 | 명령 | OpenAI 비용 |
 |---|---|---|
 | 규칙 시험 (DB·인터넷 필요) | `python -m tests` | 없음 |
+| 시험, DB·인터넷이 필요한 것을 빼고 | `python -m tests offline` | 없음 |
 | 1~3단계 시험 | `python -m hk_llm.run --check` | 없음 |
 | 파이프라인 1번, 요약 n건까지만 | `python -m hk_llm.run --limit 30` | 있음 |
 | 자동 실행 (끌 때까지) | `python -m hk_llm.loop` | 있음 |
+| 자동 실행 + AI 서버를 Docker 로 (레포 최상위에서, 4-3절) | `docker compose --profile ai up -d --build` | 있음 |
 | "다시 생성" AI 서버 | `uvicorn hk_llm.api:app --port 8000` | 호출할 때 |
 
 - **비용 주의:** `python -m hk_llm.run`을 옵션 없이 돌리면 뉴스·공시 요약이 최대 200건씩 됩니다. 시험은 `--check`나 `--limit`으로 합니다.
 - 자동 실행을 처음 켜면 밀린 기사까지 요약합니다.
-- 백엔드가 Docker 안에 있으면 AI 서버를 `--host 0.0.0.0`으로 켜고, `.env`에 `AI_SERVER_URL=http://host.docker.internal:8000`을 씁니다. 형식은 [ai/docs/팀공유.md](../ai/docs/팀공유.md) 8번을 봅니다.
+- 백엔드가 Docker 안에 있으면 AI 서버를 `--host 0.0.0.0`으로 켜고, `.env`에 `AI_SERVER_URL_IN_DOCKER=http://host.docker.internal:8000`을 씁니다. 형식은 [ai/docs/팀공유.md](../ai/docs/팀공유.md) 8번을 봅니다.
 
 ## 11. 프론트엔드 개발 환경 (React · Vite)
 
