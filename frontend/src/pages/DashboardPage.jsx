@@ -785,7 +785,16 @@ function ArticleDetail({
                   return (
                     <tr
                       key={rel.code}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`${rel.name} 종목 상세 화면으로 이동`}
                       onClick={() => onSelectStock(rel.code)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          onSelectStock(rel.code);
+                        }
+                      }}
                       title={`${rel.name} 종목 상세 화면으로 이동`}
                     >
                       <td>
@@ -2126,7 +2135,9 @@ useEffect(() => {
                           return (
                             <tr
                               key={st.code}
+                              role="button"
                               tabIndex={0}
+                              aria-label={`${st.name} 종목 상세로 이동`}
                               onClick={() => navigateToStockDetail(st.code, 'summary')}
                               onKeyDown={(e) => {
                                 if (e.key === 'Enter' || e.key === ' ') {
@@ -2197,6 +2208,7 @@ useEffect(() => {
                         return (
                           <tr
                             key={st.code}
+                            role="button"
                             tabIndex={0}
                             aria-label={`${idx + 1}위 ${st.name} 종목 상세로 이동`}
                             onClick={() => navigateToStockDetail(st.code, 'summary')}
@@ -2335,6 +2347,7 @@ useEffect(() => {
                     <tr
                       key={st.code}
                       className={st.code === selectedStockCode ? 'selected-row' : ''}
+                      role="button"
                       tabIndex={0}
                       aria-label={`${st.name} 종목 상세 대시보드로 이동`}
                       onClick={() => {
@@ -2901,7 +2914,9 @@ useEffect(() => {
                   return (
                     <tr
                       key={st.code}
+                      role="button"
                       tabIndex={0}
+                      aria-label={`${st.name} 종목 상세로 이동`}
                       onClick={() => navigateToStockDetail(st.code, 'summary')}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
