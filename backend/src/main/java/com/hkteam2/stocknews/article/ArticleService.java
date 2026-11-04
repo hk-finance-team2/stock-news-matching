@@ -69,10 +69,10 @@ public class ArticleService {
     @Transactional(readOnly = true)
     public ListResponse<ArticleResponse> getWatchlistArticles(Long userId, String source, String sort,
                                                               Integer minRelevance, String sentiment,
-                                                              PageQuery pageQuery) {
+                                                              String period, PageQuery pageQuery) {
         String sourceType = toSourceType(source);
         checkSort(sort);
-        return findPage(new Filter(sourceType, null, toMinRelevance(minRelevance), userId, null, null,
+        return findPage(new Filter(sourceType, null, toMinRelevance(minRelevance), userId, null, toFrom(period),
                         toSentiment(sentiment)),
                 sort, pageQuery);
     }

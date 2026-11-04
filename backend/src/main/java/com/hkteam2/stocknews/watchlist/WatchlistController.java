@@ -60,9 +60,10 @@ public class WatchlistController {
             @RequestParam(defaultValue = "latest") String sort,
             @Parameter(description = "최소 관련도 % (0~100)") @RequestParam(required = false) Integer minRelevance,
             @Parameter(description = "감성: POSITIVE, NEGATIVE, NEUTRAL (없으면 전체)") @RequestParam(required = false) String sentiment,
+            @Parameter(description = "기간: today, 7d, 30d (없으면 전체)") @RequestParam(required = false) String period,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "" + PageQuery.DEFAULT_SIZE) int size) {
-        return articleService.getWatchlistArticles(CurrentUser.id(jwt), source, sort, minRelevance, sentiment,
+        return articleService.getWatchlistArticles(CurrentUser.id(jwt), source, sort, minRelevance, sentiment, period,
                 new PageQuery(page, size));
     }
 
