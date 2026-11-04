@@ -84,6 +84,27 @@ class ArticleApiTest extends ApiTestSupport {
     }
 
     @Test
+    void 감성으로_거르면_주인공_종목_기준_종목을_고르면_그_종목_기준() throws Exception {
+        // 한 글에 기아(주인공, 긍정)와 네이버(조연, 부정)
+        long mixed = insertArticle("기아 호재, 네이버 악재", "NEWS", "DONE", today(1));
+        link(mixed, KIA, "POSITIVE", new BigDecimal("0.90"), true);
+        link(mixed, NAVER, "NEGATIVE", new BigDecimal("0.70"), false);
+        long bad = insertArticle("기아 악재", "NEWS", "DONE", today(2));
+        link(bad, KIA, "NEGATIVE", new BigDecimal("0.90"), true);
+
+        // 종목을 안 고르면 카드에 보이는 감성 = 주인공 종목의 감성
+        mvc.perform(get("/api/articles").param("sentiment", "positive"))
+                .andExpect(jsonPath("$.items[*].title", contains("기아 호재, 네이버 악재")));
+        mvc.perform(get("/api/articles").param("sentiment", "NEGATIVE"))
+                .andExpect(jsonPath("$.items[*].title", contains("기아 악재")));
+        // 네이버 화면에서는 네이버에 대한 감성
+        mvc.perform(get("/api/articles").param("stockCode", NAVER).param("sentiment", "NEGATIVE"))
+                .andExpect(jsonPath("$.items[*].title", contains("기아 호재, 네이버 악재")));
+        mvc.perform(get("/api/articles").param("sentiment", "GOOD"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void 페이지는_1부터_size만큼() throws Exception {
         for (int i = 1; i <= 3; i++) {
             insertArticle("글" + i, "NEWS", "DONE", today(i));

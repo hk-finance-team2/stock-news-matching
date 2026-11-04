@@ -57,6 +57,8 @@
         - watchUserId: 이 회원의 관심 종목이 하나라도 연결된 기사만 (관심 종목 글 모아 보기)
         - likeKeyword: 제목·요약·키워드 중 하나에 검색어가 들어 있는 기사만 (통합 검색 F-13). 본문은 조회하지 않음
         - from: 이 시각 이후 작성된 기사만 (기간 today/7d/30d)
+        - sentiment: 이 감성인 기사만. 종목을 골랐으면 그 종목에 대한 감성, 아니면 주인공(is_main) 종목의 감성
+          (목록 카드에 보이는 감성과 같은 뜻)
     -->
     <sql id="listCondition">
         <where>
@@ -86,6 +88,15 @@
             </if>
             <if test="from != null">
                 AND a.published_at >= #{from}
+            </if>
+            <if test="sentiment != null">
+                AND EXISTS (SELECT 1 FROM article_stock x
+                            WHERE x.article_id = a.article_id
+                              <choose>
+                                  <when test="stockCode != null">AND x.stock_code = #{stockCode}</when>
+                                  <otherwise>AND x.is_main = TRUE</otherwise>
+                              </choose>
+                              AND x.sentiment = #{sentiment})
             </if>
         </where>
     </sql>

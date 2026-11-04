@@ -21,7 +21,8 @@ public interface ArticleMapper {
                        @Param("minRelevance") BigDecimal minRelevance,
                        @Param("watchUserId") Long watchUserId,
                        @Param("likeKeyword") String likeKeyword,
-                       @Param("from") LocalDateTime from);
+                       @Param("from") LocalDateTime from,
+                       @Param("sentiment") String sentiment);
 
     /** sort: latest(최신순) 또는 relevance(관련도순) */
     List<ArticleRow> findArticles(@Param("sourceType") String sourceType,
@@ -30,6 +31,7 @@ public interface ArticleMapper {
                                   @Param("watchUserId") Long watchUserId,
                                   @Param("likeKeyword") String likeKeyword,
                                   @Param("from") LocalDateTime from,
+                                  @Param("sentiment") String sentiment,
                                   @Param("sort") String sort,
                                   @Param("limit") int limit,
                                   @Param("offset") int offset);
