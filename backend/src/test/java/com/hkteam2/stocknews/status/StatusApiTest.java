@@ -52,11 +52,12 @@ class StatusApiTest extends ApiTestSupport {
     }
 
     @Test
-    void 요약은_가장_최근_생성_시각() throws Exception {
-        jdbc.update("INSERT INTO stock_daily_summary (stock_code, summary_date, generated_at) VALUES (?, '2026-11-01', ?)",
-                KIA, T.minusDays(1));
-        jdbc.update("INSERT INTO stock_daily_summary (stock_code, summary_date, generated_at) VALUES (?, '2026-11-02', ?)",
-                NAVER, T);
+    void 요약은_뉴스_요약의_가장_최근_생성_시각() throws Exception {
+        String sql = "INSERT INTO stock_daily_summary (stock_code, summary_date, news_summary, sns_summary, generated_at) VALUES (?, ?, ?, ?, ?)";
+        jdbc.update(sql, KIA, "2026-11-01", "어제 뉴스 요약", null, T.minusDays(1));
+        jdbc.update(sql, NAVER, "2026-11-02", "오늘 뉴스 요약", null, T);
+        // SNS가 먼저 만든 줄 (뉴스 요약 없음): 더 늦은 시각이어도 "요약 시각"에 안 들어감
+        jdbc.update(sql, KIA, "2026-11-02", null, "SNS 반응 요약", T.plusHours(1));
 
         mvc.perform(get("/api/status"))
                 .andExpect(jsonPath("$.summaryGeneratedAt").value("2026-11-02T10:00:00+09:00"));

@@ -76,6 +76,7 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 ```
 
 - `newsSummary`·`snsSummary`: AI가 1시간마다 만드는 오늘 요약. **아직 없으면 `null`** → "요약 준비 중" 표시. SNS 글이 없는 종목은 `snsSummary`만 `null`일 수 있음
+- `generatedAt`: **뉴스 요약**을 만든 시각. 뉴스 요약이 없으면(SNS 반응 요약만 있어도) `null`. 데이터 상태(`/api/status`)의 `summaryGeneratedAt`도 뉴스 요약 기준
 - `sentiment`: 오늘(한국 시간 0시~지금) 이 종목이 나온 글을 **지금** 센 것 (이 종목에 대한 감성 기준). `positive`·`negative`·`neutral`은 % 정수이고 **합이 항상 100**. 오늘 글이 없으면 모두 0
   - 기본은 **뉴스·SNS 합계** (요구사항 F-08). `source=NEWS` / `source=SNS`를 붙이면 그 출처 글만 셈 (요약 문장은 그대로)
 - 없는 종목은 404 `STOCK_NOT_FOUND`

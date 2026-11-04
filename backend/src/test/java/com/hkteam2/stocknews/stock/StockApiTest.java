@@ -155,6 +155,20 @@ class StockApiTest extends ApiTestSupport {
     }
 
     @Test
+    void SNS_요약만_있으면_생성_시각은_비어_있다() throws Exception {
+        // SNS가 먼저 줄을 만들면 generated_at에 SNS 시각이 들어감 → 뉴스 요약 시각처럼 보이면 안 됨
+        jdbc.update("""
+                INSERT INTO stock_daily_summary (stock_code, summary_date, news_summary, sns_summary, generated_at)
+                VALUES (?, CURDATE(), NULL, '기아 SNS 반응 요약', NOW())
+                """, KIA);
+
+        mvc.perform(get("/api/stocks/{code}/summary", KIA))
+                .andExpect(jsonPath("$.newsSummary").value(nullValue()))
+                .andExpect(jsonPath("$.snsSummary").value("기아 SNS 반응 요약"))
+                .andExpect(jsonPath("$.generatedAt").value(nullValue()));
+    }
+
+    @Test
     void 언급량은_오늘_0시부터_지금까지_모든_시간_칸이_빠짐없이() throws Exception {
         link(insertArticle("뉴스", "NEWS", "DONE", today(1)), KIA, 0.9);
         link(insertArticle("SNS", "SNS", "DONE", today(2)), KIA, 0.9);
