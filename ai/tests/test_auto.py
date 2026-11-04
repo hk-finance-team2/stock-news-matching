@@ -65,6 +65,25 @@ def test_dart_not_ready():
             pass
 
 
+def test_sns_rules():
+    from hk_llm.core.config import KST
+    from hk_llm.steps.sns import clean, keep, published
+
+    names = ["HLB", "HLB제약", "삼성전자"]
+    assert clean("<b>HLB</b> &quot;주가&quot;   전망") == 'HLB "주가" 전망'
+    assert keep("HLB", "HLB 주가 어디까지", "신약 기대", None, names)
+    assert not keep("HLB", "HLB제약 주가 어디까지", "신약 기대", None, names), "다른 종목"
+    assert not keep("삼성전자", "반도체 이야기", "삼성전자 주가", None, names), "제목에 이름이 없음"
+    assert not keep("삼성전자", "삼성전자 주가 무료 추천", "카톡 문의", None, names), "광고"
+    assert not keep("삼성전자", "삼성전자 시황 정리", "주가", None, names), "모음 글"
+    assert not keep("삼성전자", "삼성전자 신제품 후기", "좋아요", None, names), "주식 이야기 아님"
+    assert not keep("삼성전자", "삼성전자 주가", "상승", "중고나라", names), "금융 카페 아님"
+    assert keep("삼성전자", "삼성전자 주가", "상승", "주식 종목분석", names)
+    now = datetime(2026, 11, 3, 15, 0, tzinfo=KST)
+    assert published(None, now) == now and published("20261103", now) == now
+    assert published("20261102", now).day == 2 and published("20261101", now) is None
+
+
 def test_api_rules():
     from fastapi.testclient import TestClient
     from hk_llm import api

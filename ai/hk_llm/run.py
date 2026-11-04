@@ -16,6 +16,7 @@ from hk_llm.core.db import get_engine, to_db
 from hk_llm.steps.step1_rss import FEEDS, fetch_all
 from hk_llm.steps.step2_dedup import dedup_by_url
 from hk_llm.steps.step3_save import save_listed
+from hk_llm.steps.sns import TOP, run_sns
 from hk_llm.steps.step4_body import fetch_bodies, purge_old_bodies
 from hk_llm.steps.step5_summary import BATCH, summarize_articles
 from hk_llm.steps.step6_match import match_articles
@@ -37,7 +38,7 @@ def collect(engine):
 
 
 def run(engine=None, limit=BATCH, daily=False):
-    """한 번 실행. 다른 실행이 돌고 있으면 건너뛰고 False. daily=True 면 종목별 하루 요약까지"""
+    """한 번 실행. 다른 실행이 돌고 있으면 건너뛰고 False. daily=True 면 SNS 와 종목별 하루 요약까지"""
     engine = engine or get_engine()
     with engine.connect() as lock:  # 프로세스가 죽어도 DB 연결이 끊기면서 자동으로 풀림
         if not lock.execute(text("SELECT GET_LOCK('hk_llm_run', 0)")).scalar():
@@ -73,7 +74,8 @@ def _run(engine, limit, daily):
         match_articles(engine)
         # 뉴스 뒤 단계들: 실패해도 뉴스 갱신 시각을 막지 않음, 다음 실행에서 다시
         after = [("공시 요약", lambda: summarize_disclosures(engine, limit)), ("기사 묶기", lambda: save_groups(engine))]
-        if daily:
+        if daily:  # 1시간마다
+            after.append(("SNS", lambda: run_sns(engine, min(limit, TOP))))
             after.append(("하루 요약", lambda: summarize_recent(engine)))
         for name, step in after:
             try:

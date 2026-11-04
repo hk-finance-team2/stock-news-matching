@@ -84,7 +84,7 @@ def fetch_bodies(engine=None, limit=BATCH):
     engine = engine or get_engine()
     with engine.connect() as conn:
         rows = conn.execute(text("""SELECT article_id, url, retry_count FROM article
-                                    WHERE status = 'LISTED' AND published_at >= :since
+                                    WHERE status = 'LISTED' AND source_type = 'NEWS' AND published_at >= :since
                                     ORDER BY article_id DESC LIMIT :n"""), {"since": since, "n": limit}).all()
     done = {"FETCHED": 0, "SKIPPED": 0, "RETRY": 0, "FAILED": 0}
     last_hit = {}  # 사이트별 마지막 요청 시각

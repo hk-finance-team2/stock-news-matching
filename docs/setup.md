@@ -308,7 +308,50 @@ SELECT setting_key, setting_value FROM match_setting;
 
 ## 10. AI 파트 개발 환경 (Python · FastAPI)
 
-AI 파트가 채웁니다. (Python 버전, 가상환경, 패키지 설치, 실행 방법)
+AI 파트는 뉴스·공시·SNS를 수집하고 요약해서 팀 DB에 저장합니다. 백엔드는 DB에서 읽습니다. 자세한 내용은 [ai/README.md](../ai/README.md)에 있습니다.
+
+### 10-1. 설치 (처음 한 번)
+
+Python 3.12를 씁니다. (개발 PC 3.12.10)
+
+```powershell
+cd ai
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+새 터미널을 열 때마다 `.venv\Scripts\activate`를 다시 실행합니다.
+
+### 10-2. `.env`와 DB
+
+- `.env`는 저장소 최상위 파일을 같이 씁니다. (2절)
+
+| 칸 | 언제 필요한가 |
+|---|---|
+| `DB_*` | 항상 |
+| `OPENAI_API_KEY` | 요약 |
+| `DART_API_KEY` | 공시 |
+| `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET` | SNS |
+| `AI_INTERNAL_TOKEN` | "다시 생성" AI 서버 |
+
+- DB를 켭니다. (3절) 테이블은 백엔드 Flyway가 만들므로, 없으면 백엔드를 한 번 켭니다. (4-1절)
+
+### 10-3. 실행
+
+모든 명령은 `ai` 폴더에서 실행합니다.
+
+| 하고 싶은 것 | 명령 | OpenAI 비용 |
+|---|---|---|
+| 규칙 시험 (DB·인터넷 필요) | `python -m tests` | 없음 |
+| 1~3단계 시험 | `python -m hk_llm.run --check` | 없음 |
+| 파이프라인 1번, 요약 n건까지만 | `python -m hk_llm.run --limit 30` | 있음 |
+| 자동 실행 (끌 때까지) | `python -m hk_llm.loop` | 있음 |
+| "다시 생성" AI 서버 | `uvicorn hk_llm.api:app --port 8000` | 호출할 때 |
+
+- **비용 주의:** `python -m hk_llm.run`을 옵션 없이 돌리면 뉴스·공시 요약이 최대 200건씩 됩니다. 시험은 `--check`나 `--limit`으로 합니다.
+- 자동 실행을 처음 켜면 밀린 기사까지 요약합니다.
+- 백엔드가 Docker 안에 있으면 AI 서버를 `--host 0.0.0.0`으로 켜고, 주소는 `host.docker.internal:8000`을 씁니다. 형식은 [ai/docs/팀공유.md](../ai/docs/팀공유.md) 8번을 봅니다.
 
 ## 11. 프론트엔드 개발 환경 (React · Vite)
 
