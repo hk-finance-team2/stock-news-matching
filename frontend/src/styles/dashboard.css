@@ -810,6 +810,18 @@ textarea:focus-visible,
     font-weight: 700;
 }
 
+/* 정규장 밖 시간 표시 (장 마감 후 거래가 시세에 섞임, QA #6) */
+.off-session-badge {
+    padding: 2px 7px;
+    border-radius: 6px;
+    background-color: var(--surface-muted);
+    color: var(--text-sub);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: help;
+    white-space: nowrap;
+}
+
 .rate-pill.up {
     background-color: var(--up-soft);
     color: var(--up-color);

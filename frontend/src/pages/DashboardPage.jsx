@@ -104,6 +104,23 @@ const rateTone = (rate) => {
 
 const formatPercent = (value) => `${(Math.round(value * 10) / 10).toFixed(1)}%`;
 
+/**
+ * 지금(한국 시간)이 정규장(평일 09:00~15:30) 밖이면 표시 문구, 안이면 null (QA #6)
+ * 15:30 뒤에도 거래가 실시간 시세에 들어와 가격이 바뀜 (11/04 삼성전자: 15:30 종가 218,000 → 19시 221,000까지 체결 기록)
+ * 공휴일은 따지지 않음 (평일 공휴일에는 "장 시작 전·마감 후"로 보임)
+ */
+const offSessionLabel = (now = new Date()) => {
+  const kst = new Date(now.getTime() + 9 * 3600 * 1000);
+  const day = kst.getUTCDay();
+  if (day === 0 || day === 6) return '휴장일';
+  const minutes = kst.getUTCHours() * 60 + kst.getUTCMinutes();
+  if (minutes < 9 * 60) return '장 시작 전';
+  if (minutes >= 15 * 60 + 30) return '장 마감 후';
+  return null;
+};
+const OFF_SESSION_HELP =
+  '정규장(평일 09:00~15:30) 밖에서도 거래가 실시간 시세에 들어와 가격이 바뀔 수 있습니다. 정규장 종가와 다를 수 있어요.';
+
 
 const nowTimeShort = () => {
   const now = new Date();
@@ -2153,7 +2170,9 @@ useEffect(() => {
                 <div className="content-card">
                   <div className="card-header">
                     <div className="card-title">🔥 오늘의 이슈 종목 TOP {ISSUE_LIMIT}</div>
-                    <span className="card-caption">오늘 뉴스에 많이 나온 순</span>
+                    <span className="card-caption" title={offSessionLabel() ? OFF_SESSION_HELP : undefined}>
+                      오늘 뉴스에 많이 나온 순{offSessionLabel() && ` · 시세는 ${offSessionLabel()} 시간외 포함`}
+                    </span>
                   </div>
                   {issueItems.length === 0 && (
                     <div className="empty-text">
@@ -2432,6 +2451,11 @@ useEffect(() => {
                       {selectedStock.price.toLocaleString()}원
                     </span>
                     <RatePill rate={selectedStock.changeRate} size="lg" />
+                    {offSessionLabel() && (
+                      <span className="off-session-badge" title={OFF_SESSION_HELP}>
+                        {offSessionLabel()} · 시간외 거래 포함
+                      </span>
+                    )}
                   </>
                 ) : (
                   <span className="price-large">
