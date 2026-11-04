@@ -362,7 +362,7 @@ function cardHtml(a) {
 
 // ===== 홈: 뉴스·SNS 목록 (F-10) + 오늘의 이슈 종목 (F-12) + 관심 종목 + 데이터 상태 (F-16) =====
 
-var home = { source: '', sort: 'latest', minRelevance: '', page: 1, size: 10, items: [], total: 0 };
+var home = { source: 'NEWS', sort: 'latest', minRelevance: '', page: 1, size: 10, items: [], total: 0 };
 
 function renderHome() {
   view.innerHTML =
@@ -372,7 +372,7 @@ function renderHome() {
     + '<main class="list">'
     + '<div class="toolbar">'
     + '<div class="seg" role="group" aria-label="출처" id="srcTabs">'
-    + segBtn('source', '', '전체') + segBtn('source', 'NEWS', '뉴스') + segBtn('source', 'SNS', 'SNS')
+    + segBtn('source', 'NEWS', '뉴스') + segBtn('source', 'SNS', 'SNS') + segBtn('source', '', '전체')
     + '</div>'
     + '<div class="tool-right"><label for="rel">관련도</label>'
     + '<select id="rel"><option value="">전체</option><option value="50">50% 이상</option><option value="80">80% 이상</option></select>'
@@ -655,7 +655,7 @@ function matchLabel(t) { return t === 'DIRECT' ? '직접' : (t === 'INDIRECT' ? 
 
 /** 글 목록 상자 (종목 화면·관심 종목 화면에서 같이 씀). path는 /api/articles?stockCode=… 같은 주소 */
 function articleList(boxId, moreId, basePath, baseParams) {
-  var st = { page: 1, items: [], total: 0, size: 5, sort: 'latest', source: '' };
+  var st = { page: 1, items: [], total: 0, size: 5, sort: 'latest', source: 'NEWS' };   // 뉴스가 기본: SNS는 모은 시각이라 뉴스와 한 줄로 세우면 순서가 틀림
   async function load(reset) {
     var box = document.getElementById(boxId), more = document.getElementById(moreId);
     if (!box) return;
@@ -764,7 +764,7 @@ async function renderStock(code) {
     + '<p class="notice" style="margin-top:10px">요약은 AI가 1시간마다 만들어요. "다시 생성"(F-08)은 백엔드가 AI 서버에 지금 기사로 새로 만들어 달라고 부탁해요 (같은 종목은 10분에 한 번).</p></section>'
     + '<section class="box"><div class="box-head"><h2>언급량 추이</h2>' + segHtml('period', [['today', '오늘'], ['7d', '7일'], ['30d', '30일']], 'today') + '</div><div id="sMent"></div></section>'
     + '<section class="box"><div class="box-head"><h2>연결된 뉴스·SNS</h2></div>'
-    + '<div class="row-gap" style="margin-bottom:10px">' + segHtml('artSrc', [['', '전체'], ['NEWS', '뉴스'], ['SNS', 'SNS']], '')
+    + '<div class="row-gap" style="margin-bottom:10px">' + segHtml('artSrc', [['NEWS', '뉴스'], ['SNS', 'SNS'], ['', '전체']], 'NEWS')
     + segHtml('artSort', [['latest', '최신순'], ['relevance', '관련도순']], 'latest') + '</div>'
     + '<div id="sArts" class="list"></div><button type="button" class="more" id="sArtsMore" hidden style="width:100%;margin-top:10px">더 보기</button></section>'
     + '<section class="box"><div class="box-head"><h2>종목 토론</h2><span>글·댓글·공감</span></div><div id="sBoard"></div></section>'
@@ -1300,7 +1300,7 @@ async function renderWatchlist() {
     + '<div class="suggest" id="wList" hidden></div><div class="msg" id="wMsg"></div>'
     + '<div id="wTable"></div></section>'
     + '<section class="box"><div class="box-head"><h2>관심 종목 글 모아 보기</h2></div>'
-    + '<div class="row-gap" style="margin-bottom:10px">' + segHtml('wSrc', [['', '전체'], ['NEWS', '뉴스'], ['SNS', 'SNS']], '')
+    + '<div class="row-gap" style="margin-bottom:10px">' + segHtml('wSrc', [['NEWS', '뉴스'], ['SNS', 'SNS'], ['', '전체']], 'NEWS')
     + segHtml('wSort', [['latest', '최신순'], ['relevance', '관련도순']], 'latest') + '</div>'
     + '<div id="wArts" class="list"></div><button type="button" class="more" id="wArtsMore" hidden style="width:100%;margin-top:10px">더 보기</button></section>';
   var arts = articleList('wArts', 'wArtsMore', '/api/watchlist/articles', {});
