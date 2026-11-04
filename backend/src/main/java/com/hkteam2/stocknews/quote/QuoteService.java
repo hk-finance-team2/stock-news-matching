@@ -22,8 +22,9 @@ import com.hkteam2.stocknews.common.TimeUtils;
  * | 무엇 | 캐시 | KIS 호출 |
  * | 현재가 | 5초 | 1번 |
  * | 분봉 1·5·10·30분 (그날 하루) | 오늘 60초, 지난 날 1시간 | 4번 (120분씩 거꾸로) → 서버가 n분씩 묶음 |
- * | 일·주·월·년봉 | 10분 | 1번 (최근 100개) |
- * | 일봉 1년 (급등·급락 이력) | 10분 | 3번 (140일씩 나눠서) |
+ * | 주·월·년봉 | 10분 | 1번 (최근 100개, 년봉은 상장 이후) |
+ * | 일봉 1년 (차트 첫 화면 + 급등·급락 이력, 같은 캐시) | 10분 | 3번 (140일씩 나눠서) |
+ * | 일·주·월봉 이어 받기 (to 이전 100개) | 1시간 | 1번 |
  * | 최근 체결 | 5초 | 1번 (30건) |
  * KIS_ENABLED=true 일 때만 만들어짐. 꺼져 있으면 QuoteController가 503 QUOTE_DISABLED
  */
@@ -37,6 +38,8 @@ public class QuoteService {
     static final Duration TICK_TTL = Duration.ofSeconds(5);
     /** 지난 날 분봉은 바뀌지 않으므로 길게 */
     static final Duration PAST_MINUTE_TTL = Duration.ofHours(1);
+    /** 지난 구간 일·주·월봉 (to 있음)도 바뀌지 않으므로 길게 */
+    static final Duration PAST_PERIOD_TTL = Duration.ofHours(1);
     /** 09:00~15:30 = 391분, KIS는 한 번에 120분 → 4번 (+ 여유 1번) */
     private static final int MINUTE_PAGES = 5;
     private static final LocalTime MARKET_OPEN = CandleAggregator.MARKET_OPEN;
@@ -135,21 +138,33 @@ public class QuoteService {
         });
     }
 
-    /**
-     * 일·주·월·년봉: KIS가 묶어 준 것 최근 100개 (년봉은 상장 이후 전체). 오래된 것부터
-     * 범위는 100개를 넘지 않게: 일봉 150일, 주봉 95주, 월봉 95개월, 년봉 99년
-     */
+    /** 일·주·월·년봉 최근 (to 없음) */
     public ChartResponse periodChart(String stockCode, ChartUnit unit) {
+        return periodChart(stockCode, unit, null);
+    }
+
+    /**
+     * 일·주·월·년봉. 오래된 것부터
+     * - to 없음 (첫 화면): 일봉은 1년 치 = 급등·급락 이력과 같은 캐시를 씀 (KIS 추가 호출 0).
+     *   주·월봉은 최근 100개 (주봉 95주, 월봉 95개월), 년봉은 상장 이후 전체 (99년)
+     * - to 있음 (화면을 왼쪽으로 끌 때 이어 받기): to(포함)까지 거꾸로 100개 이내 = KIS 1번.
+     *   지난 구간은 값이 바뀌지 않으므로 1시간 캐시
+     */
+    public ChartResponse periodChart(String stockCode, ChartUnit unit, LocalDate to) {
+        if (to == null && unit == ChartUnit.DAY) {
+            return new ChartResponse(stockCode, unit.code(), null, toCandles(yearDailyCandles(stockCode)));
+        }
         // 이름표 앞에 용도(chart:)를 붙임. 예전에는 "year:"가 아래 yearDailyCandles와 겹쳐 년봉이 일봉 목록을 꺼내 500이 났음
-        return cache.get("chart:" + unit.code() + ":" + stockCode, DAY_TTL, () -> {
-            LocalDate today = today();
+        String key = "chart:" + unit.code() + ":" + stockCode + (to == null ? "" : ":" + to);
+        return cache.get(key, to == null ? DAY_TTL : PAST_PERIOD_TTL, () -> {
+            LocalDate end = to == null ? today() : to;
             LocalDate from = switch (unit) {
-                case WEEK -> today.minusWeeks(95);
-                case MONTH -> today.minusMonths(95);
-                case YEAR -> today.minusYears(99);
-                default -> today.minusDays(150);
+                case WEEK -> end.minusWeeks(95);
+                case MONTH -> end.minusMonths(95);
+                case YEAR -> end.minusYears(99);
+                default -> end.minusDays(150);   // 달력 150일 = 거래일 약 100일
             };
-            List<KisCandle> rows = new ArrayList<>(kis.inquirePeriodCandles(stockCode, from, today, unit.periodCode()));
+            List<KisCandle> rows = new ArrayList<>(kis.inquirePeriodCandles(stockCode, from, end, unit.periodCode()));
             rows.sort(Comparator.comparing(KisCandle::time));
             return new ChartResponse(stockCode, unit.code(), null, toCandles(rows));
         });
