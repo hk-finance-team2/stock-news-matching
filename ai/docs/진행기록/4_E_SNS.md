@@ -129,3 +129,9 @@
 - 방법: 결정사항·개발순서·한계와_실험 앞부분·AI테이블_제안·학습 00·05~12·README 앞부분·setup 10절을 읽고 코드와 대조, 링크 자동 검사. 학습 01~04·조사·진행기록은 끝까지 안 읽음. 수치는 다시 재지 않음
 - 고친 것: "AI 에 서버가 없다"·"DB 로만" 설명, 관련도와 점수 구분, 숫자 검사 동작, robots 실패 처리, SNS 삭제와 `schema.md` 충돌, 비용 상한, 옛 금액·건수, Docker 실행
 - `한계와_실험` 의 `83 삼성증권·한국금융지주` 는 별칭 추가 뒤 다시 재지 않아서 그렇게 표시만 함
+
+## main 합치기 (2026-11-04, 사용자 지시)
+
+- SNS 는 PR #53 으로 이미 병합됨. 그 뒤 수정은 새 브랜치 `feature/ai-sns-hardening` 으로 올림
+- 백엔드1의 Docker 프로필(`ai`, `ai-api`, `full`)이 main 에 먼저 들어가서, 내가 만든 `ai/Dockerfile`·`.dockerignore`·compose 서비스는 버리고 main 것을 씀. compose 에는 비용 기록을 두 상자가 같이 쓰도록 `ai-logs` 볼륨만 추가
+- 시험: `python -m tests` 는 Docker 가 꺼져 있어 DB 시험 2개(`test_step3_save`, `test_sns_db`)가 연결 실패. 이 둘은 main 합치기 전 수정 코드 기준으로 통과. 볼륨 설정은 `docker compose config` 만 확인하고 실제로 켜지 않음

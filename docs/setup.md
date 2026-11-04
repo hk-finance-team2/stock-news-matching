@@ -370,12 +370,12 @@ pip install -r requirements.txt
 | 1~3단계 시험 | `python -m hk_llm.run --check` | 없음 |
 | 파이프라인 1번, 요약 n건까지만 | `python -m hk_llm.run --limit 30` | 있음 |
 | 자동 실행 (끌 때까지) | `python -m hk_llm.loop` | 있음 |
-| 자동 실행을 Docker 로 (레포 최상위에서) | `docker compose --profile ai up -d --build ai` | 있음 |
+| 자동 실행 + AI 서버를 Docker 로 (레포 최상위에서, 4-3절) | `docker compose --profile ai up -d --build` | 있음 |
 | "다시 생성" AI 서버 | `uvicorn hk_llm.api:app --port 8000` | 호출할 때 |
 
 - **비용 주의:** `python -m hk_llm.run`을 옵션 없이 돌리면 뉴스·공시 요약이 최대 200건씩 됩니다. 시험은 `--check`나 `--limit`으로 합니다.
 - 자동 실행을 처음 켜면 밀린 기사까지 요약합니다.
-- 백엔드가 Docker 안에 있으면 AI 서버를 `--host 0.0.0.0`으로 켜고, `.env`에 `AI_SERVER_URL=http://host.docker.internal:8000`을 씁니다. 형식은 [ai/docs/팀공유.md](../ai/docs/팀공유.md) 8번을 봅니다.
+- 백엔드가 Docker 안에 있으면 AI 서버를 `--host 0.0.0.0`으로 켜고, `.env`에 `AI_SERVER_URL_IN_DOCKER=http://host.docker.internal:8000`을 씁니다. 형식은 [ai/docs/팀공유.md](../ai/docs/팀공유.md) 8번을 봅니다.
 
 ## 11. 프론트엔드 개발 환경 (React · Vite)
 
