@@ -54,9 +54,10 @@ public class StockService {
     /**
      * 오늘의 이슈 종목 순위. 오늘 = 한국 시간 0시부터 지금까지 작성된 글.
      * 세고 정렬하는 일은 SQL(GROUP BY·COUNT)이 하고, 여기서는 오늘 0시 계산·조건 검사·순위 번호만
+     * 출처가 없으면 뉴스만 셈: AI가 SNS를 "뉴스 많은 종목"만 골라 모으므로 섞으면 같은 종목을 두 번 세게 됨
      */
     public ListResponse<StockIssueResponse> getIssues(String source, int limit) {
-        String sourceType = toSourceType(source);
+        String sourceType = source == null ? "NEWS" : toSourceType(source);
         if (limit < 1 || limit > MAX_ISSUE_LIMIT) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }

@@ -27,7 +27,7 @@ public interface StockMapper {
 
     boolean existsByCode(String stockCode);
 
-    /** from 이후 글에 많이 나온 종목 순 limit개. sourceType이 null이면 뉴스·SNS 모두 */
+    /** from 이후 글에 많이 나온 종목 순 limit개. sourceType이 null이면 뉴스·SNS 모두 (API 기본은 서비스가 NEWS로 넘김) */
     List<StockIssueRow> findIssues(@Param("from") LocalDateTime from,
                                    @Param("sourceType") String sourceType,
                                    @Param("limit") int limit);

@@ -57,7 +57,8 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 
 **오늘의 이슈 종목** (홈 오른쪽, 종목별 조회 왼쪽 목록)
 - 오늘(한국 시간 **0시 ~ 지금**) 작성된 글에 **많이 나온 종목** 순. 글 수가 같으면 평균 관련도가 높은 순
-- `source`: `NEWS` / `SNS` (없으면 둘 다), `limit`: 1~50 (기본 10). 페이지 없음
+- `source`: `NEWS` / `SNS` (**없으면 `NEWS`**), `limit`: 1~50 (기본 10). 페이지 없음
+  - 기본이 뉴스만인 이유: AI가 SNS를 "최근 뉴스가 많은 종목"만 골라 모으므로, 섞어서 세면 같은 종목을 두 번 세게 됨. SNS 순위는 `source=SNS`로 따로
 - 한 건: `{ rank, stockCode, stockName, articleCount, avgRelevance, lastPublishedAt }`
   - `articleCount`: 오늘 이 종목이 나온 글 수, `avgRelevance`: 평균 관련도 %(없으면 `null`), `lastPublishedAt`: 가장 최근 글 시각
 - 오늘 글이 없으면 `items: []`. 0시가 막 지나면 비어 있을 수 있음
