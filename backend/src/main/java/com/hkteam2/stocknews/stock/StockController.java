@@ -2,6 +2,7 @@ package com.hkteam2.stocknews.stock;
 
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -57,6 +58,16 @@ public class StockController {
             @Parameter(description = "감성 비율을 셀 출처: NEWS 또는 SNS (없으면 둘 다)", example = "NEWS")
             @RequestParam(required = false) String source) {
         return stockService.getSummary(stockCode, source);
+    }
+
+    @Operation(summary = "종목 종합 요약 다시 생성 (로그인 필요)",
+            description = "AI 서버가 오늘 기사로 요약을 새로 만들어 저장하고, 다시 읽은 요약·감성 비율을 돌려줌 (최대 30초)."
+                    + " 같은 종목은 10분에 한 번만 새로 만들고 그 안에는 regenerated=false 로 저장된 요약."
+                    + " 401 로그인 필요, 404 없는 종목, 503 AI_UNAVAILABLE·AI_NOT_CONFIGURED, 429 AI_BUSY")
+    @PostMapping("/{stockCode}/summary")
+    public SummaryRegenerateResponse regenerateSummary(
+            @Parameter(description = "종목코드 6자리", example = "005930") @PathVariable String stockCode) {
+        return stockService.regenerateSummary(stockCode);
     }
 
     @Operation(summary = "종목 언급량 추이 (그래프)",

@@ -52,6 +52,7 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 | 🔓 | GET | `/api/stocks/issues?source=&limit=10` | **오늘의 이슈 종목 순위**. 아래 참고 |
 | 🔓 | GET | `/api/stocks/{stockCode}` | 종목 하나 `{ stockCode, stockName, market, sector }` |
 | 🔓 | GET | `/api/stocks/{stockCode}/summary?source=` | **오늘의 종합 요약·감성 비율**. 아래 참고 |
+| 🔒 | POST | `/api/stocks/{stockCode}/summary` | **종합 요약 다시 생성** (F-08). AI 서버가 오늘 기사로 새로 만들고 다시 읽은 요약을 돌려줌. 아래 참고 |
 | 🔓 | GET | `/api/stocks/{stockCode}/mentions?period=today` | **언급량 추이 (그래프)**. 아래 참고 |
 
 **오늘의 이슈 종목** (홈 오른쪽, 종목별 조회 왼쪽 목록)
@@ -258,9 +259,20 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 - 오류: `503 QUOTE_DISABLED`(시세 꺼짐), `429 QUOTE_BUSY`(KIS 초당 호출 초과), `429 REPLAY_BUSY`(다시 보기 동시 5개 초과), `502 QUOTE_UPSTREAM_ERROR`·`QUOTE_UNREACHABLE`(KIS 오류·연결 실패)
 - 개발 중 확인: `http://localhost:8080/demo.html` 종목 화면의 "시세" 칸
 
-### 아직 없는 API
+### 종합 요약 다시 생성 (F-08)
 
-종합 요약 다시 생성 (AI 서버 API 형식이 정해지면 추가).
+`POST /api/stocks/{stockCode}/summary` (로그인 필요, 본문 없음) → 최대 30초
+
+```json
+{ "regenerated": true,
+  "summary": { "stockCode": "005930", "stockName": "삼성전자", "date": "2026-11-04", "newsSummary": "…",
+               "snsSummary": null, "generatedAt": "2026-11-04T10:12:00+09:00", "sentiment": { … } } }
+```
+
+- `summary`는 `GET /api/stocks/{code}/summary`와 같은 모양 → 화면은 받은 값으로 그대로 다시 그리면 됨
+- `regenerated: false`: 같은 종목을 10분 안에 또 눌렀거나 오늘 기사가 없어서 **저장된 요약 그대로** (LLM 비용 안 씀)
+- 오류: `401` 로그인 필요, `404 STOCK_NOT_FOUND`, `429 AI_BUSY`(요청 많음), `503 AI_UNAVAILABLE`(AI 서버 꺼짐·30초 초과), `503 AI_NOT_CONFIGURED`(서버에 `AI_INTERNAL_TOKEN` 없음) → 화면은 기존 요약을 그대로 두고 "잠시 후 다시" 안내
+- 백엔드가 AI 서버(`ai/hk_llm/api.py`)를 대신 부름. 브라우저는 AI 서버를 직접 부르지 않음 (비밀값 보호)
 
 ## 4. 오류 코드
 
