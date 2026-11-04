@@ -67,7 +67,8 @@ def test_dart_not_ready():
 
 def test_sns_rules():
     from hk_llm.core.config import KST
-    from hk_llm.steps.sns import clean, keep, published
+    from hk_llm.steps import sns
+    from hk_llm.steps.sns import Opinion, Post, cafe_marks, check, clean, is_new_cafe_post, keep, published
 
     names = ["HLB", "HLB제약", "삼성전자"]
     assert clean("<b>HLB</b> &quot;주가&quot;   전망") == 'HLB "주가" 전망'
@@ -82,6 +83,25 @@ def test_sns_rules():
     now = datetime(2026, 11, 3, 15, 0, tzinfo=KST)
     assert published(None, now) == now and published("20261103", now) == now
     assert published("20261102", now).day == 2 and published("20261101", now) is None
+    for fine in ("리딩뱅크 경쟁과 유상증자 모집 의견", "목표가 30100원 의견", "2010-11 실적 비교"):
+        assert check(Opinion(posts=[], summary=fine)).summary == fine, "금융 표현은 통과"
+    for bad in ("오픈 채팅으로 오세요", "자세한 건 https://x.co", "010 1234 5678 로 연락"):
+        assert check(Opinion(posts=[], summary=bad)).summary == "", f"광고 요약을 통과시킴: {bad}"
+    mixed = check(Opinion(posts=[Post(id=1, sentiment="POSITIVE", reason="카톡 방 안내"), Post(id=2, sentiment="NEGATIVE", reason="실적 걱정")], summary="기대 의견"))
+    assert mixed.posts[0].reason == "이유 표시 안 함" and mixed.posts[1].reason == "실적 걱정" and mixed.summary == "기대 의견"
+    marks = cafe_marks(["https://cafe.naver.com/a/100", "https://cafe.naver.com/a/90", "https://blog.naver.com/x/5"])
+    assert marks == {"a": 100}
+    assert is_new_cafe_post("https://cafe.naver.com/a/101", marks)
+    assert not is_new_cafe_post("https://cafe.naver.com/a/100", marks), "이미 본 번호"
+    assert not is_new_cafe_post("https://cafe.naver.com/a/99", marks), "오래된 글"
+    assert not is_new_cafe_post("https://cafe.naver.com/b/999", marks), "처음 보는 카페는 기준점"
+    with mock.patch.dict(os.environ, {"NAVER_CLIENT_ID": "x"}), mock.patch.object(sns, "top_stocks", return_value=[]), \
+            mock.patch.object(sns, "collect", return_value=(1, 2)), mock.patch.object(sns, "summarize", return_value=1) as summarize:
+        try:
+            sns.run_sns(engine=object())
+            raise AssertionError("검색 실패를 알려야 함")
+        except RuntimeError:
+            assert summarize.called, "검색이 실패해도 분석은 함"
 
 
 def test_api_rules():

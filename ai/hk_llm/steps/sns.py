@@ -5,6 +5,7 @@
 - 수집처: 공식 API 만 (조사/SNS_조사.md "수집처 기준 확정"). 대상은 최근 24시간 뉴스가 많은 종목
 - 저장: 제목·미리보기·출처 이름만. 닉네임과 글 본문은 안 받음. 거른 글은 저장하지 않음
 - ponytail: 카페 응답에는 작성 시각이 없어 수집 시각으로 저장, 블로그는 날짜만. 시각 칸이 있는 API 로 바꾸면 수정
+- ponytail: 카페 글이 새 글인지는 글 번호로 판단 (카페별로 이미 본 번호보다 커야 함). 처음 보는 카페의 글은 기준점으로만 저장
 - ponytail: 한 글은 처음 찾은 종목 1개에만 연결. 글 수가 많아지면 제목의 다른 종목도 연결
 """
 import html
@@ -36,6 +37,11 @@ WORD = re.compile("주가|주식|매수|매도|종목|증시|실적|목표가|�
 AD = re.compile(r"리딩|무료 ?추천|문의|카톡|오픈채팅|텔레그램|https?://|모집|수익 ?인증|상담|010[- ]?\d")
 BRIEF = re.compile(r"마감|시황|브리핑|뉴스|상한가|\[일간|\[검색|정리|일정|TOP")
 FIN_CAFE = re.compile("주식|증시|재테크|투자|종목|차트|트레이더|트레이딩|매매|금융|경제|ETF", re.I)
+REJECT = re.compile(r"https?://|www\.|카톡|오픈채팅|텔레그램|무료추천|수익인증|01[016]-?\d{3,4}-?\d{4}")  # LLM 답 검사용, 공백을 지운 글에 씀. 리딩뱅크·모집 같은 금융 표현은 막지 않음
+CAFE_POST = re.compile(r"cafe\.naver\.com/([^/?#]+)/(\d+)")
+UPSERT = text("""INSERT INTO stock_daily_summary (stock_code, summary_date, sns_summary) VALUES (:code, :d, :text)
+                 ON DUPLICATE KEY UPDATE sns_summary = :text""")  # 뉴스 요약·generated_at 은 건드리지 않음
+FAIL = text("UPDATE article SET retry_count = retry_count + 1, last_error = :err, status = IF(retry_count >= :max, 'FAILED', status) WHERE article_id = :id")
 
 log = get_logger(__name__)
 Sentiment = Literal["POSITIVE", "NEGATIVE", "NEUTRAL"]
@@ -91,6 +97,26 @@ def published(postdate, now):
     return now if day.date() == now.date() else day
 
 
+def cafe_post(url):
+    """(카페 이름, 글 번호) 또는 None"""
+    m = CAFE_POST.search(url)
+    return (m[1], int(m[2])) if m else None
+
+
+def cafe_marks(keys):
+    """카페별로 이미 본 가장 큰 글 번호"""
+    marks = {}
+    for post in filter(None, map(cafe_post, keys)):
+        marks[post[0]] = max(marks.get(post[0], 0), post[1])
+    return marks
+
+
+def is_new_cafe_post(url, marks):
+    """이미 본 번호보다 크면 새 글. 처음 보는 카페는 글 나이를 알 수 없어 새 글로 치지 않음"""
+    post = cafe_post(url)
+    return bool(post) and post[1] > marks.get(post[0], post[1])
+
+
 def search(kind, query):
     headers = {"X-NCP-APIGW-API-KEY-ID": os.environ["NAVER_CLIENT_ID"], "X-NCP-APIGW-API-KEY": os.environ["NAVER_CLIENT_SECRET"]}
     res = requests.get(API + kind, headers=headers, params={"query": query, "display": DISPLAY, "sort": "date"}, timeout=20)
@@ -106,26 +132,40 @@ def top_stocks(engine, n):
         return conn.execute(sql, {"since": to_db(datetime.now(KST) - timedelta(hours=24)), "n": n}).all()
 
 
+def fetch_posts(kind, channel, name, now, all_names, marks):
+    posts = []
+    for it in search(kind, f"{name} 주가"):
+        title, preview, cafe = clean(it["title"]), clean(it["description"]), it.get("cafename")
+        at, key = published(it.get("postdate"), now), url_key(it["link"])
+        if at and len(key) <= 500 and keep(name, title, preview, cafe, all_names):
+            fresh = channel != "NAVER_CAFE" or is_new_cafe_post(key, marks)
+            posts.append({"key": key, "url": it["link"][:1000], "press": (clean(cafe) or BLOG_PRESS)[:100], "title": title[:500],
+                          "preview": preview if fresh else None, "at": to_db(at), "channel": channel,
+                          "status": "FETCHED" if fresh else "SKIPPED"})
+    return posts
+
+
 def collect(engine, stocks):
-    """새로 저장한 글 수. 글은 FETCHED, 감성 칸은 분석 전 값 (DONE 이 되기 전에는 화면에 안 나감)"""
+    """(새로 저장한 글 수, 실패한 검색 수). 새 글은 FETCHED, 감성 칸은 분석 전 값 (DONE 이 되기 전에는 화면에 안 나감)
+    오래됐을 수 있는 카페 글은 SKIPPED 로 번호만 남김 (화면에 안 나감). 검색 하나가 실패해도 나머지는 계속"""
     now = datetime.now(KST)
     with engine.connect() as conn:
         all_names = list(conn.execute(text("SELECT stock_name FROM stock_info")).scalars())
+        marks = cafe_marks(conn.execute(text("SELECT url_key FROM article WHERE channel = 'NAVER_CAFE'")).scalars())
     insert = text("""INSERT INTO article (url_key, url, press, title, description, published_at, status, source_type, channel, collect_mode)
-                     VALUES (:key, :url, :press, :title, :preview, :at, 'FETCHED', 'SNS', :channel, 'REALTIME')""")
+                     VALUES (:key, :url, :press, :title, :preview, :at, :status, 'SNS', :channel, 'REALTIME')""")
     link = text("""INSERT INTO article_stock (article_id, stock_code, is_main, sentiment, reason, match_type, relevance, matched_keywords)
                    VALUES (:id, :code, TRUE, 'NEUTRAL', '분석 전', 'DIRECT', 1.00, :name)""")
     have_sql = text("SELECT url_key FROM article WHERE url_key IN :k").bindparams(bindparam("k", expanding=True))
-    new = 0
+    new = failed = 0
     for code, name in stocks:
         for kind, channel in CHANNELS.items():
-            posts = []
-            for it in search(kind, f"{name} 주가"):
-                title, preview, cafe = clean(it["title"]), clean(it["description"]), it.get("cafename")
-                at, key = published(it.get("postdate"), now), url_key(it["link"])
-                if at and len(key) <= 500 and keep(name, title, preview, cafe, all_names):
-                    posts.append({"key": key, "url": it["link"][:1000], "press": (clean(cafe) or BLOG_PRESS)[:100], "title": title[:500],
-                                  "preview": preview, "at": to_db(at), "channel": channel})
+            try:
+                posts = fetch_posts(kind, channel, name, now, all_names, marks)
+            except (requests.RequestException, KeyError, ValueError) as e:
+                log.warning("SNS 검색 실패 %s %s: %s", name, kind, e)
+                failed += 1
+                continue
             if not posts:
                 continue
             with engine.begin() as conn:
@@ -134,17 +174,53 @@ def collect(engine, stocks):
                     if p["key"] not in have:
                         have.add(p["key"])
                         aid = conn.execute(insert, p).lastrowid
-                        conn.execute(link, {"id": aid, "code": code, "name": name})
-                        new += 1
-    log.info("SNS 수집: 종목 %d개, 새 글 %d건", len(stocks), new)
-    return new
+                        if p["status"] == "FETCHED":
+                            conn.execute(link, {"id": aid, "code": code, "name": name})
+                            new += 1
+    log.info("SNS 수집: 종목 %d개, 새 글 %d건, 실패한 검색 %d개", len(stocks), new, failed)
+    return new, failed
+
+
+def check(result):
+    """LLM 답 검사: 글 속 광고·연락처가 옮겨 온 부분만 버림. 이유는 바꾸고, 요약은 비워서 저장하지 않음 (글 묶음과 감성은 살림)"""
+    def bad(value):
+        return REJECT.search(re.sub(r"\s+", "", value))
+
+    for p in result.posts:
+        if bad(p.reason):
+            p.reason = "이유 표시 안 함"
+    if bad(result.summary):
+        log.warning("SNS 요약에 광고·연락처 표현이 있어 버림")
+        result.summary = ""
+    return result
 
 
 def analyze(stock, previous, rows):
     posts = "\n".join(f"[{r.article_id}] {_strip_tag(r.title)} / {_strip_tag(r.description or '')[:300]}" for r in rows)
     llm = ChatOpenAI(model=MODEL, timeout=60, max_retries=2, max_tokens=2000)
-    return (PROMPT | llm.with_structured_output(Opinion)).invoke(
-        {"stock": _strip_tag(stock), "previous": _strip_tag(previous or ""), "posts": posts})
+    return check((PROMPT | llm.with_structured_output(Opinion)).invoke(
+        {"stock": _strip_tag(stock), "previous": _strip_tag(previous or ""), "posts": posts}))
+
+
+def save_result(engine, code, items, result, now):
+    """분석 결과 저장, 저장한 글 수. summary 는 원문 미리보기라 model·summarized_at 을 비워 둠 (AI 요약으로 표시되면 안 됨)"""
+    answers = {p.id: p for p in result.posts}
+    done = 0
+    with engine.begin() as conn:
+        for r in items:
+            p = answers.get(r.article_id)
+            if not p:  # LLM 이 빠뜨린 글은 다음 실행에서 다시
+                conn.execute(FAIL, {"err": "LLM 답에 없음", "max": MAX_TRIES, "id": r.article_id})
+                continue
+            conn.execute(text("""UPDATE article SET status = 'DONE', summary = :summary, sentiment = :sent,
+                                 retry_count = 0, last_error = NULL WHERE article_id = :id"""),
+                         {"summary": (r.description or r.title)[:1000], "sent": p.sentiment, "id": r.article_id})
+            conn.execute(text("UPDATE article_stock SET sentiment = :sent, reason = :reason WHERE article_id = :id AND stock_code = :code"),
+                         {"sent": p.sentiment, "reason": p.reason[:500], "id": r.article_id, "code": code})
+            done += 1
+        if result.summary:
+            conn.execute(UPSERT, {"code": code, "d": now.date(), "text": result.summary[:1000]})
+    return done
 
 
 def summarize(engine):
@@ -160,9 +236,6 @@ def summarize(engine):
     by = {}
     for r in rows:
         by.setdefault(r.stock_code, []).append(r)
-    upsert = text("""INSERT INTO stock_daily_summary (stock_code, summary_date, sns_summary) VALUES (:code, :d, :text)
-                     ON DUPLICATE KEY UPDATE sns_summary = :text""")  # 뉴스 요약·generated_at 은 건드리지 않음
-    fail = text("UPDATE article SET retry_count = retry_count + 1, last_error = :err, status = IF(retry_count >= :max, 'FAILED', status) WHERE article_id = :id")
     done = 0
     for code, items in by.items():
         items = items[:MAX_POSTS]
@@ -178,33 +251,24 @@ def summarize(engine):
             log.warning("SNS 분석 실패 %s: %s", code, e)
             with engine.begin() as conn:
                 for r in items:
-                    conn.execute(fail, {"err": str(e)[:1000], "max": MAX_TRIES, "id": r.article_id})
+                    conn.execute(FAIL, {"err": str(e)[:1000], "max": MAX_TRIES, "id": r.article_id})
             continue
-        answers = {p.id: p for p in result.posts}
-        with engine.begin() as conn:
-            for r in items:
-                p = answers.get(r.article_id)
-                if not p:  # LLM 이 빠뜨린 글은 다음 실행에서 다시
-                    conn.execute(fail, {"err": "LLM 답에 없음", "max": MAX_TRIES, "id": r.article_id})
-                    continue
-                conn.execute(text("""UPDATE article SET status = 'DONE', summary = :summary, sentiment = :sent, model = :model,
-                                     summarized_at = :at, retry_count = 0, last_error = NULL WHERE article_id = :id"""),
-                             {"summary": (r.description or r.title)[:1000], "sent": p.sentiment, "model": MODEL, "at": to_db(now), "id": r.article_id})
-                conn.execute(text("UPDATE article_stock SET sentiment = :sent, reason = :reason WHERE article_id = :id AND stock_code = :code"),
-                             {"sent": p.sentiment, "reason": p.reason[:500], "id": r.article_id, "code": code})
-                done += 1
-            conn.execute(upsert, {"code": code, "d": now.date(), "text": result.summary[:1000]})
+        done += save_result(engine, code, items, result, now)
     log.info("SNS 분석: %d건, 종목 %d개", done, len(by))
     return done
 
 
 def run_sns(engine=None, stocks=TOP):
-    """(새 글 수, 분석한 글 수). 네이버 키가 없으면 건너뜀"""
+    """(새 글 수, 분석한 글 수). 네이버 키가 없으면 건너뜀. 검색이 일부 실패해도 분석까지 한 뒤 예외로 알림 (collect_run.error 에 남음)"""
     if not os.environ.get("NAVER_CLIENT_ID"):
         log.warning("네이버 키 없음: SNS 건너뜀")
         return 0, 0
     engine = engine or get_engine()
-    return collect(engine, top_stocks(engine, stocks)), summarize(engine)
+    new, failed = collect(engine, top_stocks(engine, stocks))
+    done = summarize(engine)
+    if failed:
+        raise RuntimeError(f"네이버 검색 {failed}번 실패")
+    return new, done
 
 
 if __name__ == "__main__":
