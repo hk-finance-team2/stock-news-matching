@@ -8,6 +8,8 @@ import com.hkteam2.stocknews.common.TimeUtils;
 /**
  * 종목별 조회 화면의 "오늘의 종합 요약". 요약 문장은 AI가 1시간마다 만든 것,
  * 감성 비율은 백엔드가 지금 직접 센 것. 요약이 아직 없으면 newsSummary·snsSummary·generatedAt이 null
+ * generatedAt은 뉴스 요약 시각: SNS가 먼저 줄을 만들면 generated_at에 SNS 시각이 들어가므로 뉴스 요약이 없으면 null
+ * (AI 서버 api.py의 "다시 생성" 응답과 같은 규칙)
  */
 public record StockSummaryResponse(
         String stockCode,
@@ -24,7 +26,7 @@ public record StockSummaryResponse(
         return new StockSummaryResponse(stock.stockCode(), stock.stockName(), date,
                 summary == null ? null : summary.newsSummary(),
                 summary == null ? null : summary.snsSummary(),
-                summary == null ? null : TimeUtils.toKst(summary.generatedAt()),
+                summary == null || summary.newsSummary() == null ? null : TimeUtils.toKst(summary.generatedAt()),
                 sentiment);
     }
 }
