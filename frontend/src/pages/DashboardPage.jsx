@@ -14,7 +14,7 @@ import {
   normalizeMentionTrends,
   normalizeComments,
 } from '../mocks/mockData';
-import { stockApi, quoteApi, articleApi } from '../api';
+import { stockApi, quoteApi, articleApi, watchlistApi, authApi } from '../api';
 import { toUiStock, toUiArticle } from '../api/adapters';
 import '../styles/dashboard.css';
 
@@ -605,14 +605,14 @@ function ArticleDetail({
   const [commentTargetCode, setCommentTargetCode] = useState(
     preferredStockCode || sortedRelatedStocks[0]?.code || '005930'
   );
-  
+
   useEffect(() => {
     if (!article) return;
-  
+
     const hasPreferred = sortedRelatedStocks.some(
       (r) => r.code === preferredStockCode
     );
-  
+
     setCommentTargetCode(
       hasPreferred
         ? preferredStockCode
@@ -821,7 +821,7 @@ INITIAL_WATCHLIST_CODES[0] || allStocks[0]?.code || '005930'
                 {sortedRelatedStocks.map((rel) => {
                   const stock = allStocks.find((s) => s.code === rel.code);
                   const quote = liveQuotes[rel.code];
-                  
+
                   const st = quote
                     ? {
                         ...stock,
@@ -830,7 +830,7 @@ INITIAL_WATCHLIST_CODES[0] || allStocks[0]?.code || '005930'
                         changeAmount: quote.changeAmount,
                       }
                     : stock;
-                  
+
                   const hasPrice = st?.price != null;
                   const tone = rateTone(st?.changeRate);
                   // return (
@@ -867,18 +867,18 @@ INITIAL_WATCHLIST_CODES[0] || allStocks[0]?.code || '005930'
                         <strong>{rel.name}</strong>{' '}
                         <span className="stock-code num">{rel.code}</span>
                       </td>
-                  
+
                       <td className="num">
                         <span className="source-pill">{rel.relationType}</span>{' '}
                         <strong>{rel.relevance}%</strong>
                       </td>
-                  
+
                       <td className="num-col num">
                         {hasPrice
                           ? `${st.price.toLocaleString()}원`
                           : '시세 준비 중'}
                       </td>
-                  
+
                       <td className={`num-col num ${tone}`}>
                         {hasPrice && st.changeRate != null
                           ? formatRate(st.changeRate)
@@ -1371,7 +1371,7 @@ const allStocks = useMemo(
 //   return () => {
 //     cancelled = true;
 //   };
-// }, [selectedStockCode, watchlistCodes]); 
+// }, [selectedStockCode, watchlistCodes]);
 
   // const allArticles = useMemo(() => normalizeArticles(ARTICLES_DATA), []);
   const [allArticles, setAllArticles] = useState([]);
@@ -1416,7 +1416,8 @@ useEffect(() => {
   const [stockListMarket, setStockListMarket] = useState('ALL'); // 'ALL' | 'KOSPI' | 'KOSDAQ'
   const [stockListSort, setStockListSort] = useState('issue'); // 'issue' | 'up' | 'down' | 'name'
 
-  const [watchlistCodes, setWatchlistCodes] = useState(INITIAL_WATCHLIST_CODES);
+  // const [watchlistCodes, setWatchlistCodes] = useState(INITIAL_WATCHLIST_CODES);
+  const [watchlistCodes, setWatchlistCodes] = useState([]);
 
   const [selectedStockCode, setSelectedStockCode] = useState(
     INITIAL_WATCHLIST_CODES[0] || allStocks[0]?.code || '005930'
@@ -1475,7 +1476,7 @@ useEffect(() => {
         quotes[codes[index]] = result.value;
       }
     });
-  
+
 
     setLiveQuotes((prev) => ({ ...prev, ...quotes }));
   });
@@ -1645,14 +1646,41 @@ useEffect(() => {
       return DEFAULT_USERS_DB;
     }
   });
-  const [user, setUser] = useState(() => {
-    try {
-      const savedUser = localStorage.getItem('snm_current_user');
-      return savedUser ? { username: savedUser } : null;
-    } catch {
-      return null;
-    }
-  });
+  // const [user, setUser] = useState(() => {
+  //   try {
+  //     const savedUser = localStorage.getItem('snm_current_user');
+  //     return savedUser ? { username: savedUser } : null;
+  //   } catch {
+  //     return null;
+  //   }
+  // });
+  const [user, setUser] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+
+    authApi.me()
+      .then((res) => {
+        if (cancelled) return;
+
+        const username = res?.loginId ?? res?.username;
+        if (username) {
+          setUser({ username });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          authApi.logout();
+          localStorage.removeItem('snm_current_user');
+          setUser(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authMode, setAuthMode] = useState('login'); // 'login' | 'signup'
   const [authForm, setAuthForm] = useState({
@@ -1673,6 +1701,32 @@ useEffect(() => {
   const mainRef = useRef(null);
 
   const triggerToast = (msg) => setToast({ id: Date.now(), text: msg });
+
+  useEffect(() => {
+    if (!user) {
+      setWatchlistCodes([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    watchlistApi.list()
+      .then((res) => {
+        if (cancelled) return;
+
+        const codes = (res.items || []).map((item) => item.stockCode);
+        setWatchlistCodes(codes);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.error('관심 종목 목록 조회 실패:', error);
+        triggerToast('관심 종목 목록을 불러오지 못했습니다.');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   useEffect(() => {
     if (!toast) return undefined;
@@ -1823,7 +1877,7 @@ useEffect(() => {
     // 가짜 데이터에 있는 종목은 그 정보(시세 등)를 그대로 보여 줌
     const remote =
       remoteStockResult && remoteStockResult.q.toLowerCase() === q ? remoteStockResult.items : null;
-    
+
       // const matchedStocks = remote
       // ? remote.map((item) => allStocks.find((st) => st.code === item.stockCode) || toUiStock(item))
       // : allStocks.filter((st) => matchStockByQuery(st, q)).slice(0, 5);
@@ -1845,7 +1899,7 @@ useEffect(() => {
         : stock;
     })
   : allStocks.filter((st) => matchStockByQuery(st, q)).slice(0, 5);
-  
+
 
     const matchedArticles = allArticles
       .filter((art) => {
@@ -2126,37 +2180,98 @@ useEffect(() => {
   };
 
   // 관심종목 추가·삭제·토글
-  const handleAddWatchlist = (code, candidate = null) => {
+  // const handleAddWatchlist = (code, candidate = null) => {
+  //   if (!user) {
+  //     requireLogin('🔒 관심종목 추가는 로그인이 필요합니다.');
+  //     return false;
+  //   }
+  //   const stock = stockByCode(code) || candidate;
+  //   if (!stock) return false;
+  //   if (watchlistCodes.includes(code)) {
+  //     triggerToast(`이미 관심종목에 등록된 종목입니다: ${stock.name}`);
+  //     return false;
+  //   }
+  //   setWatchlistCodes((prev) => [code, ...prev]);
+  //   triggerToast(`★ ${stock.name}(${stock.code}) 종목을 관심종목에 추가했습니다.`);
+  //   return true;
+  // };
+  const handleAddWatchlist = async (code, candidate = null) => {
     if (!user) {
-      requireLogin('🔒 관심종목 추가는 로그인이 필요합니다.');
+      requireLogin('관심종목 추가는 로그인이 필요합니다.');
       return false;
     }
+
     const stock = stockByCode(code) || candidate;
     if (!stock) return false;
+
     if (watchlistCodes.includes(code)) {
       triggerToast(`이미 관심종목에 등록된 종목입니다: ${stock.name}`);
       return false;
     }
-    setWatchlistCodes((prev) => [code, ...prev]);
-    triggerToast(`★ ${stock.name}(${stock.code}) 종목을 관심종목에 추가했습니다.`);
-    return true;
+
+    try {
+      await watchlistApi.add(code);
+
+      setWatchlistCodes((prev) =>
+        prev.includes(code) ? prev : [code, ...prev]
+      );
+
+      triggerToast(`★ ${stock.name}(${code}) 관심종목에 추가했습니다.`);
+      return true;
+    } catch (error) {
+      console.error('관심종목 등록 실패:', error);
+      triggerToast('관심종목 등록에 실패했습니다.');
+      return false;
+    }
   };
 
-  const handleRemoveWatchlist = (code) => {
+  // const handleRemoveWatchlist = (code) => {
+  //   if (!user) {
+  //     requireLogin('🔒 관심종목 삭제는 로그인이 필요합니다.');
+  //     return;
+  //   }
+  //   const stock = stockByCode(code);
+  //   setWatchlistCodes((prev) => prev.filter((c) => c !== code));
+  //   triggerToast(`☆ ${stock?.name ?? code} 종목을 관심종목에서 삭제했습니다.`);
+  // };
+  const handleRemoveWatchlist = async (code) => {
     if (!user) {
-      requireLogin('🔒 관심종목 삭제는 로그인이 필요합니다.');
+      requireLogin('관심종목 삭제는 로그인이 필요합니다.');
       return;
     }
+
     const stock = stockByCode(code);
-    setWatchlistCodes((prev) => prev.filter((c) => c !== code));
-    triggerToast(`☆ ${stock?.name ?? code} 종목을 관심종목에서 삭제했습니다.`);
+
+    try {
+      await watchlistApi.remove(code);
+
+      setWatchlistCodes((prev) =>
+        prev.filter((c) => c !== code)
+      );
+
+      triggerToast(`☆ ${stock?.name ?? code} 관심종목에서 삭제했습니다.`);
+    } catch (error) {
+      console.error('관심종목 삭제 실패:', error);
+      triggerToast('관심종목 삭제에 실패했습니다.');
+    }
   };
 
-  const handleToggleWatchlist = (code, candidate = null) => {
+  // const handleToggleWatchlist = (code, candidate = null) => {
+  //   if (isInWatchlist(code)) {
+  //     handleRemoveWatchlist(code);
+  //   } else if (handleAddWatchlist(code, candidate) && candidate) {
+  //     ensureStock(candidate);
+  //   }
+  // };
+  const handleToggleWatchlist = async (code, candidate = null) => {
     if (isInWatchlist(code)) {
-      handleRemoveWatchlist(code);
-    } else if (handleAddWatchlist(code, candidate) && candidate) {
-      ensureStock(candidate);
+      await handleRemoveWatchlist(code);
+    } else {
+      const added = await handleAddWatchlist(code, candidate);
+
+      if (added && candidate) {
+        ensureStock(candidate);
+      }
     }
   };
 
@@ -2175,7 +2290,11 @@ useEffect(() => {
       );
       return;
     }
-    if (handleAddWatchlist(target.code)) setWatchAddQuery('');
+  //   if (handleAddWatchlist(target.code)) setWatchAddQuery('');
+  // };
+  handleAddWatchlist(target.code).then((added) => {
+    if (added) setWatchAddQuery('');
+  });
   };
 
   // 통합 검색 자동완성 선택 핸들러
@@ -2201,74 +2320,148 @@ useEffect(() => {
   };
 
   // 회원가입·로그인 제출 핸들러
-  const handleAuthSubmit = (e) => {
-    e.preventDefault();
-    const id = authForm.username.trim();
-    const pw = authForm.password.trim();
+  // const handleAuthSubmit = (e) => {
+  //   e.preventDefault();
+  //   const id = authForm.username.trim();
+  //   const pw = authForm.password.trim();
 
-    if (!id || !pw) {
+  //   if (!id || !pw) {
+  //     setAuthError('아이디와 비밀번호를 모두 입력해 주세요.');
+  //     return;
+  //   }
+
+  //   if (authMode === 'signup') {
+  //     if (id.length < 3 || id.length > 20) {
+  //       setAuthError('아이디는 3~20자로 입력해 주세요.');
+  //       return;
+  //     }
+  //     if (pw.length < 4) {
+  //       setAuthError('비밀번호는 4자 이상으로 입력해 주세요.');
+  //       return;
+  //     }
+  //     if (pw !== authForm.passwordConfirm.trim()) {
+  //       setAuthError('비밀번호 확인이 일치하지 않습니다.');
+  //       return;
+  //     }
+  //     if (usersDb[id]) {
+  //       setAuthError('이미 사용 중인 아이디입니다. 다른 아이디를 입력해 주세요.');
+  //       return;
+  //     }
+  //     const nextDb = { ...usersDb, [id]: pw };
+  //     setUsersDb(nextDb);
+  //     try {
+  //       localStorage.setItem('snm_users_db', JSON.stringify(nextDb));
+  //       localStorage.setItem('snm_current_user', id);
+  //     } catch {
+  //       // ignore storage error
+  //     }
+  //     setUser({ username: id });
+  //     setShowAuthModal(false);
+  //     setAuthForm({ username: '', password: '', passwordConfirm: '' });
+  //     setAuthError('');
+  //     triggerToast(`🎉 회원가입 완료! 환영합니다, ${id}님!`);
+  //     return;
+  //   }
+
+  //   if (!usersDb[id] || usersDb[id] !== pw) {
+  //     setAuthError(
+  //       '아이디 또는 비밀번호가 일치하지 않습니다. (계정이 없다면 회원가입 탭을 이용해 주세요)'
+  //     );
+  //     return;
+  //   }
+  //   try {
+  //     localStorage.setItem('snm_current_user', id);
+  //   } catch {
+  //     // ignore storage error
+  //   }
+  //   setUser({ username: id });
+  //   setShowAuthModal(false);
+  //   setAuthForm({ username: '', password: '', passwordConfirm: '' });
+  //   setAuthError('');
+  //   triggerToast(`👋 환영합니다, ${id}님!`);
+  // };
+  const handleAuthSubmit = async (e) => {
+    e.preventDefault();
+
+    const id = authForm.username.trim();
+    const pw = authForm.password;
+
+    if (!id || !pw.trim()) {
       setAuthError('아이디와 비밀번호를 모두 입력해 주세요.');
       return;
     }
 
-    if (authMode === 'signup') {
-      if (id.length < 3 || id.length > 20) {
-        setAuthError('아이디는 3~20자로 입력해 주세요.');
-        return;
+    try {
+      setAuthError('');
+
+      if (authMode === 'signup') {
+        if (id.length < 3 || id.length > 20) {
+          setAuthError('아이디는 3~20자로 입력해 주세요.');
+          return;
+        }
+
+        if (pw.length < 4) {
+          setAuthError('비밀번호는 4자 이상으로 입력해 주세요.');
+          return;
+        }
+
+        if (pw !== authForm.passwordConfirm) {
+          setAuthError('비밀번호 확인이 일치하지 않습니다.');
+          return;
+        }
+
+        // 실제 백엔드 회원가입
+        await authApi.signup(id, pw);
       }
-      if (pw.length < 4) {
-        setAuthError('비밀번호는 4자 이상으로 입력해 주세요.');
-        return;
+
+      // 실제 백엔드 로그인 및 JWT 토큰 저장
+      const result = await authApi.login(id, pw);
+
+      if (!result?.accessToken) {
+        throw new Error('로그인 토큰이 발급되지 않았습니다.');
       }
-      if (pw !== authForm.passwordConfirm.trim()) {
-        setAuthError('비밀번호 확인이 일치하지 않습니다.');
-        return;
-      }
-      if (usersDb[id]) {
-        setAuthError('이미 사용 중인 아이디입니다. 다른 아이디를 입력해 주세요.');
-        return;
-      }
-      const nextDb = { ...usersDb, [id]: pw };
-      setUsersDb(nextDb);
-      try {
-        localStorage.setItem('snm_users_db', JSON.stringify(nextDb));
-        localStorage.setItem('snm_current_user', id);
-      } catch {
-        // ignore storage error
-      }
+
+      localStorage.setItem('snm_current_user', id);
+
       setUser({ username: id });
       setShowAuthModal(false);
-      setAuthForm({ username: '', password: '', passwordConfirm: '' });
-      setAuthError('');
-      triggerToast(`🎉 회원가입 완료! 환영합니다, ${id}님!`);
-      return;
-    }
 
-    if (!usersDb[id] || usersDb[id] !== pw) {
+      setAuthForm({
+        username: '',
+        password: '',
+        passwordConfirm: '',
+      });
+
+      setAuthError('');
+
+      triggerToast(`👋 환영합니다, ${id}님!`);
+    } catch (error) {
+      console.error('인증 API 오류:', error);
       setAuthError(
-        '아이디 또는 비밀번호가 일치하지 않습니다. (계정이 없다면 회원가입 탭을 이용해 주세요)'
+        authMode === 'signup'
+          ? '회원가입 또는 로그인에 실패했습니다. 입력 정보와 서버 상태를 확인해 주세요.'
+          : '로그인에 실패했습니다. 아이디와 비밀번호를 확인해 주세요.'
       );
-      return;
     }
-    try {
-      localStorage.setItem('snm_current_user', id);
-    } catch {
-      // ignore storage error
-    }
-    setUser({ username: id });
-    setShowAuthModal(false);
-    setAuthForm({ username: '', password: '', passwordConfirm: '' });
-    setAuthError('');
-    triggerToast(`👋 환영합니다, ${id}님!`);
   };
 
+  // const handleLogout = () => {
+  //   try {
+  //     localStorage.removeItem('snm_current_user');
+  //   } catch {
+  //     // ignore storage error
+  //   }
+  //   setUser(null);
+  //   triggerToast('로그아웃되었습니다.');
+  // };
   const handleLogout = () => {
-    try {
-      localStorage.removeItem('snm_current_user');
-    } catch {
-      // ignore storage error
-    }
+    authApi.logout();
+
+    localStorage.removeItem('snm_current_user');
+
     setUser(null);
+    setWatchlistCodes([]);
+
     triggerToast('로그아웃되었습니다.');
   };
 
@@ -3382,7 +3575,18 @@ useEffect(() => {
                   ))}
                 </div>
               </div>
-              <MentionTrendChart series={trendSeries} plotHeight={250} />
+              {/* <MentionTrendChart series={trendSeries} plotHeight={250} /> */}
+              {mentionLoading ? (
+  <div className="empty-text">
+    언급량 데이터를 불러오는 중...
+  </div>
+) : mentionError ? (
+  <div className="empty-text">
+    언급량 데이터를 불러오지 못했습니다.
+  </div>
+) : (
+  <MentionTrendChart series={trendSeries} plotHeight={250} />
+)}
             </div>
 
             <div className="dashboard-grid">
