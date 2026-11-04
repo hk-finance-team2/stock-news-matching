@@ -278,7 +278,7 @@ Swagger(http://localhost:8080/swagger-ui.html)에서:
   - 백엔드는 Docker, AI 서버는 내 PC에서 직접 켰다면 `.env`에 `AI_SERVER_URL_IN_DOCKER=http://host.docker.internal:8000`, AI 서버는 `--host 0.0.0.0`
 
 - **DB 접속 (내 PC에서 Python 실행 시):** 호스트 `localhost`, 포트 `3308`, DB `stocknews`, 계정은 `.env`의 `DB_USERNAME`·`DB_PASSWORD`
-  - 나중에 AI 서버도 Docker로 묶으면 그 안에서는 호스트 `db`, 포트 `3306`
+  - AI를 Docker로 켜면(4-3절) 그 안에서는 호스트 `db`, 포트 `3306`
 - **어느 DB에 저장하나:** 팀 Docker DB(`localhost:3308`, `stocknews`)에 저장해야 백엔드가 읽을 수 있습니다. 수업용 DB(3306)나 각자 설치한 MySQL에 저장하면 백엔드·프론트에서 보이지 않습니다.
 - **어떤 계정으로:** `.env`의 앱 전용 계정(`DB_USERNAME`). 관리자 계정(root)은 쓰지 않습니다. (`.env.example`의 "root 금지"는 이 뜻이고, MariaDB를 쓰지 말라는 뜻이 아닙니다)
 - **SQL로 할 수 있는 것 / 백엔드에 요청할 것:**

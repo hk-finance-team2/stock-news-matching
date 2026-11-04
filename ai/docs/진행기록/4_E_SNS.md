@@ -135,3 +135,11 @@
 - SNS 는 PR #53 으로 이미 병합됨. 그 뒤 수정은 새 브랜치 `feature/ai-sns-hardening` 으로 올림
 - 백엔드1의 Docker 프로필(`ai`, `ai-api`, `full`)이 main 에 먼저 들어가서, 내가 만든 `ai/Dockerfile`·`.dockerignore`·compose 서비스는 버리고 main 것을 씀. compose 에는 비용 기록을 두 상자가 같이 쓰도록 `ai-logs` 볼륨만 추가
 - 시험: `python -m tests` 는 Docker 가 꺼져 있어 DB 시험 2개(`test_step3_save`, `test_sns_db`)가 연결 실패. 이 둘은 main 합치기 전 수정 코드 기준으로 통과. 볼륨 설정은 `docker compose config` 만 확인하고 실제로 켜지 않음
+
+## 내 PC 전체 확인 (2026-11-04 14:2x KST, 사용자 지시)
+
+- Docker 소켓 오류 재발(14:12), `run`·`docker-secrets-engine` 폴더 이름만 바꿔 복구 (`*.bak-20261104-141928`). 원인 모름
+- `python -m tests` 27/27 (DB 포함, 네이버·LLM 호출 없음). 위 "DB 시험 2개 실패" 는 이 시험으로 해소
+- `python -m hk_llm.run --check`: RSS 1,108건, 실패 피드 0, 새 기사 520건 `LISTED` 저장 (비용 0, 자동 실행 때 요약 대상). 백엔드 `Status` 시험 통과
+- 안 한 것: 실제 네이버·LLM 호출, 자동 실행 장시간, Docker 프로필 `ai` 실행, 백엔드 전체 시험, 프론트 실행
+- 확인 필요: 열린 PR #54 가 같은 파일을 고침. SNS 글 보관을 7일로 하고 근거를 네이버 약관 7.3 으로 적음. 이 브랜치는 31일이라 합칠 때 정함. 약관 원문은 직접 안 읽음
