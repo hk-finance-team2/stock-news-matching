@@ -175,6 +175,7 @@ function RatePill({ rate, size = 'md' }) {
 
 function SentimentBadge({ sentiment }) {
   const norm = String(sentiment || '').toUpperCase();
+  if (!norm) return null; // 감성을 판단하지 않은 글 (제목만 연결한 기사 등): 배지를 띄우지 않음
   if (norm === 'POSITIVE' || norm === '긍정') {
     return <span className="trend-badge trend-up">호재 · 긍정</span>;
   }
@@ -1037,6 +1038,10 @@ INITIAL_WATCHLIST_CODES[0] || allStocks[0]?.code || '005930'
           </div>
         </div>
         <ul className="summary-lines">
+          {article.summary.length === 0 && (
+            // AI 활용 금지 언론사 기사는 본문을 AI에 넣지 않아 요약이 없음 (2026-11-05 결정)
+            <li>AI 요약 없음 · 원문 보기로 확인해 주세요</li>
+          )}
           {article.summary.map((line, idx) => (
             <li key={idx}>{line}</li>
           ))}
