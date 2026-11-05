@@ -2129,17 +2129,78 @@ useEffect(() => {
       });
   }, [allStocks, stockListQuery, stockListMarket, stockListSort]);
 
-  // 홈 우측 [🔥 오늘의 이슈 종목 TOP 7] 정렬 목록
-  const homeRankedStocks = useMemo(() => {
-    const list = [...allStocks];
-    if (homeRankFilter === 'up') {
-      return list.sort((a, b) => (b.changeRate ?? -999) - (a.changeRate ?? -999)).slice(0, 7);
-    }
-    if (homeRankFilter === 'down') {
-      return list.sort((a, b) => (a.changeRate ?? 999) - (b.changeRate ?? 999)).slice(0, 7);
-    }
-    return list.sort((a, b) => b.todayMatchedCount - a.todayMatchedCount).slice(0, 7);
-  }, [allStocks, homeRankFilter]);
+  // // 홈 우측 [🔥 오늘의 이슈 종목 TOP 7] 정렬 목록
+  // const homeRankedStocks = useMemo(() => {
+  //   const list = [...allStocks];
+  //   if (homeRankFilter === 'up') {
+  //     return list.sort((a, b) => (b.changeRate ?? -999) - (a.changeRate ?? -999)).slice(0, 7);
+  //   }
+  //   if (homeRankFilter === 'down') {
+  //     return list.sort((a, b) => (a.changeRate ?? 999) - (b.changeRate ?? 999)).slice(0, 7);
+  //   }
+  //   return list.sort((a, b) => b.todayMatchedCount - a.todayMatchedCount).slice(0, 7);
+  // }, [allStocks, homeRankFilter]);
+// 오늘의 이슈 종목 API 데이터
+const [issueStocks, setIssueStocks] = useState([]);
+
+useEffect(() => {
+  const controller = new AbortController();
+
+  stockApi.issues({ limit: 7 }, { signal: controller.signal })
+    .then((res) => {
+      if (!controller.signal.aborted) {
+        setIssueStocks(res.items || []);
+      }
+    })
+    .catch((err) => {
+      if (err.name !== 'AbortError') {
+        console.error('이슈 종목 API 조회 실패:', err);
+      }
+    });
+
+  return () => controller.abort();
+}, []);
+// 홈 우측 [🔥 오늘의 이슈 종목 TOP 7]
+const homeRankedStocks = useMemo(() => {
+  const list = [...allStocks];
+
+  // 급상승
+  if (homeRankFilter === 'up') {
+    return list
+      .sort((a, b) => (b.changeRate ?? -999) - (a.changeRate ?? -999))
+      .slice(0, 7);
+  }
+
+  // 급하락
+  if (homeRankFilter === 'down') {
+    return list
+      .sort((a, b) => (a.changeRate ?? 999) - (b.changeRate ?? 999))
+      .slice(0, 7);
+  }
+
+  // 실제 이슈 API 데이터가 있으면 사용
+  if (issueStocks.length > 0) {
+    return issueStocks.slice(0, 7).map((item) => {
+      const stock = allStocks.find((s) => s.code === item.stockCode);
+
+      return {
+        ...stock,
+        code: item.stockCode,
+        name: item.stockName,
+        price: stock?.price ?? null,
+        changeRate: stock?.changeRate ?? null,
+        todayMatchedCount: item.articleCount ?? 0,
+      };
+    });
+  }
+
+  // 오늘 이슈 API가 비어 있으면 기존 종목 데이터 임시 표시
+  return list
+    .sort((a, b) => (b.todayMatchedCount ?? 0) - (a.todayMatchedCount ?? 0))
+    .slice(0, 7);
+
+}, [allStocks, homeRankFilter, issueStocks]);
+
 
   const currentComments = commentsByStock[selectedStockCode] || [];
 
@@ -2894,7 +2955,112 @@ useEffect(() => {
               </div>
             ) : (
               <div className="side-stack">
-                {/* [1순위 - 맨 위 배치] 🔥 오늘의 이슈 종목 TOP 7 */}
+                {/* [1순위 - 맨 위 배치] ⭐ 나의 관심 종목 요약 카드 */}
+                <div className="content-card">
+                  <div className="card-header">
+                    <div className="card-title">
+                      ⭐ 나의 관심 종목 <span className="count-badge num">{watchlistStocks.length}</span>
+                    </div>
+                    <button
+                      type="button"
+                      className="more-link"
+                      onClick={() => handleSwitchNav('watchlist')}
+                    >
+                      관심종목 뉴스·SNS 모아보기 &gt;
+                    </button>
+                  </div>
+
+                  <form className="watch-add-inline" onSubmit={handleWatchAddSubmit}>
+                    <div className="watch-input-wrap">
+                      <input
+                        type="text"
+                        className="watch-inline-input"
+                        placeholder="종목명·코드·별칭(삼전) 빠른 추가"
+                        aria-label="관심종목 검색 및 추가"
+                        value={watchAddQuery}
+                        onChange={(e) => setWatchAddQuery(e.target.value)}
+                      />
+                      {watchAddQuery && (
+                        <button
+                          type="button"
+                          className="clear-search-btn"
+                          aria-label="관심종목 검색어 지우기"
+                          onClick={() => setWatchAddQuery('')}
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                    <button type="submit" className="more-link2 active">
+                      + 추가
+                    </button>
+                  </form>
+
+                  {watchlistStocks.length === 0 ? (
+                    <div className="empty-text">등록된 관심 종목이 없습니다.</div>
+                  ) : (
+                    <table className="stock-table compact-table">
+                      <thead>
+                        <tr>
+                          <th>종목명</th>
+                          <th className="num-col">현재가</th>
+                          <th className="num-col">등락률</th>
+                          <th className="num-col">삭제</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {watchlistStocks.map((st) => {
+                          const stHasPrice = st.price !== null && st.price !== undefined;
+                          const tone = rateTone(st.changeRate);
+                          return (
+                            <tr
+                              key={st.code}
+                              tabIndex={0}
+                              onClick={() => navigateToStockDetail(st.code, 'summary')}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  navigateToStockDetail(st.code, 'summary');
+                                }
+                              }}
+                            >
+                              <td>
+                                <strong>{st.name}</strong>
+                                <div className="stock-meta num">오늘 {st.todayMatchedCount}건</div>
+                              </td>
+                              <td className="num-col num">
+                                {stHasPrice
+                                  ? `${st.price.toLocaleString()}원`
+                                  : `${st.todayMatchedCount}건`}
+                              </td>
+                              <td className={`num-col num ${tone}`}>
+                                {stHasPrice
+                                  ? formatRate(st.changeRate)
+                                  // : `긍정 ${st.sentimentRatio.positive}%`}
+                                  : '-'}
+                              </td>
+                              <td className="num-col">
+                                <button
+                                  type="button"
+                                  className="remove-btn"
+                                  aria-label={`${st.name} 관심종목에서 삭제`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRemoveWatchlist(st.code);
+                                  }}
+                                >
+                                  ✕
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+
+                {/* [2순위 - 아래 배치] 🔥 오늘의 이슈 종목 TOP 7 */}
                 <div className="content-card">
                   <div className="card-header">
                     <div className="card-title">🔥 오늘의 이슈 종목 TOP 7</div>
@@ -2932,7 +3098,7 @@ useEffect(() => {
                         <th className="num-col">매칭</th>
                       </tr>
                     </thead>
-                    <tbody>
+                    {/* <tbody>
                       {homeRankedStocks.map((st, idx) => {
                         const stHasPrice = st.price !== null && st.price !== undefined;
                         const tone = rateTone(st.changeRate);
@@ -2968,7 +3134,58 @@ useEffect(() => {
                           </tr>
                         );
                       })}
-                    </tbody>
+                    </tbody> */}
+                    <tbody>
+                    {homeRankFilter === 'issue' && issueStocks.length === 0 && (
+  <tr>
+    <td colSpan={4} className="empty-text">
+      오늘 집계된 이슈가 없어 예시 종목 순위를 표시하고 있습니다.
+    </td>
+  </tr>
+)}
+
+  {homeRankedStocks.map((st, idx) => {
+    const stHasPrice = st.price !== null && st.price !== undefined;
+    const tone = rateTone(st.changeRate);
+    const rankClass = idx < 3 ? `rank-${idx + 1}` : '';
+
+    return (
+      <tr
+        key={st.code}
+        tabIndex={0}
+        aria-label={`${idx + 1}위 ${st.name} 종목 상세로 이동`}
+        onClick={() => navigateToStockDetail(st.code, 'summary')}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            navigateToStockDetail(st.code, 'summary');
+          }
+        }}
+      >
+        <td>
+          <span className={`rank-badge num ${rankClass}`}>
+            {idx + 1}
+          </span>
+          <strong>{st.name}</strong>
+        </td>
+
+        <td className="num-col num">
+          {stHasPrice ? `${st.price.toLocaleString()}원` : '-'}
+        </td>
+
+        <td className={`num-col num ${tone}`}>
+          {stHasPrice && st.changeRate != null
+            ? formatRate(st.changeRate)
+            : '-'}
+        </td>
+
+        <td className="num-col num">
+          <strong>{st.todayMatchedCount}건</strong>
+        </td>
+      </tr>
+    );
+  })}
+</tbody>
                   </table>
 
                   <div className="card-footer-link">
