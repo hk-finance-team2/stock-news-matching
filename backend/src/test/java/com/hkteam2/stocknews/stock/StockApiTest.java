@@ -142,6 +142,19 @@ class StockApiTest extends ApiTestSupport {
     }
 
     @Test
+    void 감성을_판단하지_않은_연결은_감성_비율에서_빠진다() throws Exception {
+        // V12: AI 활용 금지 언론사 기사는 제목만으로 연결하고 감성은 NULL (중립으로 세면 비율이 왜곡됨)
+        link(insertArticle("좋은 소식", "NEWS", "DONE", today(1)), KIA, "POSITIVE", null, true);
+        link(insertArticle("제목만 연결한 기사", "NEWS", "DONE", today(2)), KIA, null, null, true);
+
+        mvc.perform(get("/api/stocks/{code}/summary", KIA))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.sentiment.articleCount").value(1))
+                .andExpect(jsonPath("$.sentiment.positive").value(100))
+                .andExpect(jsonPath("$.sentiment.neutral").value(0));
+    }
+
+    @Test
     void AI가_만든_종합_요약이_있으면_같이_나온다() throws Exception {
         jdbc.update("""
                 INSERT INTO stock_daily_summary (stock_code, summary_date, news_summary, sns_summary, generated_at)
