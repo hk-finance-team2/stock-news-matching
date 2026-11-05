@@ -19,10 +19,11 @@ from langchain_core.callbacks import get_usage_metadata_callback
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 
 from hk_llm.core.config import KST, LOG_DIR
 from hk_llm.core.db import get_engine, to_db
+from hk_llm.core.press_policy import title_only_presses
 from hk_llm.core.util import get_logger
 
 MODEL = "gpt-5.4-nano"  # 실측 1건 약 $0.0006 → 하루 1,000건 월 약 $19 (예산 5만원 안)
@@ -200,7 +201,9 @@ def summarize_articles(engine=None, limit=BATCH, model=MODEL, since=None):
     with engine.connect() as conn:
         rows = conn.execute(text("""SELECT article_id, title, body, retry_count FROM article
                                     WHERE status = 'FETCHED' AND source_type = 'NEWS' AND published_at >= :since
-                                    ORDER BY article_id DESC LIMIT :n"""), {"since": since, "n": limit}).all()
+                                      AND press NOT IN :skip
+                                    ORDER BY article_id DESC LIMIT :n""").bindparams(bindparam("skip", expanding=True)),
+                            {"since": since, "n": limit, "skip": title_only_presses()}).all()  # AI 활용 금지 언론사는 LLM 에 안 보냄
     done = failed = 0
     for r in rows:
         try:
