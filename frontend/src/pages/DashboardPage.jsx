@@ -312,10 +312,17 @@ function ArticleList({ articles, selectedId, onSelect, onSelectStock }) {
           .sort((a, b) => b.relevance - a.relevance)
           .slice(0, 3);
 
+        const sentBorderClass =
+          art.sentiment === 'POSITIVE' || art.sentiment === '호재'
+            ? 'sent-border-pos'
+            : art.sentiment === 'NEGATIVE' || art.sentiment === '악재'
+              ? 'sent-border-neg'
+              : 'sent-border-neu';
+
         return (
           <article
             key={art.id}
-            className={`article-item ${selectedId === art.id ? 'selected' : ''}`}
+            className={`article-item ${sentBorderClass} ${selectedId === art.id ? 'selected' : ''}`}
             role="button"
             tabIndex={0}
             aria-label={`${art.title} 상세 보기`}
@@ -328,12 +335,9 @@ function ArticleList({ articles, selectedId, onSelect, onSelectStock }) {
             }}
           >
             <div className="article-top-meta">
-              <div className="article-meta-left">
-                <SentimentBadge sentiment={art.sentiment} />
-                <span className={`source-pill ${isSns ? 'sns' : 'news'}`}>
-                  {isSns ? 'SNS' : 'NEWS'}
-                </span>
-              </div>
+              <span className={`source-pill ${isSns ? 'sns' : 'news'}`}>
+                {isSns ? 'SNS' : 'NEWS'}
+              </span>
               <span className="article-press-time num">
                 {art.press} · {art.publishedAt}
               </span>
@@ -341,22 +345,25 @@ function ArticleList({ articles, selectedId, onSelect, onSelectStock }) {
 
             <h4 className="article-title">{art.title}</h4>
 
-            <div className="article-stock-tags">
-              {topStocks.map((rel) => (
-                <button
-                  key={rel.code}
-                  type="button"
-                  className="matched-stock-tag num"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onSelectStock(rel.code);
-                  }}
-                  title={`${rel.name} 종목 상세 화면으로 이동 (${rel.relationType} · 관련도 ${rel.relevance}%)`}
-                >
-                  #{rel.name} <span>{rel.relevance}%</span>
-                </button>
-              ))}
-              {isSns && <span className="sns-mini-tag">⚠️ 참고용 · 확인되지 않은 정보</span>}
+            <div className="article-bottom-row">
+              <div className="article-stock-tags">
+                {topStocks.map((rel) => (
+                  <button
+                    key={rel.code}
+                    type="button"
+                    className="matched-stock-tag num"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelectStock(rel.code);
+                    }}
+                    title={`${rel.name} 종목 상세 화면으로 이동 (${rel.relationType} · 관련도 ${rel.relevance}%)`}
+                  >
+                    #{rel.name} <span>{rel.relevance}%</span>
+                  </button>
+                ))}
+                {isSns && <span className="sns-mini-tag">⚠️ 참고용 · 확인되지 않은 정보</span>}
+              </div>
+              <SentimentBadge sentiment={art.sentiment} />
             </div>
           </article>
         );
@@ -620,60 +627,60 @@ function ArticleDetail({
     );
   }, [article, preferredStockCode, sortedRelatedStocks]);
 
-//   // 상세 패널 하단 댓글을 작성할 대상 종목 (기본값: 현재 선택 종목이 매칭 종목에 있으면 해당 종목, 아니면 최상위 관련도 종목)
-//   // const [commentTargetCode, setCommentTargetCode] = useState(
-//   //   preferredStockCode || sortedRelatedStocks[0]?.code || '005930'
-//   // );
-// // 주식 가격 차트 데이터
-const [selectedStockCode, setSelectedStockCode] = useState(
-INITIAL_WATCHLIST_CODES[0] || allStocks[0]?.code || '005930'
-);
+  //   // 상세 패널 하단 댓글을 작성할 대상 종목 (기본값: 현재 선택 종목이 매칭 종목에 있으면 해당 종목, 아니면 최상위 관련도 종목)
+  //   // const [commentTargetCode, setCommentTargetCode] = useState(
+  //   //   preferredStockCode || sortedRelatedStocks[0]?.code || '005930'
+  //   // );
+  // // 주식 가격 차트 데이터
+  const [selectedStockCode, setSelectedStockCode] = useState(
+    INITIAL_WATCHLIST_CODES[0] || allStocks[0]?.code || '005930'
+  );
 
-// // 주식 가격 차트 상태
-// const [priceChartUnit, setPriceChartUnit] = useState('day');
-// const [priceChartData, setPriceChartData] = useState([]);
-// const [priceChartLoading, setPriceChartLoading] = useState(false);
-// const [priceChartError, setPriceChartError] = useState(false);
+  // // 주식 가격 차트 상태
+  // const [priceChartUnit, setPriceChartUnit] = useState('day');
+  // const [priceChartData, setPriceChartData] = useState([]);
+  // const [priceChartLoading, setPriceChartLoading] = useState(false);
+  // const [priceChartError, setPriceChartError] = useState(false);
 
-// // 여기에 기존 차트 조회 useEffect 코드
-// useEffect(() => {
-//   if (!selectedStockCode) return undefined;
+  // // 여기에 기존 차트 조회 useEffect 코드
+  // useEffect(() => {
+  //   if (!selectedStockCode) return undefined;
 
-//   const controller = new AbortController();
-//   setPriceChartLoading(true);
-//   setPriceChartError(false);
+  //   const controller = new AbortController();
+  //   setPriceChartLoading(true);
+  //   setPriceChartError(false);
 
-//   quoteApi.chart(selectedStockCode, priceChartUnit, {
-//     signal: controller.signal,
-//   })
-//     .then((res) => {
-//       setPriceChartData(res.items || []);
-//     })
-//     .catch((err) => {
-//       if (err.name !== 'AbortError') {
-//         console.error('주식 차트 조회 실패:', err);
-//         setPriceChartData([]);
-//         setPriceChartError(true);
-//       }
-//     })
-//     .finally(() => {
-//       if (!controller.signal.aborted) {
-//         setPriceChartLoading(false);
-//       }
-//     });
+  //   quoteApi.chart(selectedStockCode, priceChartUnit, {
+  //     signal: controller.signal,
+  //   })
+  //     .then((res) => {
+  //       setPriceChartData(res.items || []);
+  //     })
+  //     .catch((err) => {
+  //       if (err.name !== 'AbortError') {
+  //         console.error('주식 차트 조회 실패:', err);
+  //         setPriceChartData([]);
+  //         setPriceChartError(true);
+  //       }
+  //     })
+  //     .finally(() => {
+  //       if (!controller.signal.aborted) {
+  //         setPriceChartLoading(false);
+  //       }
+  //     });
 
-//   return () => controller.abort();
-// }, [selectedStockCode, priceChartUnit]);
+  //   return () => controller.abort();
+  // }, [selectedStockCode, priceChartUnit]);
 
-//   useEffect(() => {
-//     if (!article) return;
-//     const hasPreferred = sortedRelatedStocks.some((r) => r.code === preferredStockCode);
-//     setCommentTargetCode(
-//       hasPreferred
-//         ? preferredStockCode
-//         : sortedRelatedStocks[0]?.code || preferredStockCode || '005930'
-//     );
-//   }, [article, preferredStockCode, sortedRelatedStocks]);
+  //   useEffect(() => {
+  //     if (!article) return;
+  //     const hasPreferred = sortedRelatedStocks.some((r) => r.code === preferredStockCode);
+  //     setCommentTargetCode(
+  //       hasPreferred
+  //         ? preferredStockCode
+  //         : sortedRelatedStocks[0]?.code || preferredStockCode || '005930'
+  //     );
+  //   }, [article, preferredStockCode, sortedRelatedStocks]);
 
   if (!article) {
     return (
@@ -792,8 +799,8 @@ INITIAL_WATCHLIST_CODES[0] || allStocks[0]?.code || '005930'
         </ul>
         {/* <SentimentBar ratio={articleSentimentRatio} /> */}
         {articleSentimentRatio && (
-  <SentimentBar ratio={articleSentimentRatio} />
-)}
+          <SentimentBar ratio={articleSentimentRatio} />
+        )}
         <div className="llm-notice">
           🤖 AI(LLM) 요약 및 감성 분석 결과는 원문과 차이가 있을 수 있습니다.
         </div>
@@ -824,11 +831,11 @@ INITIAL_WATCHLIST_CODES[0] || allStocks[0]?.code || '005930'
 
                   const st = quote
                     ? {
-                        ...stock,
-                        price: quote.price,
-                        changeRate: quote.changeRate,
-                        changeAmount: quote.changeAmount,
-                      }
+                      ...stock,
+                      price: quote.price,
+                      changeRate: quote.changeRate,
+                      changeAmount: quote.changeAmount,
+                    }
                     : stock;
 
                   const hasPrice = st?.price != null;
@@ -924,7 +931,7 @@ INITIAL_WATCHLIST_CODES[0] || allStocks[0]?.code || '005930'
                   <div className="evidence-quote">
                     {/* <strong>근거 원문:</strong> {rel.evidence} */}
                     <strong>근거 원문:</strong>{' '}
-{rel.evidence?.trim() || ''}
+                    {rel.evidence?.trim() || ''}
                   </div>
                 </div>
               ))}
@@ -1328,70 +1335,70 @@ export default function DashboardPage() {
   // const [apiStocks, setApiStocks] = useState([]);
   // const allStocks = useMemo(() => [...mockStocks, ...apiStocks], [mockStocks, apiStocks]);
   const [apiStocks, setApiStocks] = useState([]);
-const [liveQuotes, setLiveQuotes] = useState({});
+  const [liveQuotes, setLiveQuotes] = useState({});
 
-const allStocks = useMemo(
-  () =>
-    [...mockStocks, ...apiStocks].map((stock) => {
-      const quote = liveQuotes[stock.code];
+  const allStocks = useMemo(
+    () =>
+      [...mockStocks, ...apiStocks].map((stock) => {
+        const quote = liveQuotes[stock.code];
 
-      if (!quote) return stock;
+        if (!quote) return stock;
 
-      return {
-        ...stock,
-        price: quote.price,
-        changeRate: quote.changeRate,
-        changeAmount: quote.changeAmount,
-      };
-    }),
-  [mockStocks, apiStocks, liveQuotes]
-);
+        return {
+          ...stock,
+          price: quote.price,
+          changeRate: quote.changeRate,
+          changeAmount: quote.changeAmount,
+        };
+      }),
+    [mockStocks, apiStocks, liveQuotes]
+  );
 
-// // 현재 선택한 종목과 관심종목의 실제 시세 조회
-// useEffect(() => {
-//   const codes = [...new Set([selectedStockCode, ...watchlistCodes].filter(Boolean))];
-//   let cancelled = false;
+  // // 현재 선택한 종목과 관심종목의 실제 시세 조회
+  // useEffect(() => {
+  //   const codes = [...new Set([selectedStockCode, ...watchlistCodes].filter(Boolean))];
+  //   let cancelled = false;
 
-//   Promise.allSettled(
-//     codes.map((code) => quoteApi.get(code))
-//   ).then((results) => {
-//     if (cancelled) return;
+  //   Promise.allSettled(
+  //     codes.map((code) => quoteApi.get(code))
+  //   ).then((results) => {
+  //     if (cancelled) return;
 
-//     const quotes = {};
+  //     const quotes = {};
 
-//     results.forEach((result, index) => {
-//       if (result.status === 'fulfilled' && result.value?.price != null) {
-//         quotes[codes[index]] = result.value;
-//       }
-//     });
+  //     results.forEach((result, index) => {
+  //       if (result.status === 'fulfilled' && result.value?.price != null) {
+  //         quotes[codes[index]] = result.value;
+  //       }
+  //     });
 
-//     setLiveQuotes((prev) => ({ ...prev, ...quotes }));
-//   });
+  //     setLiveQuotes((prev) => ({ ...prev, ...quotes }));
+  //   });
 
-//   return () => {
-//     cancelled = true;
-//   };
-// }, [selectedStockCode, watchlistCodes]);
+  //   return () => {
+  //     cancelled = true;
+  //   };
+  // }, [selectedStockCode, watchlistCodes]);
 
   // const allArticles = useMemo(() => normalizeArticles(ARTICLES_DATA), []);
   const [allArticles, setAllArticles] = useState([]);
 
-useEffect(() => {
-  const controller = new AbortController();
+  useEffect(() => {
+    const controller = new AbortController();
 
-  articleApi
-    .list({ page: 1, size: 100 }, { signal: controller.signal })
-    .then((res) => {
-      setAllArticles((res.items || []).map(toUiArticle));
-    })
-    .catch((err) => {
-      if (err.name !== 'AbortError') {
-        console.error('뉴스 API 조회 실패:', err);
-      }
-    });
+    articleApi
+      .list({ page: 1, size: 100 }, { signal: controller.signal })
+      .then((res) => {
+        setAllArticles((res.items || []).map(toUiArticle));
+      })
+      .catch((err) => {
+        if (err.name !== 'AbortError') {
+          console.error('뉴스 API 조회 실패:', err);
+        }
+      });
 
-  return () => controller.abort();
-}, []);
+    return () => controller.abort();
+  }, []);
 
   const initialSummaries = useMemo(() => normalizeSummaries(STOCK_SUMMARIES_DATA), []);
   const initialTrends = useMemo(() => normalizeMentionTrends(MENTION_TRENDS_DATA), []);
@@ -1422,145 +1429,145 @@ useEffect(() => {
   const [selectedStockCode, setSelectedStockCode] = useState(
     INITIAL_WATCHLIST_CODES[0] || allStocks[0]?.code || '005930'
   );
-//   // 주식 가격 차트 상태
-// const [priceChartUnit, setPriceChartUnit] = useState('day');
-// const [priceChartData, setPriceChartData] = useState([]);
-// const [priceChartLoading, setPriceChartLoading] = useState(false);
-// const [priceChartError, setPriceChartError] = useState(false);
+  //   // 주식 가격 차트 상태
+  // const [priceChartUnit, setPriceChartUnit] = useState('day');
+  // const [priceChartData, setPriceChartData] = useState([]);
+  // const [priceChartLoading, setPriceChartLoading] = useState(false);
+  // const [priceChartError, setPriceChartError] = useState(false);
 
-// // 선택한 종목의 실제 주가 차트 조회
-// useEffect(() => {
-//   if (!selectedStockCode) return undefined;
+  // // 선택한 종목의 실제 주가 차트 조회
+  // useEffect(() => {
+  //   if (!selectedStockCode) return undefined;
 
-//   const controller = new AbortController();
+  //   const controller = new AbortController();
 
-//   setPriceChartLoading(true);
-//   setPriceChartError(false);
+  //   setPriceChartLoading(true);
+  //   setPriceChartError(false);
 
-//   quoteApi.chart(selectedStockCode, priceChartUnit, {
-//     signal: controller.signal,
-//   })
-//     .then((res) => {
-//       setPriceChartData(res.items || []);
-//     })
-//     .catch((err) => {
-//       if (err.name !== 'AbortError') {
-//         console.error('주식 차트 조회 실패:', err);
-//         setPriceChartData([]);
-//         setPriceChartError(true);
-//       }
-//     })
-//     .finally(() => {
-//       if (!controller.signal.aborted) {
-//         setPriceChartLoading(false);
-//       }
-//     });
+  //   quoteApi.chart(selectedStockCode, priceChartUnit, {
+  //     signal: controller.signal,
+  //   })
+  //     .then((res) => {
+  //       setPriceChartData(res.items || []);
+  //     })
+  //     .catch((err) => {
+  //       if (err.name !== 'AbortError') {
+  //         console.error('주식 차트 조회 실패:', err);
+  //         setPriceChartData([]);
+  //         setPriceChartError(true);
+  //       }
+  //     })
+  //     .finally(() => {
+  //       if (!controller.signal.aborted) {
+  //         setPriceChartLoading(false);
+  //       }
+  //     });
 
-//   return () => controller.abort();
-// }, [selectedStockCode, priceChartUnit]);
+  //   return () => controller.abort();
+  // }, [selectedStockCode, priceChartUnit]);
 
   // 현재 선택한 종목과 관심종목의 실제 시세 조회
-useEffect(() => {
-  const codes = [...new Set([selectedStockCode, ...watchlistCodes].filter(Boolean))];
-  let cancelled = false;
+  useEffect(() => {
+    const codes = [...new Set([selectedStockCode, ...watchlistCodes].filter(Boolean))];
+    let cancelled = false;
 
-  Promise.allSettled(
-    codes.map((code) => quoteApi.get(code))
-  ).then((results) => {
-    if (cancelled) return;
+    Promise.allSettled(
+      codes.map((code) => quoteApi.get(code))
+    ).then((results) => {
+      if (cancelled) return;
 
-    const quotes = {};
+      const quotes = {};
 
-    results.forEach((result, index) => {
-      if (result.status === 'fulfilled' && result.value?.price != null) {
-        quotes[codes[index]] = result.value;
-      }
+      results.forEach((result, index) => {
+        if (result.status === 'fulfilled' && result.value?.price != null) {
+          quotes[codes[index]] = result.value;
+        }
+      });
+
+
+      setLiveQuotes((prev) => ({ ...prev, ...quotes }));
     });
 
-
-    setLiveQuotes((prev) => ({ ...prev, ...quotes }));
-  });
-
-  return () => {
-    cancelled = true;
-  };
-}, [selectedStockCode, watchlistCodes]);
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedStockCode, watchlistCodes]);
 
   const [selectedArticleId, setSelectedArticleId] = useState(null);
 
   const [articleDetails, setArticleDetails] = useState({});
-// 선택한 뉴스에 매칭된 종목의 실제 주가 조회
-// 선택한 뉴스에 매칭된 종목의 실제 주가 조회
-useEffect(() => {
-  if (!selectedArticleId) return;
+  // 선택한 뉴스에 매칭된 종목의 실제 주가 조회
+  // 선택한 뉴스에 매칭된 종목의 실제 주가 조회
+  useEffect(() => {
+    if (!selectedArticleId) return;
 
-  const article =
-    articleDetails[selectedArticleId] ||
-    allArticles.find((a) => String(a.id) === String(selectedArticleId));
+    const article =
+      articleDetails[selectedArticleId] ||
+      allArticles.find((a) => String(a.id) === String(selectedArticleId));
 
-  if (!article) return;
+    if (!article) return;
 
-  const codes = [
-    ...new Set(
-      (article.relatedStocks || [])
-        .map((stock) => stock.code)
-        .filter(Boolean)
-    ),
-  ];
+    const codes = [
+      ...new Set(
+        (article.relatedStocks || [])
+          .map((stock) => stock.code)
+          .filter(Boolean)
+      ),
+    ];
 
-  // 이미 조회한 종목은 다시 요청하지 않음
-  const missingCodes = codes.filter((code) => !liveQuotes[code]);
+    // 이미 조회한 종목은 다시 요청하지 않음
+    const missingCodes = codes.filter((code) => !liveQuotes[code]);
 
-  if (missingCodes.length === 0) return;
+    if (missingCodes.length === 0) return;
 
-  let cancelled = false;
+    let cancelled = false;
 
-  Promise.allSettled(
-    missingCodes.map((code) => quoteApi.get(code))
-  ).then((results) => {
-    if (cancelled) return;
+    Promise.allSettled(
+      missingCodes.map((code) => quoteApi.get(code))
+    ).then((results) => {
+      if (cancelled) return;
 
-    const quotes = {};
+      const quotes = {};
 
-    results.forEach((result, index) => {
-      if (result.status === 'fulfilled' && result.value?.price != null) {
-        quotes[missingCodes[index]] = result.value;
-      } else {
-        console.warn('주가 조회 실패:', missingCodes[index], result.reason);
+      results.forEach((result, index) => {
+        if (result.status === 'fulfilled' && result.value?.price != null) {
+          quotes[missingCodes[index]] = result.value;
+        } else {
+          console.warn('주가 조회 실패:', missingCodes[index], result.reason);
+        }
+      });
+
+      if (Object.keys(quotes).length > 0) {
+        setLiveQuotes((prev) => ({ ...prev, ...quotes }));
       }
     });
 
-    if (Object.keys(quotes).length > 0) {
-      setLiveQuotes((prev) => ({ ...prev, ...quotes }));
-    }
-  });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedArticleId, articleDetails, allArticles]);
 
-  return () => {
-    cancelled = true;
-  };
-}, [selectedArticleId, articleDetails, allArticles]);
+  useEffect(() => {
+    if (!selectedArticleId) return undefined;
 
-useEffect(() => {
-  if (!selectedArticleId) return undefined;
+    const controller = new AbortController();
 
-  const controller = new AbortController();
+    articleApi
+      .get(selectedArticleId, { signal: controller.signal })
+      .then((data) => {
+        setArticleDetails((prev) => ({
+          ...prev,
+          [selectedArticleId]: toUiArticle(data),
+        }));
+      })
+      .catch((err) => {
+        if (err.name !== 'AbortError') {
+          console.error('뉴스 상세 API 조회 실패:', err);
+        }
+      });
 
-  articleApi
-    .get(selectedArticleId, { signal: controller.signal })
-    .then((data) => {
-      setArticleDetails((prev) => ({
-        ...prev,
-        [selectedArticleId]: toUiArticle(data),
-      }));
-    })
-    .catch((err) => {
-      if (err.name !== 'AbortError') {
-        console.error('뉴스 상세 API 조회 실패:', err);
-      }
-    });
-
-  return () => controller.abort();
-}, [selectedArticleId]);
+    return () => controller.abort();
+  }, [selectedArticleId]);
 
   // 홈 우측 랭킹 탭 필터: 'issue'(매칭 급증) | 'up'(급상승) | 'down'(급하락)
   const [homeRankFilter, setHomeRankFilter] = useState('issue');
@@ -1579,50 +1586,50 @@ useEffect(() => {
   const [trendPeriod, setTrendPeriod] = useState('today'); // today | 7d | 30d
 
   // 백엔드 뉴스·SNS 언급량 데이터
-const [mentionSeries, setMentionSeries] = useState([]);
-const [mentionLoading, setMentionLoading] = useState(false);
-const [mentionError, setMentionError] = useState(false);
+  const [mentionSeries, setMentionSeries] = useState([]);
+  const [mentionLoading, setMentionLoading] = useState(false);
+  const [mentionError, setMentionError] = useState(false);
 
-useEffect(() => {
-  if (!selectedStockCode) return undefined;
+  useEffect(() => {
+    if (!selectedStockCode) return undefined;
 
-  const controller = new AbortController();
+    const controller = new AbortController();
 
-  setMentionSeries([]);
-  setMentionLoading(true);
-  setMentionError(false);
+    setMentionSeries([]);
+    setMentionLoading(true);
+    setMentionError(false);
 
-  stockApi.mentions(selectedStockCode, trendPeriod, {
-    signal: controller.signal,
-  })
-    .then((res) => {
-      if (controller.signal.aborted) return;
-
-      const series = (res.items || []).map((item) => ({
-        label:
-          trendPeriod === 'today'
-            ? item.time.slice(11, 16)
-            : item.time.slice(5, 10),
-        news: Number(item.newsCount || 0),
-        sns: Number(item.snsCount || 0),
-      }));
-
-      setMentionSeries(series);
+    stockApi.mentions(selectedStockCode, trendPeriod, {
+      signal: controller.signal,
     })
-    .catch((err) => {
-      if (controller.signal.aborted) return;
+      .then((res) => {
+        if (controller.signal.aborted) return;
 
-      console.error('언급량 API 조회 실패:', err);
-      setMentionError(true);
-    })
-    .finally(() => {
-      if (!controller.signal.aborted) {
-        setMentionLoading(false);
-      }
-    });
+        const series = (res.items || []).map((item) => ({
+          label:
+            trendPeriod === 'today'
+              ? item.time.slice(11, 16)
+              : item.time.slice(5, 10),
+          news: Number(item.newsCount || 0),
+          sns: Number(item.snsCount || 0),
+        }));
 
-  return () => controller.abort();
-}, [selectedStockCode, trendPeriod]);
+        setMentionSeries(series);
+      })
+      .catch((err) => {
+        if (controller.signal.aborted) return;
+
+        console.error('언급량 API 조회 실패:', err);
+        setMentionError(true);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setMentionLoading(false);
+        }
+      });
+
+    return () => controller.abort();
+  }, [selectedStockCode, trendPeriod]);
 
   // 뉴스·SNS 필터 및 정렬
   const [channelFilter, setChannelFilter] = useState('ALL'); // ALL | NEWS | SNS
@@ -1805,51 +1812,51 @@ useEffect(() => {
   const [remoteStockResult, setRemoteStockResult] = useState(null);
   const requestedSearchQuotes = useRef(new Set());
 
-useEffect(() => {
-  if (!remoteStockResult?.items?.length) return;
+  useEffect(() => {
+    if (!remoteStockResult?.items?.length) return;
 
-  const codes = remoteStockResult.items
-    .map((item) => item.stockCode)
-    .filter((code) => {
-      if (liveQuotes[code] || requestedSearchQuotes.current.has(code)) {
-        return false;
+    const codes = remoteStockResult.items
+      .map((item) => item.stockCode)
+      .filter((code) => {
+        if (liveQuotes[code] || requestedSearchQuotes.current.has(code)) {
+          return false;
+        }
+
+        requestedSearchQuotes.current.add(code);
+        return true;
+      });
+
+    if (codes.length === 0) return;
+
+    let cancelled = false;
+
+    Promise.allSettled(
+      codes.map((code) => quoteApi.get(code))
+    ).then((results) => {
+      if (cancelled) return;
+
+      const quotes = {};
+
+      results.forEach((result, index) => {
+        const code = codes[index];
+
+        if (result.status === 'fulfilled' && result.value?.price != null) {
+          quotes[code] = result.value;
+        } else {
+          requestedSearchQuotes.current.delete(code);
+        }
+      });
+
+      if (Object.keys(quotes).length > 0) {
+        setLiveQuotes((prev) => ({ ...prev, ...quotes }));
       }
-
-      requestedSearchQuotes.current.add(code);
-      return true;
     });
 
-  if (codes.length === 0) return;
-
-  let cancelled = false;
-
-  Promise.allSettled(
-    codes.map((code) => quoteApi.get(code))
-  ).then((results) => {
-    if (cancelled) return;
-
-    const quotes = {};
-
-    results.forEach((result, index) => {
-      const code = codes[index];
-
-      if (result.status === 'fulfilled' && result.value?.price != null) {
-        quotes[code] = result.value;
-      } else {
-        requestedSearchQuotes.current.delete(code);
-      }
-    });
-
-    if (Object.keys(quotes).length > 0) {
-      setLiveQuotes((prev) => ({ ...prev, ...quotes }));
-    }
-  });
-
-  return () => {
-    cancelled = true;
-    codes.forEach((code) => requestedSearchQuotes.current.delete(code));
-  };
-}, [remoteStockResult]);
+    return () => {
+      cancelled = true;
+      codes.forEach((code) => requestedSearchQuotes.current.delete(code));
+    };
+  }, [remoteStockResult]);
 
   useEffect(() => {
     const q = searchQuery.trim();
@@ -1878,27 +1885,27 @@ useEffect(() => {
     const remote =
       remoteStockResult && remoteStockResult.q.toLowerCase() === q ? remoteStockResult.items : null;
 
-      // const matchedStocks = remote
-      // ? remote.map((item) => allStocks.find((st) => st.code === item.stockCode) || toUiStock(item))
-      // : allStocks.filter((st) => matchStockByQuery(st, q)).slice(0, 5);
-      const matchedStocks = remote
-  ? remote.map((item) => {
-      const stock =
-        allStocks.find((st) => st.code === item.stockCode) ||
-        toUiStock(item);
+    // const matchedStocks = remote
+    // ? remote.map((item) => allStocks.find((st) => st.code === item.stockCode) || toUiStock(item))
+    // : allStocks.filter((st) => matchStockByQuery(st, q)).slice(0, 5);
+    const matchedStocks = remote
+      ? remote.map((item) => {
+        const stock =
+          allStocks.find((st) => st.code === item.stockCode) ||
+          toUiStock(item);
 
-      const quote = liveQuotes[item.stockCode];
+        const quote = liveQuotes[item.stockCode];
 
-      return quote
-        ? {
+        return quote
+          ? {
             ...stock,
             price: quote.price,
             changeRate: quote.changeRate,
             changeAmount: quote.changeAmount,
           }
-        : stock;
-    })
-  : allStocks.filter((st) => matchStockByQuery(st, q)).slice(0, 5);
+          : stock;
+      })
+      : allStocks.filter((st) => matchStockByQuery(st, q)).slice(0, 5);
 
 
     const matchedArticles = allArticles
@@ -2002,53 +2009,53 @@ useEffect(() => {
 
   // [화면 B] 개별 종목 상세(news / sns 탭) 전용 소식 필터링
   // 선택한 종목의 뉴스·SNS를 백엔드에서 직접 조회
-useEffect(() => {
-  if (
-    activeNav !== 'stock' ||
-    stockViewMode !== 'detail' ||
-    (stockTab !== 'news' && stockTab !== 'sns')
-  ) {
-    return;
-  }
+  useEffect(() => {
+    if (
+      activeNav !== 'stock' ||
+      stockViewMode !== 'detail' ||
+      (stockTab !== 'news' && stockTab !== 'sns')
+    ) {
+      return;
+    }
 
-  const controller = new AbortController();
-  const source = stockTab === 'sns' ? 'SNS' : 'NEWS';
+    const controller = new AbortController();
+    const source = stockTab === 'sns' ? 'SNS' : 'NEWS';
 
-  articleApi
-    .list(
-      {
-        stockCode: selectedStockCode,
-        source,
-        page: 1,
-        size: 30,
-      },
-      { signal: controller.signal }
-    )
-    .then((res) => {
-      const articles = (res.items || []).map(toUiArticle);
+    articleApi
+      .list(
+        {
+          stockCode: selectedStockCode,
+          source,
+          page: 1,
+          size: 30,
+        },
+        { signal: controller.signal }
+      )
+      .then((res) => {
+        const articles = (res.items || []).map(toUiArticle);
 
-      // 기존 뉴스는 유지하고, 새로 가져온 기사를 추가
-      // 같은 기사는 중복 저장하지 않음
-      setAllArticles((prev) => {
-        const merged = new Map(
-          prev.map((article) => [String(article.id), article])
-        );
+        // 기존 뉴스는 유지하고, 새로 가져온 기사를 추가
+        // 같은 기사는 중복 저장하지 않음
+        setAllArticles((prev) => {
+          const merged = new Map(
+            prev.map((article) => [String(article.id), article])
+          );
 
-        articles.forEach((article) => {
-          merged.set(String(article.id), article);
+          articles.forEach((article) => {
+            merged.set(String(article.id), article);
+          });
+
+          return [...merged.values()];
         });
-
-        return [...merged.values()];
+      })
+      .catch((err) => {
+        if (err.name !== 'AbortError') {
+          console.error('종목별 뉴스 조회 실패:', err);
+        }
       });
-    })
-    .catch((err) => {
-      if (err.name !== 'AbortError') {
-        console.error('종목별 뉴스 조회 실패:', err);
-      }
-    });
 
-  return () => controller.abort();
-}, [activeNav, stockViewMode, stockTab, selectedStockCode]);
+    return () => controller.abort();
+  }, [activeNav, stockViewMode, stockTab, selectedStockCode]);
 
   const stockFeedArticles = useMemo(() => {
     const targetSource = stockTab === 'sns' ? 'SNS' : 'NEWS';
@@ -2290,11 +2297,11 @@ useEffect(() => {
       );
       return;
     }
-  //   if (handleAddWatchlist(target.code)) setWatchAddQuery('');
-  // };
-  handleAddWatchlist(target.code).then((added) => {
-    if (added) setWatchAddQuery('');
-  });
+    //   if (handleAddWatchlist(target.code)) setWatchAddQuery('');
+    // };
+    handleAddWatchlist(target.code).then((added) => {
+      if (added) setWatchAddQuery('');
+    });
   };
 
   // 통합 검색 자동완성 선택 핸들러
@@ -2710,38 +2717,72 @@ useEffect(() => {
     );
   };
 
-  // ---------- 공통 필터 컨트롤 바 렌더링 헬퍼 ----------
+  // ---------- 공통 필터 컨트롤 바 렌더링 헬퍼 (2단 구조 개편) ----------
   const renderFilterControlBar = ({
     showChannel = true,
     showWatchToggle = false,
   } = {}) => (
     <div className="content-card control-bar-card">
-      <div className="control-bar-row">
-        {showChannel && (
-          <div className="control-group" role="group" aria-label="채널 필터">
-            {[
-              { key: 'ALL', label: '전체 채널' },
-              { key: 'NEWS', label: '📰 뉴스' },
-              { key: 'SNS', label: '💬 SNS' },
-            ].map((ch) => (
-              <button
-                key={ch.key}
-                type="button"
-                className={`more-link2 ${channelFilter === ch.key ? 'active' : ''}`}
-                onClick={() => setChannelFilter(ch.key)}
-              >
-                {ch.label}
-              </button>
-            ))}
-          </div>
-        )}
+      <div className="control-bar-main-row">
+        <div className="control-group">
+          {showChannel && (
+            <div className="seg-group" role="group" aria-label="채널 필터">
+              {[
+                { key: 'ALL', label: '전체 채널' },
+                { key: 'NEWS', label: '📰 뉴스' },
+                { key: 'SNS', label: '💬 SNS' },
+              ].map((ch) => (
+                <button
+                  key={ch.key}
+                  type="button"
+                  className={`more-link2 seg-btn ${channelFilter === ch.key ? 'active' : ''}`}
+                  onClick={() => setChannelFilter(ch.key)}
+                >
+                  {ch.label}
+                </button>
+              ))}
+            </div>
+          )}
 
-        <div className="control-group" role="group" aria-label="감성 필터">
+          {showWatchToggle && (
+            <button
+              type="button"
+              className={`more-link2 filter-chip ${onlyWatchlistArticles ? 'active' : ''}`}
+              onClick={() => setOnlyWatchlistArticles((prev) => !prev)}
+            >
+              ★ 관심종목 글만
+            </button>
+          )}
+        </div>
+
+        <div className="control-group control-right">
+          <div className="seg-group" role="group" aria-label="기사 정렬">
+            <button
+              type="button"
+              className={`more-link2 seg-btn ${articleSort === 'latest' ? 'active' : ''}`}
+              onClick={() => setArticleSort('latest')}
+            >
+              최신순
+            </button>
+            <button
+              type="button"
+              className={`more-link2 seg-btn ${articleSort === 'relevance' ? 'active' : ''}`}
+              onClick={() => setArticleSort('relevance')}
+            >
+              관련도순
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="sub-filter-row">
+        <div className="sub-filter-group" role="group" aria-label="감성 필터">
+          <span className="sub-filter-label">감성</span>
           {SENTIMENT_FILTERS.map((sf) => (
             <button
               key={sf.key}
               type="button"
-              className={`more-link2 ${sentimentFilter === sf.key ? 'active' : ''}`}
+              className={`more-link2 filter-chip ${sentimentFilter === sf.key ? 'active' : ''}`}
               onClick={() => setSentimentFilter(sf.key)}
             >
               {sf.label}
@@ -2749,12 +2790,13 @@ useEffect(() => {
           ))}
         </div>
 
-        <div className="control-group" role="group" aria-label="기간 필터">
+        <div className="sub-filter-group" role="group" aria-label="기간 필터">
+          <span className="sub-filter-label">기간</span>
           {ARTICLE_PERIODS.map((ap) => (
             <button
               key={ap.key}
               type="button"
-              className={`more-link2 ${articlePeriod === ap.key ? 'active' : ''}`}
+              className={`more-link2 filter-chip ${articlePeriod === ap.key ? 'active' : ''}`}
               onClick={() => setArticlePeriod(ap.key)}
             >
               {ap.label}
@@ -2762,17 +2804,8 @@ useEffect(() => {
           ))}
         </div>
 
-        <div className="control-group control-right">
-          {showWatchToggle && (
-            <button
-              type="button"
-              className={`more-link2 ${onlyWatchlistArticles ? 'active' : ''}`}
-              onClick={() => setOnlyWatchlistArticles((prev) => !prev)}
-            >
-              ★ 관심종목 글만
-            </button>
-          )}
-
+        <div className="sub-filter-group" role="group" aria-label="관련도 필터">
+          <span className="sub-filter-label">관련도</span>
           <select
             className="sort-select"
             value={minRelevance}
@@ -2785,21 +2818,6 @@ useEffect(() => {
               </option>
             ))}
           </select>
-
-          <button
-            type="button"
-            className={`more-link2 ${articleSort === 'latest' ? 'active' : ''}`}
-            onClick={() => setArticleSort('latest')}
-          >
-            최신순
-          </button>
-          <button
-            type="button"
-            className={`more-link2 ${articleSort === 'relevance' ? 'active' : ''}`}
-            onClick={() => setArticleSort('relevance')}
-          >
-            관련도순
-          </button>
         </div>
       </div>
     </div>
@@ -2807,66 +2825,34 @@ useEffect(() => {
 
   // ============================================================================
   // [화면 A] 🏠 홈 (activeNav === 'home')
-  // 1. 히어로 통합 검색 + 2. 시장 지수 3단 요약 카드(.market-indices) + 3. 통합 필터 바 + 4. 하단 2단 분할(.split-layout)
-  // 우측(.side-stack) 순서: 1순위 [⭐ 나의 관심 종목] (위) -> 2순위 [🔥 오늘의 이슈 종목 TOP 7] (아래)
+  // 1. 시장 지수 1줄 슬림 티커 바 + 2. 2단 필터 컨트롤 바 + 3. 하단 2단 분할(.split-layout)
+  // 우측(.side-stack) 순서: 1순위 [🔥 오늘의 이슈 종목 TOP 7] (위) -> 2순위 [⭐ 나의 관심 종목] (아래)
   // ============================================================================
   const renderHomeView = () => {
     const selectedHomeArticle =
-    articleDetails[selectedArticleId] ||
-    homeFeedArticles.find((a) => a.id === selectedArticleId) ||
-    null;
+      articleDetails[selectedArticleId] ||
+      homeFeedArticles.find((a) => a.id === selectedArticleId) ||
+      null;
 
     return (
       <div className="wrapper">
-        {/* 1. 히어로 통합 검색 섹션 */}
-        <section className="hero-section">
-          <h1 className="hero-title">어떤 종목이나 뉴스를 분석해 드릴까요?</h1>
-          <div className="search-box">
-            <input
-              type="text"
-              className="search-input"
-              placeholder="종목명, 종목코드, 별칭(삼전) 또는 뉴스 키워드 검색 (예: 삼성전자, HBM3E)"
-              aria-label="종목 및 뉴스·SNS 통합 검색"
-              value={searchQuery}
-              onFocus={() => setShowAutocomplete(true)}
-              onBlur={() => setShowAutocomplete(false)}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                setShowAutocomplete(true);
-              }}
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                className="clear-search-btn"
-                aria-label="검색어 지우기"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => setSearchQuery('')}
-              >
-                ✕
-              </button>
-            )}
-            {renderSearchAutocomplete()}
-          </div>
-        </section>
-
-        {/* 2. [복원 필수] 시장 지수 3단 요약 카드 (.market-indices > .index-card) */}
-        <section className="market-indices" aria-label="시장 지수 3단 요약">
+        {/* 1. 시장 지수 1줄 슬림 티커 바 (.market-ticker-bar) */}
+        <section className="market-ticker-bar" aria-label="시장 지수 1줄 요약 바">
           {MARKET_INDICES_DATA.map((idxItem) => (
-            <div key={idxItem.key} className="index-card">
-              <div className="index-name">{idxItem.name}</div>
-              <div className={`index-value num ${idxItem.tone}`}>{idxItem.value}</div>
-              <div className={`index-change num ${idxItem.tone}`}>
-                {idxItem.changeText} · <span className="stock-meta">{idxItem.subText}</span>
-              </div>
+            <div key={idxItem.key} className="ticker-item">
+              <span className="ticker-name">{idxItem.name}</span>
+              <span className={`ticker-value num ${idxItem.tone}`}>{idxItem.value ?? '-'}</span>
+              <span className={`ticker-change num ${idxItem.tone}`}>
+                {idxItem.changeText || idxItem.subText || ''}
+              </span>
             </div>
           ))}
         </section>
 
-        {/* 3. 통합 필터 컨트롤 바 */}
+        {/* 2. 2단 필터 컨트롤 바 */}
         {renderFilterControlBar({ showChannel: true, showWatchToggle: true })}
 
-        {/* 4. 하단 2단 분할 레이아웃 (.split-layout) */}
+        {/* 3. 하단 2단 분할 레이아웃 (.split-layout) */}
         <div className="split-layout">
           {/* 좌측: 전체 뉴스·SNS 분석 완료 리스트 + 하단 AI/SNS 면책 안내 문구 */}
           <div className="content-card">
@@ -2894,7 +2880,7 @@ useEffect(() => {
             </div>
           </div>
 
-          {/* 우측 패널(.sticky-detail-panel): 글 미선택 시 [1순위 ⭐ 관심 종목(위) + 2순위 🔥 이슈 종목(아래)](.side-stack), 글 선택 시 ArticleDetail */}
+          {/* 우측 패널(.sticky-detail-panel): 글 미선택 시 [1순위 🔥 이슈 종목(위) + 2순위 ⭐ 관심 종목(아래)](.side-stack), 글 선택 시 ArticleDetail */}
           <aside className="sticky-detail-panel" aria-label="우측 요약 및 상세 분석 패널">
             {selectedHomeArticle ? (
               <div className="panel">
@@ -2908,132 +2894,28 @@ useEffect(() => {
               </div>
             ) : (
               <div className="side-stack">
-                {/* [1순위 - 맨 위 배치] ⭐ 나의 관심 종목 요약 카드 */}
-                <div className="content-card">
-                  <div className="card-header">
-                    <div className="card-title">
-                      ⭐ 나의 관심 종목 <span className="count-badge num">{watchlistStocks.length}</span>
-                    </div>
-                    <button
-                      type="button"
-                      className="more-link"
-                      onClick={() => handleSwitchNav('watchlist')}
-                    >
-                      관심종목 뉴스·SNS 모아보기 &gt;
-                    </button>
-                  </div>
-
-                  <form className="watch-add-inline" onSubmit={handleWatchAddSubmit}>
-                    <div className="watch-input-wrap">
-                      <input
-                        type="text"
-                        className="watch-inline-input"
-                        placeholder="종목명·코드·별칭(삼전) 빠른 추가"
-                        aria-label="관심종목 검색 및 추가"
-                        value={watchAddQuery}
-                        onChange={(e) => setWatchAddQuery(e.target.value)}
-                      />
-                      {watchAddQuery && (
-                        <button
-                          type="button"
-                          className="clear-search-btn"
-                          aria-label="관심종목 검색어 지우기"
-                          onClick={() => setWatchAddQuery('')}
-                        >
-                          ✕
-                        </button>
-                      )}
-                    </div>
-                    <button type="submit" className="more-link2 active">
-                      + 추가
-                    </button>
-                  </form>
-
-                  {watchlistStocks.length === 0 ? (
-                    <div className="empty-text">등록된 관심 종목이 없습니다.</div>
-                  ) : (
-                    <table className="stock-table compact-table">
-                      <thead>
-                        <tr>
-                          <th>종목명</th>
-                          <th className="num-col">현재가</th>
-                          <th className="num-col">등락률</th>
-                          <th className="num-col">삭제</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {watchlistStocks.map((st) => {
-                          const stHasPrice = st.price !== null && st.price !== undefined;
-                          const tone = rateTone(st.changeRate);
-                          return (
-                            <tr
-                              key={st.code}
-                              tabIndex={0}
-                              onClick={() => navigateToStockDetail(st.code, 'summary')}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                  e.preventDefault();
-                                  navigateToStockDetail(st.code, 'summary');
-                                }
-                              }}
-                            >
-                              <td>
-                                <strong>{st.name}</strong>
-                                <div className="stock-meta num">오늘 {st.todayMatchedCount}건</div>
-                              </td>
-                              <td className="num-col num">
-                                {stHasPrice
-                                  ? `${st.price.toLocaleString()}원`
-                                  : `${st.todayMatchedCount}건`}
-                              </td>
-                              <td className={`num-col num ${tone}`}>
-                                {stHasPrice
-                                  ? formatRate(st.changeRate)
-                                  : `긍정 ${st.sentimentRatio.positive}%`}
-                              </td>
-                              <td className="num-col">
-                                <button
-                                  type="button"
-                                  className="remove-btn"
-                                  aria-label={`${st.name} 관심종목에서 삭제`}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleRemoveWatchlist(st.code);
-                                  }}
-                                >
-                                  ✕
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
-
-                {/* [2순위 - 아래 배치] 🔥 오늘의 이슈 종목 TOP 7 */}
+                {/* [1순위 - 맨 위 배치] 🔥 오늘의 이슈 종목 TOP 7 */}
                 <div className="content-card">
                   <div className="card-header">
                     <div className="card-title">🔥 오늘의 이슈 종목 TOP 7</div>
                     <div className="header-btn-group">
                       <button
                         type="button"
-                        className={`more-link2 ${homeRankFilter === 'issue' ? 'active' : ''}`}
+                        className={`more-link2 seg-btn ${homeRankFilter === 'issue' ? 'active' : ''}`}
                         onClick={() => setHomeRankFilter('issue')}
                       >
                         이슈급증
                       </button>
                       <button
                         type="button"
-                        className={`more-link2 ${homeRankFilter === 'up' ? 'active' : ''}`}
+                        className={`more-link2 seg-btn ${homeRankFilter === 'up' ? 'active' : ''}`}
                         onClick={() => setHomeRankFilter('up')}
                       >
                         급상승
                       </button>
                       <button
                         type="button"
-                        className={`more-link2 ${homeRankFilter === 'down' ? 'active' : ''}`}
+                        className={`more-link2 seg-btn ${homeRankFilter === 'down' ? 'active' : ''}`}
                         onClick={() => setHomeRankFilter('down')}
                       >
                         급하락
@@ -3102,6 +2984,132 @@ useEffect(() => {
                     </button>
                   </div>
                 </div>
+
+                {/* [2순위 - 아래 배치] ⭐ 나의 관심 종목 요약 카드 (빈 상태 시 높이 60px 이내 컴팩트 배너) */}
+                {watchlistStocks.length === 0 ? (
+                  <div className="content-card watchlist-compact-banner">
+                    <div className="watchlist-compact-row">
+                      <div className="watchlist-compact-title">
+                        ⭐ <strong>나의 관심 종목</strong> <span className="count-badge num">0</span>
+                        <span className="stock-meta">등록된 관심 종목이 없습니다.</span>
+                      </div>
+                      <form className="watch-add-inline compact" onSubmit={handleWatchAddSubmit}>
+                        <div className="watch-input-wrap">
+                          <input
+                            type="text"
+                            className="watch-inline-input"
+                            placeholder="종목명·코드 빠른 추가"
+                            aria-label="관심종목 빠른 추가"
+                            value={watchAddQuery}
+                            onChange={(e) => setWatchAddQuery(e.target.value)}
+                          />
+                        </div>
+                        <button type="submit" className="more-link2 active">
+                          + 추가
+                        </button>
+                      </form>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="content-card">
+                    <div className="card-header">
+                      <div className="card-title">
+                        ⭐ 나의 관심 종목 <span className="count-badge num">{watchlistStocks.length}</span>
+                      </div>
+                      <button
+                        type="button"
+                        className="more-link"
+                        onClick={() => handleSwitchNav('watchlist')}
+                      >
+                        관심종목 뉴스·SNS 모아보기 &gt;
+                      </button>
+                    </div>
+
+                    <form className="watch-add-inline" onSubmit={handleWatchAddSubmit}>
+                      <div className="watch-input-wrap">
+                        <input
+                          type="text"
+                          className="watch-inline-input"
+                          placeholder="종목명·코드·별칭(삼전) 빠른 추가"
+                          aria-label="관심종목 검색 및 추가"
+                          value={watchAddQuery}
+                          onChange={(e) => setWatchAddQuery(e.target.value)}
+                        />
+                        {watchAddQuery && (
+                          <button
+                            type="button"
+                            className="clear-search-btn"
+                            aria-label="관심종목 검색어 지우기"
+                            onClick={() => setWatchAddQuery('')}
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+                      <button type="submit" className="more-link2 active">
+                        + 추가
+                      </button>
+                    </form>
+
+                    <table className="stock-table compact-table">
+                      <thead>
+                        <tr>
+                          <th>종목명</th>
+                          <th className="num-col">현재가</th>
+                          <th className="num-col">등락률</th>
+                          <th className="num-col">삭제</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {watchlistStocks.map((st) => {
+                          const stHasPrice = st.price !== null && st.price !== undefined;
+                          const tone = rateTone(st.changeRate);
+                          return (
+                            <tr
+                              key={st.code}
+                              tabIndex={0}
+                              onClick={() => navigateToStockDetail(st.code, 'summary')}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  navigateToStockDetail(st.code, 'summary');
+                                }
+                              }}
+                            >
+                              <td>
+                                <strong>{st.name}</strong>
+                                <div className="stock-meta num">오늘 {st.todayMatchedCount}건</div>
+                              </td>
+                              <td className="num-col num">
+                                {stHasPrice
+                                  ? `${st.price.toLocaleString()}원`
+                                  : `${st.todayMatchedCount}건`}
+                              </td>
+                              <td className={`num-col num ${tone}`}>
+                                {stHasPrice
+                                  ? formatRate(st.changeRate)
+                                  : `긍정 ${st.sentimentRatio.positive}%`}
+                              </td>
+                              <td className="num-col">
+                                <button
+                                  type="button"
+                                  className="remove-btn"
+                                  aria-label={`${st.name} 관심종목에서 삭제`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRemoveWatchlist(st.code);
+                                  }}
+                                >
+                                  ✕
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             )}
           </aside>
@@ -3369,10 +3377,10 @@ useEffect(() => {
         {/* [탭 1] 요약·감성 (summary) */}
         {stockTab === 'summary' && (
           <>
-         <StockPriceChart
-  stockCode={selectedStockCode}
-  stockName={selectedStock?.name || selectedStockCode}
-/>
+            <StockPriceChart
+              stockCode={selectedStockCode}
+              stockName={selectedStock?.name || selectedStockCode}
+            />
 
             <div className="content-card">
               <div className="card-header">
@@ -3577,16 +3585,16 @@ useEffect(() => {
               </div>
               {/* <MentionTrendChart series={trendSeries} plotHeight={250} /> */}
               {mentionLoading ? (
-  <div className="empty-text">
-    언급량 데이터를 불러오는 중...
-  </div>
-) : mentionError ? (
-  <div className="empty-text">
-    언급량 데이터를 불러오지 못했습니다.
-  </div>
-) : (
-  <MentionTrendChart series={trendSeries} plotHeight={250} />
-)}
+                <div className="empty-text">
+                  언급량 데이터를 불러오는 중...
+                </div>
+              ) : mentionError ? (
+                <div className="empty-text">
+                  언급량 데이터를 불러오지 못했습니다.
+                </div>
+              ) : (
+                <MentionTrendChart series={trendSeries} plotHeight={250} />
+              )}
             </div>
 
             <div className="dashboard-grid">
@@ -3916,35 +3924,33 @@ useEffect(() => {
               </span>
             </div>
 
-            {activeNav !== 'home' && (
-              <div className="header-search-compact">
-                <input
-                  type="text"
-                  className="search-input compact"
-                  placeholder="종목명·코드·별칭 또는 뉴스 키워드 통합 검색..."
-                  aria-label="상단 컴팩트 통합 검색"
-                  value={searchQuery}
-                  onFocus={() => setShowAutocomplete(true)}
-                  onBlur={() => setShowAutocomplete(false)}
-                  onChange={(e) => {
-                    setSearchQuery(e.target.value);
-                    setShowAutocomplete(true);
-                  }}
-                />
-                {searchQuery && (
-                  <button
-                    type="button"
-                    className="clear-search-btn"
-                    aria-label="검색어 지우기"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => setSearchQuery('')}
-                  >
-                    ✕
-                  </button>
-                )}
-                {renderSearchAutocomplete()}
-              </div>
-            )}
+            <div className="header-search-compact">
+              <input
+                type="text"
+                className="search-input compact"
+                placeholder="종목명·코드·별칭(삼전) 또는 뉴스 키워드 통합 검색..."
+                aria-label="상단 컴팩트 통합 검색"
+                value={searchQuery}
+                onFocus={() => setShowAutocomplete(true)}
+                onBlur={() => setShowAutocomplete(false)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setShowAutocomplete(true);
+                }}
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  className="clear-search-btn"
+                  aria-label="검색어 지우기"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => setSearchQuery('')}
+                >
+                  ✕
+                </button>
+              )}
+              {renderSearchAutocomplete()}
+            </div>
 
             <div className="user-actions">
               <span className="live-indicator CONNECTED">
