@@ -312,10 +312,17 @@ function ArticleList({ articles, selectedId, onSelect, onSelectStock }) {
           .sort((a, b) => b.relevance - a.relevance)
           .slice(0, 3);
 
+        const sentBorderClass =
+          art.sentiment === 'POSITIVE' || art.sentiment === '호재'
+            ? 'sent-border-pos'
+            : art.sentiment === 'NEGATIVE' || art.sentiment === '악재'
+            ? 'sent-border-neg'
+            : 'sent-border-neu';
+
         return (
           <article
             key={art.id}
-            className={`article-item ${selectedId === art.id ? 'selected' : ''}`}
+            className={`article-item ${sentBorderClass} ${selectedId === art.id ? 'selected' : ''}`}
             role="button"
             tabIndex={0}
             aria-label={`${art.title} 상세 보기`}
@@ -328,12 +335,9 @@ function ArticleList({ articles, selectedId, onSelect, onSelectStock }) {
             }}
           >
             <div className="article-top-meta">
-              <div className="article-meta-left">
-                <SentimentBadge sentiment={art.sentiment} />
-                <span className={`source-pill ${isSns ? 'sns' : 'news'}`}>
-                  {isSns ? 'SNS' : 'NEWS'}
-                </span>
-              </div>
+              <span className={`source-pill ${isSns ? 'sns' : 'news'}`}>
+                {isSns ? 'SNS' : 'NEWS'}
+              </span>
               <span className="article-press-time num">
                 {art.press} · {art.publishedAt}
               </span>
@@ -341,22 +345,25 @@ function ArticleList({ articles, selectedId, onSelect, onSelectStock }) {
 
             <h4 className="article-title">{art.title}</h4>
 
-            <div className="article-stock-tags">
-              {topStocks.map((rel) => (
-                <button
-                  key={rel.code}
-                  type="button"
-                  className="matched-stock-tag num"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onSelectStock(rel.code);
-                  }}
-                  title={`${rel.name} 종목 상세 화면으로 이동 (${rel.relationType} · 관련도 ${rel.relevance}%)`}
-                >
-                  #{rel.name} <span>{rel.relevance}%</span>
-                </button>
-              ))}
-              {isSns && <span className="sns-mini-tag">⚠️ 참고용 · 확인되지 않은 정보</span>}
+            <div className="article-bottom-row">
+              <div className="article-stock-tags">
+                {topStocks.map((rel) => (
+                  <button
+                    key={rel.code}
+                    type="button"
+                    className="matched-stock-tag num"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelectStock(rel.code);
+                    }}
+                    title={`${rel.name} 종목 상세 화면으로 이동 (${rel.relationType} · 관련도 ${rel.relevance}%)`}
+                  >
+                    #{rel.name} <span>{rel.relevance}%</span>
+                  </button>
+                ))}
+                {isSns && <span className="sns-mini-tag">⚠️ 참고용 · 확인되지 않은 정보</span>}
+              </div>
+              <SentimentBadge sentiment={art.sentiment} />
             </div>
           </article>
         );
@@ -2771,38 +2778,72 @@ const homeRankedStocks = useMemo(() => {
     );
   };
 
-  // ---------- 공통 필터 컨트롤 바 렌더링 헬퍼 ----------
+  // ---------- 공통 필터 컨트롤 바 렌더링 헬퍼 (2단 구조 개편) ----------
   const renderFilterControlBar = ({
     showChannel = true,
     showWatchToggle = false,
   } = {}) => (
     <div className="content-card control-bar-card">
-      <div className="control-bar-row">
-        {showChannel && (
-          <div className="control-group" role="group" aria-label="채널 필터">
-            {[
-              { key: 'ALL', label: '전체 채널' },
-              { key: 'NEWS', label: '📰 뉴스' },
-              { key: 'SNS', label: '💬 SNS' },
-            ].map((ch) => (
-              <button
-                key={ch.key}
-                type="button"
-                className={`more-link2 ${channelFilter === ch.key ? 'active' : ''}`}
-                onClick={() => setChannelFilter(ch.key)}
-              >
-                {ch.label}
-              </button>
-            ))}
-          </div>
-        )}
+      <div className="control-bar-main-row">
+        <div className="control-group">
+          {showChannel && (
+            <div className="seg-group" role="group" aria-label="채널 필터">
+              {[
+                { key: 'ALL', label: '전체 채널' },
+                { key: 'NEWS', label: '📰 뉴스' },
+                { key: 'SNS', label: '💬 SNS' },
+              ].map((ch) => (
+                <button
+                  key={ch.key}
+                  type="button"
+                  className={`more-link2 seg-btn ${channelFilter === ch.key ? 'active' : ''}`}
+                  onClick={() => setChannelFilter(ch.key)}
+                >
+                  {ch.label}
+                </button>
+              ))}
+            </div>
+          )}
 
-        <div className="control-group" role="group" aria-label="감성 필터">
+          {showWatchToggle && (
+            <button
+              type="button"
+              className={`more-link2 filter-chip ${onlyWatchlistArticles ? 'active' : ''}`}
+              onClick={() => setOnlyWatchlistArticles((prev) => !prev)}
+            >
+              ★ 관심종목 글만
+            </button>
+          )}
+        </div>
+
+        <div className="control-group control-right">
+          <div className="seg-group" role="group" aria-label="기사 정렬">
+            <button
+              type="button"
+              className={`more-link2 seg-btn ${articleSort === 'latest' ? 'active' : ''}`}
+              onClick={() => setArticleSort('latest')}
+            >
+              최신순
+            </button>
+            <button
+              type="button"
+              className={`more-link2 seg-btn ${articleSort === 'relevance' ? 'active' : ''}`}
+              onClick={() => setArticleSort('relevance')}
+            >
+              관련도순
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="sub-filter-row">
+        <div className="sub-filter-group" role="group" aria-label="감성 필터">
+          <span className="sub-filter-label">감성</span>
           {SENTIMENT_FILTERS.map((sf) => (
             <button
               key={sf.key}
               type="button"
-              className={`more-link2 ${sentimentFilter === sf.key ? 'active' : ''}`}
+              className={`more-link2 filter-chip ${sentimentFilter === sf.key ? 'active' : ''}`}
               onClick={() => setSentimentFilter(sf.key)}
             >
               {sf.label}
@@ -2810,12 +2851,13 @@ const homeRankedStocks = useMemo(() => {
           ))}
         </div>
 
-        <div className="control-group" role="group" aria-label="기간 필터">
+        <div className="sub-filter-group" role="group" aria-label="기간 필터">
+          <span className="sub-filter-label">기간</span>
           {ARTICLE_PERIODS.map((ap) => (
             <button
               key={ap.key}
               type="button"
-              className={`more-link2 ${articlePeriod === ap.key ? 'active' : ''}`}
+              className={`more-link2 filter-chip ${articlePeriod === ap.key ? 'active' : ''}`}
               onClick={() => setArticlePeriod(ap.key)}
             >
               {ap.label}
@@ -2823,17 +2865,8 @@ const homeRankedStocks = useMemo(() => {
           ))}
         </div>
 
-        <div className="control-group control-right">
-          {showWatchToggle && (
-            <button
-              type="button"
-              className={`more-link2 ${onlyWatchlistArticles ? 'active' : ''}`}
-              onClick={() => setOnlyWatchlistArticles((prev) => !prev)}
-            >
-              ★ 관심종목 글만
-            </button>
-          )}
-
+        <div className="sub-filter-group" role="group" aria-label="관련도 필터">
+          <span className="sub-filter-label">관련도</span>
           <select
             className="sort-select"
             value={minRelevance}
@@ -2846,21 +2879,6 @@ const homeRankedStocks = useMemo(() => {
               </option>
             ))}
           </select>
-
-          <button
-            type="button"
-            className={`more-link2 ${articleSort === 'latest' ? 'active' : ''}`}
-            onClick={() => setArticleSort('latest')}
-          >
-            최신순
-          </button>
-          <button
-            type="button"
-            className={`more-link2 ${articleSort === 'relevance' ? 'active' : ''}`}
-            onClick={() => setArticleSort('relevance')}
-          >
-            관련도순
-          </button>
         </div>
       </div>
     </div>
@@ -2868,8 +2886,8 @@ const homeRankedStocks = useMemo(() => {
 
   // ============================================================================
   // [화면 A] 🏠 홈 (activeNav === 'home')
-  // 1. 히어로 통합 검색 + 2. 시장 지수 3단 요약 카드(.market-indices) + 3. 통합 필터 바 + 4. 하단 2단 분할(.split-layout)
-  // 우측(.side-stack) 순서: 1순위 [⭐ 나의 관심 종목] (위) -> 2순위 [🔥 오늘의 이슈 종목 TOP 7] (아래)
+  // 1. 시장 지수 1줄 슬림 티커 바 + 2. 2단 필터 컨트롤 바 + 3. 하단 2단 분할(.split-layout)
+  // 우측(.side-stack) 순서: 1순위 [🔥 오늘의 이슈 종목 TOP 7] (위) -> 2순위 [⭐ 나의 관심 종목] (아래)
   // ============================================================================
   const renderHomeView = () => {
     const selectedHomeArticle =
@@ -2879,55 +2897,23 @@ const homeRankedStocks = useMemo(() => {
 
     return (
       <div className="wrapper">
-        {/* 1. 히어로 통합 검색 섹션 */}
-        <section className="hero-section">
-          <h1 className="hero-title">어떤 종목이나 뉴스를 분석해 드릴까요?</h1>
-          <div className="search-box">
-            <input
-              type="text"
-              className="search-input"
-              placeholder="종목명, 종목코드, 별칭(삼전) 또는 뉴스 키워드 검색 (예: 삼성전자, HBM3E)"
-              aria-label="종목 및 뉴스·SNS 통합 검색"
-              value={searchQuery}
-              onFocus={() => setShowAutocomplete(true)}
-              onBlur={() => setShowAutocomplete(false)}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                setShowAutocomplete(true);
-              }}
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                className="clear-search-btn"
-                aria-label="검색어 지우기"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => setSearchQuery('')}
-              >
-                ✕
-              </button>
-            )}
-            {renderSearchAutocomplete()}
-          </div>
-        </section>
-
-        {/* 2. [복원 필수] 시장 지수 3단 요약 카드 (.market-indices > .index-card) */}
-        <section className="market-indices" aria-label="시장 지수 3단 요약">
+        {/* 1. 시장 지수 1줄 슬림 티커 바 (.market-ticker-bar) */}
+        <section className="market-ticker-bar" aria-label="시장 지수 1줄 요약 바">
           {MARKET_INDICES_DATA.map((idxItem) => (
-            <div key={idxItem.key} className="index-card">
-              <div className="index-name">{idxItem.name}</div>
-              <div className={`index-value num ${idxItem.tone}`}>{idxItem.value}</div>
-              <div className={`index-change num ${idxItem.tone}`}>
-                {idxItem.changeText} · <span className="stock-meta">{idxItem.subText}</span>
-              </div>
+            <div key={idxItem.key} className="ticker-item">
+              <span className="ticker-name">{idxItem.name}</span>
+              <span className={`ticker-value num ${idxItem.tone}`}>{idxItem.value ?? '-'}</span>
+              <span className={`ticker-change num ${idxItem.tone}`}>
+                {idxItem.changeText || idxItem.subText || ''}
+              </span>
             </div>
           ))}
         </section>
 
-        {/* 3. 통합 필터 컨트롤 바 */}
+        {/* 2. 2단 필터 컨트롤 바 */}
         {renderFilterControlBar({ showChannel: true, showWatchToggle: true })}
 
-        {/* 4. 하단 2단 분할 레이아웃 (.split-layout) */}
+        {/* 3. 하단 2단 분할 레이아웃 (.split-layout) */}
         <div className="split-layout">
           {/* 좌측: 전체 뉴스·SNS 분석 완료 리스트 + 하단 AI/SNS 면책 안내 문구 */}
           <div className="content-card">
@@ -2955,7 +2941,7 @@ const homeRankedStocks = useMemo(() => {
             </div>
           </div>
 
-          {/* 우측 패널(.sticky-detail-panel): 글 미선택 시 [1순위 ⭐ 관심 종목(위) + 2순위 🔥 이슈 종목(아래)](.side-stack), 글 선택 시 ArticleDetail */}
+          {/* 우측 패널(.sticky-detail-panel): 글 미선택 시 [1순위 🔥 이슈 종목(위) + 2순위 ⭐ 관심 종목(아래)](.side-stack), 글 선택 시 ArticleDetail */}
           <aside className="sticky-detail-panel" aria-label="우측 요약 및 상세 분석 패널">
             {selectedHomeArticle ? (
               <div className="panel">
@@ -3081,21 +3067,21 @@ const homeRankedStocks = useMemo(() => {
                     <div className="header-btn-group">
                       <button
                         type="button"
-                        className={`more-link2 ${homeRankFilter === 'issue' ? 'active' : ''}`}
+                        className={`more-link2 seg-btn ${homeRankFilter === 'issue' ? 'active' : ''}`}
                         onClick={() => setHomeRankFilter('issue')}
                       >
                         이슈급증
                       </button>
                       <button
                         type="button"
-                        className={`more-link2 ${homeRankFilter === 'up' ? 'active' : ''}`}
+                        className={`more-link2 seg-btn ${homeRankFilter === 'up' ? 'active' : ''}`}
                         onClick={() => setHomeRankFilter('up')}
                       >
                         급상승
                       </button>
                       <button
                         type="button"
-                        className={`more-link2 ${homeRankFilter === 'down' ? 'active' : ''}`}
+                        className={`more-link2 seg-btn ${homeRankFilter === 'down' ? 'active' : ''}`}
                         onClick={() => setHomeRankFilter('down')}
                       >
                         급하락
@@ -3215,6 +3201,132 @@ const homeRankedStocks = useMemo(() => {
                     </button>
                   </div>
                 </div>
+
+                {/* [2순위 - 아래 배치] ⭐ 나의 관심 종목 요약 카드 (빈 상태 시 높이 60px 이내 컴팩트 배너) */}
+                {watchlistStocks.length === 0 ? (
+                  <div className="content-card watchlist-compact-banner">
+                    <div className="watchlist-compact-row">
+                      <div className="watchlist-compact-title">
+                        ⭐ <strong>나의 관심 종목</strong> <span className="count-badge num">0</span>
+                        <span className="stock-meta">등록된 관심 종목이 없습니다.</span>
+                      </div>
+                      <form className="watch-add-inline compact" onSubmit={handleWatchAddSubmit}>
+                        <div className="watch-input-wrap">
+                          <input
+                            type="text"
+                            className="watch-inline-input"
+                            placeholder="종목명·코드 빠른 추가"
+                            aria-label="관심종목 빠른 추가"
+                            value={watchAddQuery}
+                            onChange={(e) => setWatchAddQuery(e.target.value)}
+                          />
+                        </div>
+                        <button type="submit" className="more-link2 active">
+                          + 추가
+                        </button>
+                      </form>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="content-card">
+                    <div className="card-header">
+                      <div className="card-title">
+                        ⭐ 나의 관심 종목 <span className="count-badge num">{watchlistStocks.length}</span>
+                      </div>
+                      <button
+                        type="button"
+                        className="more-link"
+                        onClick={() => handleSwitchNav('watchlist')}
+                      >
+                        관심종목 뉴스·SNS 모아보기 &gt;
+                      </button>
+                    </div>
+
+                    <form className="watch-add-inline" onSubmit={handleWatchAddSubmit}>
+                      <div className="watch-input-wrap">
+                        <input
+                          type="text"
+                          className="watch-inline-input"
+                          placeholder="종목명·코드·별칭(삼전) 빠른 추가"
+                          aria-label="관심종목 검색 및 추가"
+                          value={watchAddQuery}
+                          onChange={(e) => setWatchAddQuery(e.target.value)}
+                        />
+                        {watchAddQuery && (
+                          <button
+                            type="button"
+                            className="clear-search-btn"
+                            aria-label="관심종목 검색어 지우기"
+                            onClick={() => setWatchAddQuery('')}
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+                      <button type="submit" className="more-link2 active">
+                        + 추가
+                      </button>
+                    </form>
+
+                    <table className="stock-table compact-table">
+                      <thead>
+                        <tr>
+                          <th>종목명</th>
+                          <th className="num-col">현재가</th>
+                          <th className="num-col">등락률</th>
+                          <th className="num-col">삭제</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {watchlistStocks.map((st) => {
+                          const stHasPrice = st.price !== null && st.price !== undefined;
+                          const tone = rateTone(st.changeRate);
+                          return (
+                            <tr
+                              key={st.code}
+                              tabIndex={0}
+                              onClick={() => navigateToStockDetail(st.code, 'summary')}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  navigateToStockDetail(st.code, 'summary');
+                                }
+                              }}
+                            >
+                              <td>
+                                <strong>{st.name}</strong>
+                                <div className="stock-meta num">오늘 {st.todayMatchedCount}건</div>
+                              </td>
+                              <td className="num-col num">
+                                {stHasPrice
+                                  ? `${st.price.toLocaleString()}원`
+                                  : `${st.todayMatchedCount}건`}
+                              </td>
+                              <td className={`num-col num ${tone}`}>
+                                {stHasPrice
+                                  ? formatRate(st.changeRate)
+                                  : `긍정 ${st.sentimentRatio.positive}%`}
+                              </td>
+                              <td className="num-col">
+                                <button
+                                  type="button"
+                                  className="remove-btn"
+                                  aria-label={`${st.name} 관심종목에서 삭제`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRemoveWatchlist(st.code);
+                                  }}
+                                >
+                                  ✕
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             )}
           </aside>
@@ -4029,35 +4141,33 @@ const homeRankedStocks = useMemo(() => {
               </span>
             </div>
 
-            {activeNav !== 'home' && (
-              <div className="header-search-compact">
-                <input
-                  type="text"
-                  className="search-input compact"
-                  placeholder="종목명·코드·별칭 또는 뉴스 키워드 통합 검색..."
-                  aria-label="상단 컴팩트 통합 검색"
-                  value={searchQuery}
-                  onFocus={() => setShowAutocomplete(true)}
-                  onBlur={() => setShowAutocomplete(false)}
-                  onChange={(e) => {
-                    setSearchQuery(e.target.value);
-                    setShowAutocomplete(true);
-                  }}
-                />
-                {searchQuery && (
-                  <button
-                    type="button"
-                    className="clear-search-btn"
-                    aria-label="검색어 지우기"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => setSearchQuery('')}
-                  >
-                    ✕
-                  </button>
-                )}
-                {renderSearchAutocomplete()}
-              </div>
-            )}
+            <div className="header-search-compact">
+              <input
+                type="text"
+                className="search-input compact"
+                placeholder="종목명·코드·별칭(삼전) 또는 뉴스 키워드 통합 검색..."
+                aria-label="상단 컴팩트 통합 검색"
+                value={searchQuery}
+                onFocus={() => setShowAutocomplete(true)}
+                onBlur={() => setShowAutocomplete(false)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setShowAutocomplete(true);
+                }}
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  className="clear-search-btn"
+                  aria-label="검색어 지우기"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => setSearchQuery('')}
+                >
+                  ✕
+                </button>
+              )}
+              {renderSearchAutocomplete()}
+            </div>
 
             <div className="user-actions">
               <span className="live-indicator CONNECTED">
