@@ -389,12 +389,12 @@ erDiagram
 | 1 | article_id | BIGINT | PK, FK → article (CASCADE) | Y | | 기사 ID |
 | 2 | stock_code | CHAR(6) | PK, FK → stock_info, IDX | Y | | 종목코드 |
 | 3 | is_main | BOOLEAN | | Y | FALSE | 대표 종목 여부 |
-| 4 | sentiment | VARCHAR(10) | CHECK | Y | | 종목별 감성: `POSITIVE`, `NEGATIVE`, `NEUTRAL` |
+| 4 | sentiment | VARCHAR(10) | CHECK | N | | 종목별 감성: `POSITIVE`, `NEGATIVE`, `NEUTRAL`. **`NULL` = 판단 안 함** (V12: AI 활용 금지 언론사 기사를 제목만으로 연결한 것. 감성 비율에서 빠짐) |
 | 5 | reason | VARCHAR(500) | | Y | | 판단 이유 |
 | 6 | created_at | DATETIME | | Y | CURRENT_TIMESTAMP | 연결 시각 |
 | 7 | match_type | VARCHAR(10) | CHECK | N | | [확장] `DIRECT` 회사명 등장, `INDIRECT` 이슈 영향 (F-05) |
 | 8 | relevance | DECIMAL(3,2) | CHECK | N | | [확장] 관련도 0.00~1.00. 화면 %는 백엔드가 변환 (F-05) |
-| 9 | evidence | VARCHAR(1000) | | N | | [확장] 근거가 된 원문 문장 (F-06) |
+| 9 | evidence | VARCHAR(1000) | | N | | [확장] 근거가 된 원문 문장 (F-06). 원문 그대로라 공개 레포용 데이터 파일(`R__ai_data.sql`)에는 넣지 않음 (2026-11-05) |
 | 10 | matched_keywords | VARCHAR(300) | | N | | [확장] 매칭에 쓰인 키워드 (쉼표 구분) |
 
 - PK `(article_id, stock_code)`: 같은 기사에 같은 종목은 한 번만

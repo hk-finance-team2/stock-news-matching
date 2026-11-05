@@ -17,10 +17,11 @@ from urllib.parse import urlsplit
 
 import lxml.html
 import requests
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 
 from hk_llm.core.config import KST, USER_AGENT
 from hk_llm.core.db import get_engine
+from hk_llm.core.press_policy import title_only_presses
 from hk_llm.steps.robots import allowed, crawl_delay, reachable
 from hk_llm.core.util import get_logger, retry
 
@@ -86,9 +87,12 @@ def fetch_bodies(engine=None, limit=BATCH):
     since = datetime.now(KST).date() - timedelta(days=1)  # 어제 이후만. 요약 대상이 아닌 옛 기사는 언론사에 요청하지 않음
     engine = engine or get_engine()
     with engine.connect() as conn:
+        # 본문을 쓰지 않는 언론사(press_policy TITLE_ONLY)는 요청 자체를 안 보냄 → title_only.py 가 제목으로 처리
         rows = conn.execute(text("""SELECT article_id, url, retry_count FROM article
                                     WHERE status = 'LISTED' AND source_type = 'NEWS' AND published_at >= :since
-                                    ORDER BY article_id DESC LIMIT :n"""), {"since": since, "n": limit}).all()
+                                      AND press NOT IN :skip
+                                    ORDER BY article_id DESC LIMIT :n""").bindparams(bindparam("skip", expanding=True)),
+                            {"since": since, "n": limit, "skip": title_only_presses()}).all()
     done = {"FETCHED": 0, "SKIPPED": 0, "RETRY": 0, "FAILED": 0}
     last_hit = {}  # 사이트별 마지막 요청 시각
     ok, bad = Counter(), Counter()  # 사이트별 본문 성공·실패

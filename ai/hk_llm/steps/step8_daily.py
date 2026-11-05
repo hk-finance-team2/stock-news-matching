@@ -88,6 +88,7 @@ def load_rows(engine, day):
     sql = text("""SELECT s.stock_code, i.stock_name, s.is_main, s.sentiment, s.reason, a.summary
                   FROM article_stock s JOIN article a USING (article_id) JOIN stock_info i USING (stock_code)
                   WHERE a.status = 'DONE' AND a.source_type = 'NEWS' AND a.channel <> 'DART' AND a.published_at >= :d AND a.published_at < :n
+                    AND a.summary IS NOT NULL  -- 제목만 연결한 기사(AI 활용 금지 언론사)는 LLM 에 넣지 않음
                   ORDER BY s.is_main DESC, s.relevance DESC, a.published_at DESC""")  # 10건까지만 쓰므로 중요한 기사 먼저
     with engine.connect() as conn:
         return [dict(r._mapping) for r in conn.execute(sql, {"d": day, "n": day + timedelta(days=1)})]

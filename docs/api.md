@@ -77,7 +77,7 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 
 - `newsSummary`·`snsSummary`: AI가 1시간마다 만드는 오늘 요약. **아직 없으면 `null`** → "요약 준비 중" 표시. SNS 글이 없는 종목은 `snsSummary`만 `null`일 수 있음
 - `generatedAt`: **뉴스 요약**을 만든 시각. 뉴스 요약이 없으면(SNS 반응 요약만 있어도) `null`. 데이터 상태(`/api/status`)의 `summaryGeneratedAt`도 뉴스 요약 기준
-- `sentiment`: 오늘(한국 시간 0시~지금) 이 종목이 나온 글을 **지금** 센 것 (이 종목에 대한 감성 기준). `positive`·`negative`·`neutral`은 % 정수이고 **합이 항상 100**. 오늘 글이 없으면 모두 0
+- `sentiment`: 오늘(한국 시간 0시~지금) 이 종목이 나온 글을 **지금** 센 것 (이 종목에 대한 감성 기준). 감성을 판단하지 않은 연결(`null`, 제목만 연결한 기사)은 세지 않음. `positive`·`negative`·`neutral`은 % 정수이고 **합이 항상 100**. 오늘 글이 없으면 모두 0
   - 기본은 **뉴스·SNS 합계** (요구사항 F-08). `source=NEWS` / `source=SNS`를 붙이면 그 출처 글만 셈 (요약 문장은 그대로)
 - 없는 종목은 404 `STOCK_NOT_FOUND`
 
@@ -138,6 +138,7 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
   - SNS 글은 모은 지 **7일이 지나면 지워집니다** (약관 7.3 "별도 DB로 쌓아 두지 않음"). 그래서 30일 언급량 그래프의 SNS는 최근 7일만 있음. 종목 하루 요약의 `snsSummary`는 남음
   - SNS 글의 시각은 **모은 시각**(카페는 작성 시각이 없고 블로그는 날짜만)이라 뉴스와 한 줄로 세우지 않고 출처 탭 기본은 뉴스로
 - 기사 본문은 내보내지 않습니다. 요약과 원문 링크(`url`)만
+- **AI 활용 금지 언론사(연합뉴스·서울경제·연합인포맥스) 기사는 `summary`·`sentiment`가 `null`** (2026-11-05). 기사 끝에 "AI 학습 및 활용 금지"가 있어 본문을 AI에 넣지 않고 제목만으로 종목을 연결함. 화면은 "AI 요약 없음 · 원문 보기", 감성 배지 없음. `stocks[].sentiment`도 `null`이고 종목 감성 비율에서 빠짐
 - 개발 중에 글이 없으면 [setup.md](setup.md) 2절의 **예시 기사**를 켜세요
 
 #### 글 상세 `GET /api/articles/{articleId}`
@@ -150,7 +151,7 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 | `keywords` | 핵심 키워드 목록 `["HBM", "반도체"]` (없으면 `[]`) |
 | `sentiment` | 글 전체 감성 `POSITIVE` / `NEGATIVE` / `NEUTRAL` (없으면 `null`) |
 | `model`, `summarizedAt` | 요약을 만든 AI 모델과 시각 → "AI가 만든 요약" 안내용 (N-05) |
-| `stocks[]` | 목록 칩 칸 + **`reason`**(연결 이유, 항상 있음), **`evidence`**(근거 문장, 없으면 `null`), `matchedKeywords`(목록, 없으면 `[]`) |
+| `stocks[]` | 목록 칩 칸 + **`reason`**(연결 이유, 항상 있음), **`evidence`**(근거 문장, 없으면 `null`. 팀원 PC 처럼 데이터 파일로 받은 DB 에는 없음), `matchedKeywords`(목록, 없으면 `[]`). `sentiment`는 감성을 판단하지 않은 연결이면 `null` |
 | `relatedSns[]` | **뉴스일 때만.** 같은 종목이 나온 SNS 중 작성 시각 앞뒤 24시간 안, 가까운 순 최대 5개 `{ articleId, channel, title, press, publishedAt, summary, url }`. SNS 글이면 `[]` |
 
 ### 통합 검색

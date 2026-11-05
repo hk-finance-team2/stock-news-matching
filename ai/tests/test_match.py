@@ -112,3 +112,40 @@ def test_step7_group():
     chain = [art(1, "A", "X", "X 뉴욕사무소 내년 개소"), art(2, "A", "X", "X 내년 뉴욕사무소 개소 결정"), art(3, "A", "X", "X 뉴욕사무소 개소 결정 이사회")]
     assert ids(chain) == [(1, 2, 3)], ids(chain)
     assert group_articles([]) == [] and similarity("", "") == 0.0
+
+
+def test_title_only():
+    """AI 활용 금지 언론사: 제목만으로 연결 (2026-11-05). 낱말이 딱 맞을 때만, 헷갈리는 이름은 뺌"""
+    from hk_llm.core.press_policy import FULL, TITLE_ONLY, policy, title_only_presses
+    from hk_llm.steps.title_only import MAX_STOCKS, decide, title_stocks
+
+    assert title_only_presses() == ["서울경제", "연합뉴스", "연합인포맥스"]
+    assert policy("한국경제") == FULL and policy("비즈워치") == FULL
+    assert policy("처음 보는 언론사") == TITLE_ONLY, "모르는 언론사는 보수적으로"
+
+    names = {"삼성전자": "A", "SK하이닉스": "B", "태양": "C", "SK": "D", "대상": "E", "HL만도": "F", "기아": "G",
+             "LG전자": "H", "한화오션": "I"}
+    blocked = {"SK", "대상"}  # 그룹 이름과 같은 지주사, 일반 단어 종목명
+    assert title_stocks("삼성전자, 3분기 영업이익 시장 예상 상회", names, blocked) == {"A": "삼성전자"}
+    assert title_stocks("SK하이닉스가 HBM 공급 확대", names, blocked) == {"B": "SK하이닉스"}, "조사 '가'를 떼고 봄"
+    assert title_stocks("삼성전자·SK하이닉스 동반 강세", names, blocked) == {"A": "삼성전자", "B": "SK하이닉스"}
+    assert title_stocks("태양광 업계 수주 확대", names, blocked) == {}, "낱말 일부('태양광'의 '태양')는 안 찾음"
+    assert title_stocks("RISK 관리 강화", names, blocked) == {}, "영문 낱말 일부('RISK'의 'SK')도 안 찾음"
+    assert title_stocks("SK, 반도체 투자 확대", names, blocked) == {}, "그룹 이름과 같은 지주사는 제목만으로 못 가림"
+    assert title_stocks("지원 대상 확대", names, blocked) == {}, "일반 단어 종목명"
+    assert title_stocks("[특징주] HL만도 급등", names, blocked) == {"F": "HL만도"}, "말머리 괄호는 낱말 경계"
+    assert title_stocks("'기아' 美 판매 신기록", names, blocked) == {"G": "기아"}, "따옴표도 경계"
+
+    got = decide("삼성전자, 3분기 실적 발표", names, blocked)
+    assert got == [("A", "삼성전자", True, 0.65)], got
+    assert decide("[마켓뷰] 삼성전자 강세", names, blocked) == [], "시황 말머리"
+    many = "삼성전자·SK하이닉스·LG전자·한화오션 동반 상승"
+    assert MAX_STOCKS == 3 and decide(many, names, blocked) == [], "종목 4개 이상 = 명단 제목"
+    three = decide("삼성전자·SK하이닉스·LG전자 반도체 협력", names, blocked)
+    assert [x[2] for x in three] == [False, False, False] and three[0][3] == 0.40, "3개면 주인공 아님"
+    names.update({"키움증권": "K", "해성DS": "J", "상보": "S"})
+    blocked = blocked | {"상보"}
+    assert decide("키움증권, 해성DS 목표가↓", names, blocked) == [("J", "해성DS", True, 0.65)], "의견 낸 증권사는 출처"
+    assert decide("키움증권, 반도체 업종 목표가 상향", names, blocked) == [], "증권사 의견 기사인데 대상이 사전에 없으면 연결 없음"
+    assert decide("키움증권, 3분기 영업익 증가", names, blocked) == [("K", "키움증권", True, 0.65)], "증권사 자기 실적은 남음"
+    assert decide("유로존 PMI 예비치 하회(상보)", names, blocked) == [], "연합 '(상보)' 표시는 종목 아님"
