@@ -24,8 +24,14 @@ from hk_llm.core.util import get_logger
 
 log = get_logger(__name__)
 
-TYPE_WORDS = ("시황", "주간전망", "증시 전망", "증시전망", "산업생산", "생산지표", "CPI", "소비자물가", "고용지표",
-              "[마켓노트]", "[마켓뷰]", "[부고]", "[인사]")  # 제목에 있으면 특정 회사 기사가 아님
+TYPE_WORDS = ("산업생산", "생산지표", "CPI", "소비자물가", "고용지표", "[부고]", "[인사]")  # 제목에 있으면 특정 회사 기사가 아님
+# 시황 기사 (04-4b, 라벨 기준 v2.1 2.1절): 전부 버리지 않고, 제목에 나오고 그 종목만의 문장(가격·원인)이 본문에 있는 종목만 남김.
+# 본문에 등락률로만 나오는 종목은 나열 → 연결 안 함. '코스피'·'코스닥' 이 제목에 있는 기사도 시황으로 봄 (예: "코스피, 장중 5%대 급락")
+MARKET_WORDS = ("시황", "주간전망", "증시 전망", "증시전망", "[마켓노트]", "[마켓뷰]")  # 제목만 보는 title_only 는 이것들이면 연결 안 함 (전과 같음)
+MARKET_INDEX = ("코스피", "코스닥")
+NOT_MARKET = re.compile(r"(코스피|코스닥)\s*(상장|입성|이전)")  # "코스닥 상장사 임직원 송치" 는 시황이 아님
+FEATURE_TAGS = ("[특징주]", "[종목+]")  # 한 종목을 다루는 기사 말머리 → 유형 판단에서 뺌
+TITLE_PAIRS = {"삼전닉스": "삼성전자SK하이닉스"}  # 두 종목을 합친 제목 말 (norm 한 제목에서 바꿔 읽음)
 LEAD_CHARS = 200  # 본문 앞부분
 LIST_MAX = 5  # 본문에 나온 종목이 이보다 많으면 명단 기사 🧪
 LIST_TITLED_MAX = 9  # 제목에 주인공이 있어도 이보다 많으면 명단·시황 🧪 본문 716건 중 제목에 회사가 있고 10개 이상인 기사는 저PBR 명단 2건·시황 1건뿐
@@ -115,21 +121,34 @@ def article_text(body):
 
 def on_topic(title, body, found, names):
     """match_one 결과에서 기사 주제와 맞는 연결만 남긴다. LLM 답이 실행마다 흔들려도 결과가 같아지게 코드로 거름"""
-    if "[특징주]" not in title and any(w in title for w in TYPE_WORDS):
+    feature = any(t in title for t in FEATURE_TAGS)
+    if not feature and any(w in title for w in TYPE_WORDS):
         return []
-    if not body:  # 7일 지나 본문이 지워진 기사는 위치를 볼 수 없어 그대로 둠
-        return found
+    market = not feature and (any(w in title for w in MARKET_WORDS)
+                              or (any(w in title for w in MARKET_INDEX) and not NOT_MARKET.search(title)))
+    if not body:  # 7일 지나 본문이 지워진 기사는 위치를 볼 수 없어 그대로 둠 (시황은 문장을 볼 수 없으니 예전처럼 버림)
+        return [] if market else found
     body = article_text(body)
 
     def seen(text_, code, name):
         return _seen(text_, code, name, names)
 
     head, lead, whole = norm(title), norm(body[:LEAD_CHARS]), norm(body)
+    for k, v in TITLE_PAIRS.items():
+        head = head.replace(k, v)
+    if market:
+        return [f for f in found if seen(head, f[0], f[3]) and own_sentence(body, f[0], names)]
     # 04-2 (2026-11-06): 부분 문자열 대신 최장 일치로 셈 → 'SK하이닉스' 안의 '하이닉스'·'SK', 'RISK' 안의 'SK' 를 따로 세지 않음
     stocks = len({c for b, e, c in spans(whole, names) if e - b >= 3})
     if stocks > LIST_TITLED_MAX or (stocks > LIST_MAX and not any(f[1]["is_main"] and seen(head, f[0], f[3]) for f in found)):
         return []
     return [f for f in found if seen(head, f[0], f[3]) or seen(lead, f[0], f[3]) or mentions(whole, f[0], f[3], names) >= MIN_MENTIONS]
+
+
+def own_sentence(body, code, names):
+    """본문에 그 종목만 나오는 문장이 있나 (시황 기사 규칙, 04-4b). "삼성전자는 7000원(3.06%) 내린 22만2000원" 은 있음,
+    "삼성SDI(-4.28%), 두산에너빌리티(-4.49%) 등이 약세" 처럼 여러 종목을 나열한 문장뿐이면 없음"""
+    return any({c for _, _, c in spans(norm(s), names)} == {code} for s in sentences(body))
 
 
 _SPANS = {}  # (사전 id, 글) → spans 결과. 한 기사에서 같은 글을 여러 번 훑지 않게
