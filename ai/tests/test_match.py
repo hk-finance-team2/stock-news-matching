@@ -106,6 +106,8 @@ def test_step6_match():
     assert not background_party("제목", "삼성전자는 지난 3일 HBM 공급 계약을 맺었다는 소식이다.", party("005930", "삼성전자", 1), nm3, 2026), \
         "'지난 3일'은 최근 날짜"
     assert not background_party("제목", bg, ("000660", {"role": "PARTY", "reason": "r"}, 0.83, "SK하이닉스"), nm3, 2026), "예전 답은 안 건드림"
+    from hk_llm.steps import step6_match
+    assert step6_match.USE_BACKGROUND_PARTY is False, "봉인 시험에서 과적합 확인 → 적용 끔 (11/06)"
 
     # LLM 전 거르기 (04-6): 연결될 수 없는 게 확실한 기사만 False
     from hk_llm.steps.step6_match import could_link
