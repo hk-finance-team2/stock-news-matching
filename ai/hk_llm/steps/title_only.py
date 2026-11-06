@@ -19,7 +19,7 @@ from hk_llm.core.db import get_engine
 from hk_llm.core.press_policy import title_only_presses
 from hk_llm.core.util import get_logger
 from hk_llm.steps.sns import COMMON_NAMES
-from hk_llm.steps.step6_match import TYPE_WORDS, load_dictionary, norm
+from hk_llm.steps.step6_match import MARKET_WORDS, TYPE_WORDS, load_dictionary, norm
 
 log = get_logger(__name__)
 
@@ -65,7 +65,7 @@ def title_stocks(title, names, blocked):
 
 def decide(title, names, blocked):
     """[(종목코드, 이름, is_main, 관련도)]. 시황·명단 제목이면 []"""
-    if "[특징주]" not in title and any(w in title for w in TYPE_WORDS):
+    if "[특징주]" not in title and any(w in title for w in TYPE_WORDS + MARKET_WORDS):  # 제목만으론 시황 속 종목 문장을 볼 수 없어 전처럼 뺌
         return []
     found = title_stocks(title, names, blocked)
     brokers = [c for c, n in found.items() if BROKER.search(n)]

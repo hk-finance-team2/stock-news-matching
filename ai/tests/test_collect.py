@@ -201,6 +201,9 @@ def test_step4_extract():
     assert got and got.startswith("삼성전자가 3분기"), repr(got)
     nometa = '<html><body><div class="article-view__body">한글 본문입니다.</div></body></html>'.encode("utf-8")
     assert extract(nometa, "https://www.fnnews.com/news/2") == "한글 본문입니다.", "meta 가 없으면 UTF-8"
+    tagged = ('<div class="article-view__body"><div>관련종목하림지주(003380), 팬오션(028670)</div>'
+              '팬오션이 선박을 자사선으로 전환한다.</div>')
+    assert extract(tagged, "https://www.fnnews.com/news/3") == "팬오션이 선박을 자사선으로 전환한다.", "관련종목 꼬리표는 뺌"
 
 
 def test_robots():
