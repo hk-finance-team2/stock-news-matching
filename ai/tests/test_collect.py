@@ -245,7 +245,8 @@ def test_notify_rules():
     later, s3 = notify.plan(["멈춘 기사 전자신문 40건 (y)"], s2, now=13 * 3600)
     assert later == ["🟠 아직 계속됨: 멈춘 기사 전자신문 40건 (y)", "✅ 해결됨: 수집 공백 25분 (x)"], later
     assert notify.plan([], s3, now=13 * 3600 + 1)[0] == ["✅ 해결됨: 멈춘 기사 전자신문 40건 (y)"]
-    assert notify.send("시험", url="") is False, "주소가 없으면 안 보냄"
+    with mock.patch.dict("os.environ", {"SLACK_WEBHOOK_URL": ""}):  # .env 의 진짜 주소로 보내지 않게
+        assert notify.send("시험", url="") is False, "주소가 없으면 안 보냄"
 
 
 def test_robots():
