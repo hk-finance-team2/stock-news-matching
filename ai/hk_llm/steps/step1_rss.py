@@ -92,7 +92,8 @@ def fetch_all():
                 articles += got
             except Exception as e:
                 log.error("RSS 실패 %s: %s", url, e)
-                failed.append(url)
+                # 이유도 남김: 11/04~05 전자신문 피드가 287번 실패했는데 이유가 로그에만 있어 컨테이너가 꺼지며 사라짐 (수집 점검)
+                failed.append(f"{url} ({type(e).__name__}: {str(e)[:80]})")
     return articles, failed
 
 
