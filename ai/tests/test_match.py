@@ -62,6 +62,13 @@ def test_step6_match():
     assert not on_topic("카카오뱅크 실적", "카카오뱅크가 " * 3, [("035720", {"is_main": True}, 1.0, "카카오")], nm2), \
         "LLM 이 '카카오'라 써도 글에는 카카오뱅크뿐이면 카카오 연결 안 함"
 
+    # 언론사 꼬리표 줄 (04-4a): "관련종목…" 줄은 매칭에서 안 읽음
+    from hk_llm.steps.step6_match import article_text
+    assert article_text("관련종목SK하이닉스(000660), 삼성전자(005930)\n블룸에너지 수혜") == "블룸에너지 수혜"
+    hynix = ("000660", {"is_main": False}, 0.83, "SK하이닉스")
+    assert not on_topic("블룸에너지 수혜 부상", "관련종목SK하이닉스(000660)\n" + "다른 내용 " * 60, [hynix], nm2), \
+        "꼬리표에만 있는 종목은 앞부분에 나온 것으로 보지 않음"
+
     # 관련도: 제목·첫 부분·주인공·언급 횟수·테마로 기사 안에서 얼마나 중심인지 (화면 순서용)
     from hk_llm.steps.step6_match import relevance
     d = (names, {"A": {"반도체"}}, s)

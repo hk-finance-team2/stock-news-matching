@@ -89,7 +89,8 @@ def clean(text_):
     for line in text_.splitlines():
         line = re.sub(r"\s+", " ", line).strip()
         # 기자 이메일·저작권·제보 안내 줄은 요약에 쓸모없음
-        if (not line or re.search(r"\S+@\S+\.\S+|무단\s*전재", line) or line.startswith(("ⓒ", "©", "<저작권자", "제보는"))
+        # "관련종목하림지주(003380), 팬오션(028670)": 파이낸셜뉴스가 본문 첫 줄에 붙이는 목록 (기사 글이 아님, 지주사·증권사가 섞임, 04-4a)
+        if (not line or re.search(r"\S+@\S+\.\S+|무단\s*전재", line) or line.startswith(("ⓒ", "©", "<저작권자", "제보는", "관련종목"))
                 or line.endswith(" 송고")):  # 연합 "2026/11/02 10:30 송고"
             continue
         lines.append(line)

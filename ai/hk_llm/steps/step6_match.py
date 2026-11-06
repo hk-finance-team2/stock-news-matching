@@ -105,12 +105,21 @@ def match_one(companies, keywords, dictionary, missing=None):
     return list(best.values())
 
 
+TAG_LINE = re.compile(r"^관련종목.*(?:\n|$)", re.M)
+
+
+def article_text(body):
+    """매칭에 쓰는 본문: 언론사가 붙인 "관련종목…" 목록 줄은 뺌 (04-4a. 새 기사는 step4 가 저장 전에 빼고, 이미 저장된 기사는 여기서)"""
+    return TAG_LINE.sub("", body) if body else body
+
+
 def on_topic(title, body, found, names):
     """match_one 결과에서 기사 주제와 맞는 연결만 남긴다. LLM 답이 실행마다 흔들려도 결과가 같아지게 코드로 거름"""
     if "[특징주]" not in title and any(w in title for w in TYPE_WORDS):
         return []
     if not body:  # 7일 지나 본문이 지워진 기사는 위치를 볼 수 없어 그대로 둠
         return found
+    body = article_text(body)
 
     def seen(text_, code, name):
         return _seen(text_, code, name, names)
@@ -172,6 +181,7 @@ def relevance(title, body, found_item, keywords, dictionary):
     names, themes, _ = dictionary
     if not body:
         return sc
+    body = article_text(body)
     head, lead, whole = norm(title), norm(body[:LEAD_CHARS]), norm(body)
     r = REL_TITLE if _seen(head, code, name, names) else REL_LEAD if _seen(lead, code, name, names) else 0.0
     r += REL_MAIN if c["is_main"] else 0.0
@@ -205,7 +215,7 @@ def evidence(body, item, names):
     words = {norm(name)} | {n for n, cc in names.items() if cc == code and len(n) >= 2}
     reason = set(re.findall(r"[가-힣A-Za-z0-9]{2,}", c.get("reason", "")))
     best, best_score = None, -1
-    for s in sentences(body):
+    for s in sentences(article_text(body)):
         if not any(w in norm(s) for w in words):
             continue
         overlap = sum(1 for w in reason if w in s)
