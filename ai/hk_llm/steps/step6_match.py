@@ -147,6 +147,11 @@ PAST = re.compile(r"(?<!\d)(20\d\d)년|지난해|지난\s?\d{1,2}월")  # 지난
 CONTRAST = re.compile(r"^(반면|이와 달리|대조적으로)|[와과]\s?달리")
 
 
+# 06-2 를 끔 (11/06 봉인 시험): 처음 보는 기사 100건에서 정확도 이득이 없고(P 95.9 vs 96.1) 맞는 연결을 실행마다 약 2개 지움
+# (R 81.6 vs 86.8). 개발용 틀림 4개를 보고 만든 규칙이라 과적합이었음 → 함수와 시험은 남기고 적용만 끔
+USE_BACKGROUND_PARTY = False
+
+
 def background_party(title, body, item, names, year=None):
     """LLM 이 당사자(PARTY)라 했지만 근거 문장이 지난 일·대비 언급이면 True → 나열로 보고 연결 안 함 (06-2, 라벨 기준 v2.1 2.1절 '배경 언급')
     새 답(근거 번호가 있는 답)에만 씀. 개발용 3번 실행의 당사자 틀림 4개를 다 잡고 맞은 당사자 2개는 안 건드림,
@@ -177,7 +182,8 @@ def on_topic(title, body, found, names, year=None):
     head, lead, whole = norm(title), norm(body[:LEAD_CHARS]), norm(body)
     for k, v in TITLE_PAIRS.items():
         head = head.replace(k, v)
-    found = [f for f in found if not background_party(title, body, f, names, year)]
+    if USE_BACKGROUND_PARTY:
+        found = [f for f in found if not background_party(title, body, f, names, year)]
     if market:
         return [f for f in found if seen(head, f[0], f[3]) and own_sentence(body, f[0], names)]
     # 04-2 (2026-11-06): 부분 문자열 대신 최장 일치로 셈 → 'SK하이닉스' 안의 '하이닉스'·'SK', 'RISK' 안의 'SK' 를 따로 세지 않음

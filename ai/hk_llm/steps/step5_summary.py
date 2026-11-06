@@ -181,7 +181,9 @@ def llm_call(fn):
 
 
 def chain(model=MODEL):
-    llm = ChatOpenAI(model=model, timeout=60, max_retries=2, max_tokens=2000)  # 실측 출력 230~390 토큰
+    # 출력 한도 4,000 (11/06 봉인 시험): 새 형식(05-1)은 회사를 전부 적어 평균 약 590 토큰인데, 회사가 아주 많은 기사에서
+    # 2,000 을 넘어 답이 잘림(시험 300번 중 1번). 한도는 안전장치일 뿐 실제로 쓴 토큰만 냄 → 올려도 평소 비용은 같음
+    llm = ChatOpenAI(model=model, timeout=60, max_retries=2, max_tokens=4000)
     return PROMPT | llm.with_structured_output(ArticleSummary, include_raw=True)  # raw: 토큰 수 확인용
 
 
