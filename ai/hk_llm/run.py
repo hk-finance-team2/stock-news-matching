@@ -12,6 +12,7 @@ from sqlalchemy import text
 
 from hk_llm.core.config import KST
 from hk_llm.steps.dart import collect_disclosures, summarize_disclosures
+from hk_llm.steps.health import check as health_check
 from hk_llm.core.db import get_engine, to_db
 from hk_llm.steps.step1_rss import FEEDS, fetch_all
 from hk_llm.steps.step2_dedup import dedup_by_url
@@ -63,8 +64,17 @@ def _run(engine, limit, daily):
     finish = text("""UPDATE collect_run SET finished_at = :t, status = :status, collected_count = :c,
                      summarized_count = :s, error = :err WHERE run_id = :id""")
     try:
+        try:  # 수집 점검 (health.py): 공백·피드 연속 실패·멈춘 기사·수집량 급감·글자 깨짐. 점검이 실패해도 수집은 계속
+            issues = health_check(engine)
+        except Exception:
+            log.exception("수집 점검 실패")
+            issues = []
+        if issues:
+            log.warning("수집 점검: %s", " / ".join(issues))
         new, failed = collect(engine)
         errors = ["실패한 피드: " + ", ".join(failed)] if failed else []
+        if issues:
+            errors.append("점검: " + "; ".join(issues))
         try:  # 공시가 실패해도 뉴스는 계속
             new += collect_disclosures(engine)
         except Exception as e:

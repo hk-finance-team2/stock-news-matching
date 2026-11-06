@@ -206,6 +206,27 @@ def test_step4_extract():
     assert extract(tagged, "https://www.fnnews.com/news/3") == "팬오션이 선박을 자사선으로 전환한다.", "관련종목 꼬리표는 뺌"
 
 
+def test_health_rules():
+    """수집 점검 (health.py): DB 없이 판단 규칙만"""
+    from datetime import datetime, timedelta
+
+    from hk_llm.steps import health
+    from hk_llm.steps.step4_body import broken
+
+    now = datetime(2026, 11, 6, 9, 0)
+    assert health.gap_issue(now - timedelta(minutes=10), now) is None, "15분 이내는 정상"
+    assert health.gap_issue(now - timedelta(minutes=25), now).startswith("수집 공백 25분"), "15분 넘으면 공백"
+    assert health.gap_issue(None, now) is None, "처음 실행"
+    feed = "https://rss.etnews.com/02.xml"
+    errs = [f"실패한 피드: {feed} (ParseError: x)"] * health.FEED_STREAK
+    assert health.feed_issues(errs, [feed, "https://other"]) == [f"피드 {health.FEED_STREAK}번 연속 실패: {feed}"]
+    assert health.feed_issues(errs[:-1] + [None], [feed]) == [], "한 번이라도 성공하면 연속 아님"
+    assert health.feed_issues(errs[:3], [feed]) == [], "기록이 모자라면 판단 안 함"
+    got = health.volume_issues({"전자신문": 0, "한국경제": 50}, {"전자신문": 13, "한국경제": 54, "작은곳": 4})
+    assert got == ["수집량 급감 전자신문: 최근 24시간 0건 (지난 7일 하루 평균 13건)"], "평균 절반 아래만, 평균이 작은 곳은 빼고"
+    assert broken("ì¤ì\x80ë\x8f" * 3) and not broken("삼성전자가 3분기 영업이익 10조원을 기록했다. Ã 한 글자"), "글자 깨짐 의심"
+
+
 def test_robots():
     from hk_llm.steps.robots import allowed
 
@@ -249,7 +270,10 @@ def test_robots_failure_not_cached():
                 mock.patch.object(step4_body, "_get") as page, mock.patch.object(step4_body, "_update") as update:
             assert step4_body.fetch_bodies(engine)["RETRY"] == 2
         assert get.call_count == 1, "같은 실행에서 다시 안 물어봄"
-        assert not page.called and not update.called, "SKIPPED 로 굳지 않고 LISTED 그대로"
+        assert not page.called, "확인 못 한 사이트엔 본문 요청 안 함"
+        # SKIPPED 로 굳지 않고 LISTED 그대로, 재시도 횟수도 안 셈. 이유만 남김 (수집 점검이 "멈춘 기사"의 이유로 보여 줌)
+        assert all(c.kwargs.get("status") == "LISTED" and c.kwargs.get("tries") is None and "robots" in c.kwargs.get("error", "")
+                   for c in update.call_args_list) and update.call_count == 2, update.call_args_list
     finally:
         robots._parser.cache_clear()
         robots._down.clear()

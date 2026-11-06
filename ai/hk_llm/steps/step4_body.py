@@ -64,6 +64,14 @@ def decode(html):
         return html.decode("utf-8", errors="replace")
 
 
+MOJIBAKE = re.compile("[à-ï][\u0080-¿]")  # UTF-8 한글을 latin-1 로 읽으면 'ì¤' 처럼 이 짝이 생김
+
+
+def broken(body, pairs=5):
+    """글자 깨짐 의심: 위 짝이 pairs 개 이상. 11/05 복구 때 이 기준으로 깨진 본문 144건을 찾았고, 복구 뒤 본문 2,612건에서는 0건 (헛경보 없음)"""
+    return len(MOJIBAKE.findall(body or "")) >= pairs
+
+
 def extract(html, url):
     """HTML 에서 정제된 본문. 모르는 사이트거나 본문 칸이 없으면 None (칸이 여러 개면 이어 붙임)"""
     xpath = BODY_XPATH.get(urlsplit(url).netloc)
@@ -120,7 +128,8 @@ def fetch_bodies(engine=None, limit=BATCH):
             _update(engine, r.article_id, status="SKIPPED", error="모르는 사이트")
             done["SKIPPED"] += 1
             continue
-        if not reachable(r.url):
+        if not reachable(r.url):  # 금지가 아니라 지금 모름 → 재시도 횟수엔 안 넣지만 이유는 남김 (수집 점검이 "멈춘 기사"의 이유로 보여 줌)
+            _update(engine, r.article_id, status="LISTED", error="robots.txt 확인 못 함 (다음 실행에서 다시)")
             done["RETRY"] += 1
             continue
         if not allowed(r.url):
@@ -152,6 +161,12 @@ def fetch_bodies(engine=None, limit=BATCH):
             bad[host] += 1
             done["FAILED" if status == "FAILED" else "RETRY"] += 1
             log.warning("본문 실패 %d/%d %s: %s", tries, MAX_TRIES, r.url, e)
+            continue
+        if broken(body):  # 깨진 글을 LLM 에 넣으면 제목만 보고 지어낸 요약이 나옴 (11/05 파이낸셜뉴스 144건) → 막고 표시
+            _update(engine, r.article_id, status="FAILED", error=f"글자 깨짐 의심 (요약 안 함): {body[:40]}")
+            done["FAILED"] += 1
+            bad[host] += 1
+            log.warning("본문 글자 깨짐 의심 %s", r.url)
             continue
         _update(engine, r.article_id, status="FETCHED", body=body, tries=0)
         done["FETCHED"] += 1
