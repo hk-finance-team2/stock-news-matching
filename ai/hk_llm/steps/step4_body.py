@@ -47,12 +47,29 @@ MAX_DELAY = 10  # robots.txt Crawl-delay 가 터무니없이 커도 1건당 최�
 log = get_logger(__name__)
 
 
+CHARSET = re.compile(rb"""<meta[^>]+charset\s*=\s*["']?\s*([\w-]+)""", re.I)
+
+
+def decode(html):
+    """바이트 → 글자. 페이지 앞부분의 <meta charset> 을 따르고, 없으면 UTF-8 (2026-11-05 버그 수정)
+    전에는 바이트를 lxml 에 그대로 넘겼는데, lxml 은 meta 를 못 찾으면 latin-1 로 읽음 → 파이낸셜뉴스 본문 232건 중 144건이
+    'ì¤ì' 처럼 깨진 채 저장되고 그대로 LLM 에 들어감. 깨진 뒤 공백 정리(clean)에서 일부 바이트가 지워져 되돌릴 수도 없음"""
+    if isinstance(html, str):
+        return html
+    m = CHARSET.search(html[:8192])
+    enc = m.group(1).decode("ascii", "ignore").lower() if m else "utf-8"
+    try:
+        return html.decode(enc, errors="replace")
+    except LookupError:  # 모르는 이름이면 UTF-8
+        return html.decode("utf-8", errors="replace")
+
+
 def extract(html, url):
     """HTML 에서 정제된 본문. 모르는 사이트거나 본문 칸이 없으면 None (칸이 여러 개면 이어 붙임)"""
     xpath = BODY_XPATH.get(urlsplit(url).netloc)
     if not xpath:
         return None
-    found = lxml.html.fromstring(html).xpath(xpath)
+    found = lxml.html.fromstring(decode(html)).xpath(xpath)
     if not found:
         return None
     parts = []
