@@ -95,6 +95,18 @@ def test_step6_match():
     two = "외국인이 삼성전자를 팔았다는 소식이다.\nSK하이닉스는 3% 내린 140만원에 거래됐다."
     assert on_topic("외국인, 삼전닉스 1조 순매도에…코스피 하락", two, [f_sam, f_hy], nm3) == [f_sam, f_hy], "삼전닉스 = 두 종목"
 
+    # 배경·대비 당사자 (06-2): 근거 문장이 지난 일·대비 언급이면 연결 안 함 (근거 번호가 있는 새 답만)
+    from hk_llm.steps.step6_match import background_party
+    bg = "한섬이 수입 패션을 키웠다는 기사다.\n판도를 바꾼 것은 2017년 SK하이닉스 패션부문 인수였다.\n반면 삼성SDI는 이자를 주지 않는다."
+    def party(code, name, ev):
+        return (code, {"role": "PARTY", "evidence": ev, "reason": "r", "is_main": False}, 0.83, name)
+    assert background_party("제목", bg, party("000660", "SK하이닉스", 2), nm3, 2026), "지난 연도"
+    assert background_party("제목", bg, party("006400", "삼성SDI", 3), nm3, 2026), "반면"
+    assert not background_party("제목", bg, party("000660", "SK하이닉스", 2), nm3, 2017), "같은 해면 지난 일 아님"
+    assert not background_party("제목", "삼성전자는 지난 3일 HBM 공급 계약을 맺었다는 소식이다.", party("005930", "삼성전자", 1), nm3, 2026), \
+        "'지난 3일'은 최근 날짜"
+    assert not background_party("제목", bg, ("000660", {"role": "PARTY", "reason": "r"}, 0.83, "SK하이닉스"), nm3, 2026), "예전 답은 안 건드림"
+
     # LLM 전 거르기 (04-6): 연결될 수 없는 게 확실한 기사만 False
     from hk_llm.steps.step6_match import could_link
     assert could_link("삼성전자 실적", "실적이 좋았다.", nm3), "제목에 이름"

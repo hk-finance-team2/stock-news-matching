@@ -16,9 +16,11 @@
 import json
 import re
 from collections import Counter
+from datetime import datetime
 
 from sqlalchemy import bindparam, text
 
+from hk_llm.core.config import KST
 from hk_llm.core.db import get_engine
 from hk_llm.core.util import get_logger
 
@@ -141,7 +143,24 @@ def article_text(body):
     return TAG_LINE.sub("", body) if body else body
 
 
-def on_topic(title, body, found, names):
+PAST = re.compile(r"(?<!\d)(20\d\d)년|지난해|지난\s?\d{1,2}월")  # 지난 일. "지난 3일"(최근 날짜)은 안 걸리게 월만
+CONTRAST = re.compile(r"^(반면|이와 달리|대조적으로)|[와과]\s?달리")
+
+
+def background_party(title, body, item, names, year=None):
+    """LLM 이 당사자(PARTY)라 했지만 근거 문장이 지난 일·대비 언급이면 True → 나열로 보고 연결 안 함 (06-2, 라벨 기준 v2.1 2.1절 '배경 언급')
+    새 답(근거 번호가 있는 답)에만 씀. 개발용 3번 실행의 당사자 틀림 4개를 다 잡고 맞은 당사자 2개는 안 건드림,
+    정답지 밖 120건: 당사자 15개 중 1개("반면 SK하이닉스는…")만 걸렸고 맞게 걸림 — 잡는 양은 적지만 맞는 연결을 버리지 않음"""
+    c = item[1]
+    if c.get("role") != "PARTY" or "evidence" not in c:
+        return False
+    ev = evidence(body, item, names, title) or ""
+    year = year or datetime.now(KST).year
+    past = any(m.group(1) is None or int(m.group(1)) < year for m in PAST.finditer(ev))
+    return past or bool(CONTRAST.search(ev))
+
+
+def on_topic(title, body, found, names, year=None):
     """match_one 결과에서 기사 주제와 맞는 연결만 남긴다. LLM 답이 실행마다 흔들려도 결과가 같아지게 코드로 거름"""
     feature = any(t in title for t in FEATURE_TAGS)
     if not feature and any(w in title for w in TYPE_WORDS):
@@ -158,6 +177,7 @@ def on_topic(title, body, found, names):
     head, lead, whole = norm(title), norm(body[:LEAD_CHARS]), norm(body)
     for k, v in TITLE_PAIRS.items():
         head = head.replace(k, v)
+    found = [f for f in found if not background_party(title, body, f, names, year)]
     if market:
         return [f for f in found if seen(head, f[0], f[3]) and own_sentence(body, f[0], names)]
     # 04-2 (2026-11-06): 부분 문자열 대신 최장 일치로 셈 → 'SK하이닉스' 안의 '하이닉스'·'SK', 'RISK' 안의 'SK' 를 따로 세지 않음
@@ -302,7 +322,7 @@ def evidence(body, item, names, title=None):
 def match_articles(engine=None, statuses=("SUMMARIZED",)):
     engine = engine or get_engine()
     dictionary = load_dictionary(engine)
-    sql = text("SELECT article_id, title, body, keywords, companies FROM article WHERE status IN :st AND companies IS NOT NULL"
+    sql = text("SELECT article_id, title, body, keywords, companies, published_at FROM article WHERE status IN :st AND companies IS NOT NULL"
                ).bindparams(bindparam("st", expanding=True))
     with engine.connect() as conn:
         rows = conn.execute(sql, {"st": list(statuses)}).all()
@@ -311,7 +331,7 @@ def match_articles(engine=None, statuses=("SUMMARIZED",)):
     for r in rows:
         keywords = (r.keywords or "").split(",")
         found = match_one(json.loads(r.companies), keywords, dictionary, missing)
-        found = on_topic(r.title, r.body, found, dictionary[0])
+        found = on_topic(r.title, r.body, found, dictionary[0], r.published_at.year if r.published_at else None)
         with engine.begin() as conn:  # 한 기사의 연결 지우기·넣기·상태 바꾸기를 한 번에
             # 본문이 7일 지나 지워진 기사는 근거를 다시 뽑을 수 없으므로 예전 근거를 이어 씀
             old = dict(conn.execute(text("SELECT stock_code, evidence FROM article_stock WHERE article_id = :id"),
