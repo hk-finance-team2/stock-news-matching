@@ -12,6 +12,7 @@ from sqlalchemy import text
 
 from hk_llm.core.config import KST
 from hk_llm.steps.dart import collect_disclosures, summarize_disclosures
+from hk_llm.core.notify import report_health
 from hk_llm.steps.health import check as health_check
 from hk_llm.core.db import get_engine, to_db
 from hk_llm.steps.step1_rss import FEEDS, fetch_all
@@ -71,6 +72,7 @@ def _run(engine, limit, daily):
             issues = []
         if issues:
             log.warning("수집 점검: %s", " / ".join(issues))
+        report_health(issues)  # Slack 알림: 새로 생긴·사라진 문제만 (웹훅이 없으면 아무것도 안 함)
         new, failed = collect(engine)
         errors = ["실패한 피드: " + ", ".join(failed)] if failed else []
         if issues:

@@ -227,6 +227,22 @@ def test_health_rules():
     assert broken("ì¤ì\x80ë\x8f" * 3) and not broken("삼성전자가 3분기 영업이익 10조원을 기록했다. Ã 한 글자"), "글자 깨짐 의심"
 
 
+def test_notify_rules():
+    """Slack 알림: 새 문제·해결·12시간 뒤 다시만, 숫자만 바뀐 건 같은 문제. 네트워크 없음"""
+    from hk_llm.core import notify
+
+    assert notify.key("수집 공백 25분 (마지막 성공 11/05 15:21)") == notify.key("수집 공백 1,336분 (마지막 성공 11/06 09:00)")
+    assert notify.key("멈춘 기사 전자신문 34건 (…)") != notify.key("멈춘 기사 한국경제 5건 (…)")
+    first, s1 = notify.plan(["수집 공백 25분 (x)", "멈춘 기사 전자신문 34건 (y)"], {}, now=0)
+    assert first == ["🔴 수집 공백 25분 (x)", "🔴 멈춘 기사 전자신문 34건 (y)"]
+    again, s2 = notify.plan(["수집 공백 30분 (x)", "멈춘 기사 전자신문 35건 (y)"], s1, now=600)
+    assert again == [] and s2 == s1, "숫자만 바뀐 같은 문제는 다시 안 보냄"
+    later, s3 = notify.plan(["멈춘 기사 전자신문 40건 (y)"], s2, now=13 * 3600)
+    assert later == ["🟠 아직 계속됨: 멈춘 기사 전자신문 40건 (y)", "✅ 해결됨: 수집 공백 25분 (x)"], later
+    assert notify.plan([], s3, now=13 * 3600 + 1)[0] == ["✅ 해결됨: 멈춘 기사 전자신문 40건 (y)"]
+    assert notify.send("시험", url="") is False, "주소가 없으면 안 보냄"
+
+
 def test_robots():
     from hk_llm.steps.robots import allowed
 
