@@ -22,6 +22,16 @@ def test_step6_match():
     miss = Counter()
     match_one([{"name": "바이낸스", "is_main": False, "sentiment": "NEUTRAL", "reason": "r"}], [], d, miss)
     assert miss == {"바이낸스": 1}, "못 찾은 이름을 모음"
+    # 역할 (05-1): 나열·출처·그룹은 연결 안 함, 주인공만 is_main, 판단 보류는 감성 NULL, 예전 답(role 없음)도 읽음
+    def co(name, role, sent="POSITIVE"):
+        return {"name": name, "role": role, "sentiment": sent, "reason": "r", "evidence": 1}
+    got = match_one([co("HL만도", "SUBJECT", "UNCERTAIN"), co("샘표", "SOURCE")], [], d)
+    assert [g[0] for g in got] == ["204320"] and got[0][1]["is_main"] and got[0][1]["sentiment"] is None, got
+    assert match_one([co("HL만도", "LISTED"), co("샘표", "GROUP")], [], d) == []
+    assert not match_one([co("샘표", "PARTY")], [], d)[0][1]["is_main"], "당사자는 주인공 아님"
+    old = match_one([{"name": "샘표", "is_main": False, "sentiment": "NEUTRAL", "reason": "r"}], [], d)
+    assert old and old[0][1]["role"] == "PARTY", "예전 답의 조연은 당사자로 읽음"
+
     # 괄호를 붙인 이름: 앞 → 안 순서로 찾음 (04-1)
     from hk_llm.steps.step6_match import lookup
     nm = {"한국항공우주": "047810", "KGM": "003620", "HL만도": "204320"}
@@ -112,6 +122,14 @@ def test_step6_match():
     assert evidence(body, item, names) == "삼성전자는 HBM 공급 계약을 맺어 실적 개선이 기대된다.", "이유와 겹치는 문장"
     assert evidence("삼전이 강세를 보였다. 다른 문장이다.", item, names) == "삼전이 강세를 보였다.", "별칭으로도 찾음"
     assert evidence("다른 회사 이야기만 있는 본문입니다.", item, names) is None, "이름이 없으면 None"
+    # LLM 이 근거 번호를 골랐으면 그 문장 (05-1): 0 = 제목, 1~ = 본문 문장 (numbered 와 같은 번호)
+    from hk_llm.steps.step6_match import numbered
+    assert numbered("제목", body) == ["제목", "삼성전자가 행사에 참석했다.", "삼성전자는 HBM 공급 계약을 맺어 실적 개선이 기대된다.", "두산은 별도 소식이다."]
+    picked = ("A", {"is_main": True, "reason": "r", "evidence": 1}, 1.0, "삼성전자")
+    assert evidence(body, picked, names, "삼성전자 제목") == "삼성전자가 행사에 참석했다.", "LLM 이 고른 번호"
+    assert evidence(body, ("A", {**picked[1], "evidence": 0}, 1.0, "삼성전자"), names, "삼성전자 제목") == "삼성전자 제목"
+    bad = ("A", {"is_main": True, "reason": "HBM 공급 계약으로 실적 개선", "evidence": 99}, 1.0, "삼성전자")
+    assert evidence(body, bad, names, "제목") == "삼성전자는 HBM 공급 계약을 맺어 실적 개선이 기대된다.", "번호가 틀리면 예전 방식"
 
 
 def test_step7_group():
