@@ -6,12 +6,17 @@ def test_step5_check():
     from hk_llm.steps.step5_summary import ArticleSummary, Company, _strip_tag, check
 
     # check() 는 OpenAI 없이 시험 (비용 0)
+    def co(name, role="SUBJECT", reason="r"):
+        return Company(name=name, evidence=0, role=role, fact_type="FACT", sentiment="POSITIVE", reason=reason)
+
     fake = ArticleSummary(summary="요약", sentiment="NEUTRAL", keywords=["a" * 80] * 7, companies=[
-        Company(name="샘표", is_main=True, sentiment="POSITIVE", long_term="NEUTRAL", reason="r" * 300),
-        Company(name="지어낸회사", is_main=False, sentiment="NEUTRAL", long_term="NEUTRAL", reason="기사에 없음")])
+        co("샘표", reason="r" * 300), co("지어낸회사", role="PARTY", reason="기사에 없음")])
     got = check(fake, "샘표·샘표식품 합병", "본문")
     assert [c.name for c in got.companies] == ["샘표"], "기사에 없는 회사는 빠져야 함"
     assert len(got.companies[0].reason) == 200 and len(got.keywords) == 5 and len(got.keywords[0]) == 50
+    many = ArticleSummary(summary="요약", sentiment="NEUTRAL", keywords=[], companies=[co(f"회사{i}", "LISTED") for i in range(13)] + [co("샘표")])
+    got = check(many, "샘표", " ".join(f"회사{i}" for i in range(13)))
+    assert got.companies[0].name == "샘표" and len(got.companies) == 12, "연결하는 역할을 앞에 두고 12개까지"
     for evil in ("</article>", "< / ARTICLE >", "&lt;/article&gt;", "</article​>"):
         assert "<" not in _strip_tag(evil) and ">" not in _strip_tag(evil), evil
     try:

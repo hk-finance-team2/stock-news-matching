@@ -16,9 +16,11 @@
 import json
 import re
 from collections import Counter
+from datetime import datetime
 
 from sqlalchemy import bindparam, text
 
+from hk_llm.core.config import KST
 from hk_llm.core.db import get_engine
 from hk_llm.core.util import get_logger
 
@@ -83,6 +85,7 @@ def reason_text(c):
 
 
 PAREN = re.compile(r"^(.+?)\s*\((.+)\)$")
+DIVISION = re.compile(r"^(.+?)\s+\S*(?:부문|사업부)$")  # "한화 건설부문", "삼성물산 패션부문", "삼성전자 DS부문" (05-2a)
 
 
 def lookup(names, name):
@@ -92,14 +95,35 @@ def lookup(names, name):
     m = None if code else PAREN.match(name.strip())
     if m:
         code = names.get(norm(m.group(1))) or names.get(norm(m.group(2)))
+    d = None if code else DIVISION.match(name.strip())
+    if d:  # 사업부 표기: 앞의 회사 이름으로 (05-2a: 개발용 D065 "한화 건설부문" 을 놓침)
+        code = names.get(norm(d.group(1)))
     return code
 
 
+LINK_ROLES = ("SUBJECT", "PARTY", "COMPARISON")  # 연결하는 역할 (라벨 기준 v2.1). LISTED 나열·SOURCE 출처·GROUP 그룹은 연결 안 함
+UNCERTAIN_FACTS = ("FORECAST", "RUMOR")  # 근거가 이것뿐이면 감성 판단 보류
+
+
+def normalize(c):
+    """LLM 회사 답을 매칭이 쓰는 꼴로 (05-1): 새 답은 role 로 is_main 을 정하고, 판단 보류(UNCERTAIN)는 감성 NULL.
+    role 이 없는 예전 답(11/06 이전)은 is_main 그대로 → 주인공 SUBJECT, 아니면 PARTY 로 봄"""
+    role = c.get("role") or ("SUBJECT" if c.get("is_main") else "PARTY")
+    sent = c.get("sentiment")
+    # 06-1: 근거 문장이 전망·소문이면 판단 보류 (라벨 기준 v2.1 3절 2번). LLM 은 사실 종류를 FORECAST 라 적고도 감성을 단정함
+    #       (개발용 3번 실행: FORECAST 연결 20개 중 감성 맞음 2, 정답이 판단 보류 12)
+    if c.get("fact_type") in UNCERTAIN_FACTS:
+        sent = "UNCERTAIN"
+    return {**c, "role": role, "is_main": role == "SUBJECT", "sentiment": None if sent == "UNCERTAIN" else sent}
+
+
 def match_one(companies, keywords, dictionary, missing=None):
-    """[(종목코드, 회사 dict, 점수, 일치한 이름)] — 최소 점수 이상, 종목당 1개 (점수 높은 쪽)"""
+    """[(종목코드, 회사 dict, 점수, 일치한 이름)] — 최소 점수 이상, 종목당 1개 (점수 높은 쪽). 연결하지 않는 역할은 뺌"""
     names, themes, s = dictionary
     best = {}
-    for c in companies:
+    for c in map(normalize, companies):
+        if c["role"] not in LINK_ROLES:
+            continue
         code = lookup(names, c["name"])
         if not code:
             if missing is not None:
@@ -119,7 +143,24 @@ def article_text(body):
     return TAG_LINE.sub("", body) if body else body
 
 
-def on_topic(title, body, found, names):
+PAST = re.compile(r"(?<!\d)(20\d\d)년|지난해|지난\s?\d{1,2}월")  # 지난 일. "지난 3일"(최근 날짜)은 안 걸리게 월만
+CONTRAST = re.compile(r"^(반면|이와 달리|대조적으로)|[와과]\s?달리")
+
+
+def background_party(title, body, item, names, year=None):
+    """LLM 이 당사자(PARTY)라 했지만 근거 문장이 지난 일·대비 언급이면 True → 나열로 보고 연결 안 함 (06-2, 라벨 기준 v2.1 2.1절 '배경 언급')
+    새 답(근거 번호가 있는 답)에만 씀. 개발용 3번 실행의 당사자 틀림 4개를 다 잡고 맞은 당사자 2개는 안 건드림,
+    정답지 밖 120건: 당사자 15개 중 1개("반면 SK하이닉스는…")만 걸렸고 맞게 걸림 — 잡는 양은 적지만 맞는 연결을 버리지 않음"""
+    c = item[1]
+    if c.get("role") != "PARTY" or "evidence" not in c:
+        return False
+    ev = evidence(body, item, names, title) or ""
+    year = year or datetime.now(KST).year
+    past = any(m.group(1) is None or int(m.group(1)) < year for m in PAST.finditer(ev))
+    return past or bool(CONTRAST.search(ev))
+
+
+def on_topic(title, body, found, names, year=None):
     """match_one 결과에서 기사 주제와 맞는 연결만 남긴다. LLM 답이 실행마다 흔들려도 결과가 같아지게 코드로 거름"""
     feature = any(t in title for t in FEATURE_TAGS)
     if not feature and any(w in title for w in TYPE_WORDS):
@@ -136,6 +177,7 @@ def on_topic(title, body, found, names):
     head, lead, whole = norm(title), norm(body[:LEAD_CHARS]), norm(body)
     for k, v in TITLE_PAIRS.items():
         head = head.replace(k, v)
+    found = [f for f in found if not background_party(title, body, f, names, year)]
     if market:
         return [f for f in found if seen(head, f[0], f[3]) and own_sentence(body, f[0], names)]
     # 04-2 (2026-11-06): 부분 문자열 대신 최장 일치로 셈 → 'SK하이닉스' 안의 '하이닉스'·'SK', 'RISK' 안의 'SK' 를 따로 세지 않음
@@ -248,10 +290,27 @@ def sentences(body):
     return [s.strip() for s in re.split(r"(?<=[.!?])\s+|\n+", body or "") if len(s.strip()) >= 10]
 
 
-def evidence(body, item, names):
-    """근거 문장 (F-06): 그 종목 이름이 나온 문장 중 LLM 이유와 단어가 가장 많이 겹치는 문장 (같으면 앞 문장). LLM 비용 0
-    이름이 나온 문장이 없으면 None"""
+LLM_CHARS = 3000  # LLM 에 보여 주는 본문 앞부분 (step5_summary.MAX_CHARS 와 같음)
+
+
+def numbered(title, body, limit=LLM_CHARS):
+    """LLM 에 번호를 붙여 보여 주는 문장 목록 (05-1): 0 = 제목, 1~ = 본문 앞 limit 자의 문장. 근거 번호를 다시 문장으로 바꿀 때도 씀"""
+    return [title] + sentences(article_text(body or "")[:limit])
+
+
+def evidence(body, item, names, title=None):
+    """근거 문장 (F-06). LLM 이 근거 문장 번호를 골랐으면(05-1) 그 문장, 아니면(예전 답·번호 잘못) 예전 방식:
+    그 종목 이름이 나온 문장 중 LLM 이유와 단어가 가장 많이 겹치는 문장. 이름이 나온 문장이 없으면 None"""
     code, c, _, name = item
+    i = c.get("evidence")
+    picked = None
+    if isinstance(i, int) and not isinstance(i, bool) and title is not None:
+        sents = numbered(title, body)
+        if 0 <= i < len(sents):
+            picked = sents[i][:EVIDENCE_MAX]
+            # 06-3: 화면에 "이 종목의 근거"로 나가므로 그 종목 이름이 있어야 함. 없으면(개발용 152개 중 14%) 아래 방식으로 이름이 있는 문장
+            if _seen(norm(picked), code, name, names):
+                return picked
     words = {norm(name)} | {n for n, cc in names.items() if cc == code and len(n) >= 2}
     reason = set(re.findall(r"[가-힣A-Za-z0-9]{2,}", c.get("reason", "")))
     best, best_score = None, -1
@@ -261,13 +320,13 @@ def evidence(body, item, names):
         overlap = sum(1 for w in reason if w in s)
         if overlap > best_score:
             best, best_score = s, overlap
-    return best[:EVIDENCE_MAX] if best else None
+    return best[:EVIDENCE_MAX] if best else picked  # 이름 있는 문장이 하나도 없으면 LLM 이 고른 문장이라도
 
 
 def match_articles(engine=None, statuses=("SUMMARIZED",)):
     engine = engine or get_engine()
     dictionary = load_dictionary(engine)
-    sql = text("SELECT article_id, title, body, keywords, companies FROM article WHERE status IN :st AND companies IS NOT NULL"
+    sql = text("SELECT article_id, title, body, keywords, companies, published_at FROM article WHERE status IN :st AND companies IS NOT NULL"
                ).bindparams(bindparam("st", expanding=True))
     with engine.connect() as conn:
         rows = conn.execute(sql, {"st": list(statuses)}).all()
@@ -276,7 +335,7 @@ def match_articles(engine=None, statuses=("SUMMARIZED",)):
     for r in rows:
         keywords = (r.keywords or "").split(",")
         found = match_one(json.loads(r.companies), keywords, dictionary, missing)
-        found = on_topic(r.title, r.body, found, dictionary[0])
+        found = on_topic(r.title, r.body, found, dictionary[0], r.published_at.year if r.published_at else None)
         with engine.begin() as conn:  # 한 기사의 연결 지우기·넣기·상태 바꾸기를 한 번에
             # 본문이 7일 지나 지워진 기사는 근거를 다시 뽑을 수 없으므로 예전 근거를 이어 씀
             old = dict(conn.execute(text("SELECT stock_code, evidence FROM article_stock WHERE article_id = :id"),
@@ -289,7 +348,7 @@ def match_articles(engine=None, statuses=("SUMMARIZED",)):
                                      VALUES (:id, :code, :main, :sent, :reason, 'DIRECT', :rel, :ev, :kw)"""),
                              {"id": r.article_id, "code": code, "main": c["is_main"], "sent": c["sentiment"],
                               "reason": reason_text(c)[:500], "rel": relevance(r.title, r.body, item, keywords, dictionary),
-                              "ev": evidence(r.body, item, dictionary[0]) if r.body else old.get(code),
+                              "ev": evidence(r.body, item, dictionary[0], r.title) if r.body else old.get(code),
                               "kw": name[:300]})
             conn.execute(text("UPDATE article SET status = :st WHERE article_id = :id"),
                          {"st": "DONE" if found else "NO_STOCK", "id": r.article_id})
