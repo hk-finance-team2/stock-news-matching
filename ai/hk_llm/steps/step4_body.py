@@ -36,6 +36,7 @@ BODY_XPATH = {
     "news.bizwatch.co.kr": '//*[@itemprop="articleBody"]',
 }
 DROP = ".//figure | .//figcaption | .//aside | .//script | .//style | .//table"  # 사진 설명·광고·표는 요약에 방해
+TABLES_DROPPED = Counter()  # 사이트별 버린 표 수 (07: 표 손실 감시)
 PAYWALL = b"paywall-popup__body"  # 한경 프리미엄: 본문 대신 결제 안내만 옴 → 우회하지 않고 SKIPPED
 MIN_LEN = 100  # 이보다 짧으면 본문 없는 기사([속보] 등) → SKIPPED
 MAX_TRIES = 3
@@ -82,6 +83,9 @@ def extract(html, url):
         return None
     parts = []
     for body in found:
+        # 07 (11/06): 표를 버리면 표에만 있는 숫자를 LLM 이 못 봄. 지금 본문 언론사 4곳 299건엔 HTML 표가 0개라 손실 없음을 확인했고,
+        # 앞으로 표를 쓰는 사이트가 생기면 알 수 있게 버린 표 수를 셈 (fetch_bodies 로그 "버린 표")
+        TABLES_DROPPED[urlsplit(url).netloc] += len(body.xpath(".//table"))
         for el in body.xpath(DROP):
             el.drop_tree()
         for br in body.iter("br"):
@@ -173,6 +177,9 @@ def fetch_bodies(engine=None, limit=BATCH):
         ok[host] += 1
     done["bad_hosts"] = sorted(h for h, n in bad.items() if n >= BAD_HOST_FAILS and not ok[h])
     log.info("본문: %d건 중 %s, 사이트별 성공 %s 실패 %s", len(rows), done, dict(ok), dict(bad))
+    if TABLES_DROPPED:  # 0 이 아니면 그 사이트는 표를 HTML 로 씀 → 표 처리(07)를 다시 볼 신호
+        log.warning("본문에서 버린 표 (실행 시작부터 누계): %s", dict(TABLES_DROPPED))
+        done["tables_dropped"] = dict(TABLES_DROPPED)
     return done
 
 

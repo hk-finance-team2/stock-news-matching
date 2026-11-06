@@ -26,7 +26,9 @@ from hk_llm.core.db import get_engine, to_db
 from hk_llm.core.press_policy import title_only_presses
 from hk_llm.core.util import get_logger
 
-MODEL = "gpt-5.4-nano"  # 실측 1건 약 $0.0006 → 하루 1,000건 월 약 $19 (예산 5만원 안)
+# 날짜 붙은 고정 버전 (11/06): 별칭 "gpt-5.4-nano" 는 OpenAI 가 가리키는 버전을 바꾸면 결과가 조용히 달라질 수 있음 → 고정.
+# 이 모델은 2027-04-01 종료 예정 (OpenAI Deprecations, 대체 gpt-6-luna). 바꿀 때는 정답지 회귀 시험(eval/regress.py)을 먼저 통과시킬 것
+MODEL = "gpt-5.4-nano-2026-03-17"  # 실측 1건 약 $0.0006~0.0011 → 하루 300건 월 약 $10 (예산 5만원 안)
 MAX_CHARS = 3000  # ponytail: 본문 앞 3,000자만 (한글 약 2,000토큰). 기사 핵심은 앞쪽. 길이 문제 생기면 토큰 단위로
 BATCH = 200  # 1번 실행에 최대 200건 (약 $0.13)
 MAX_TRIES = 3
