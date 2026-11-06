@@ -100,6 +100,7 @@ def lookup(names, name):
 
 
 LINK_ROLES = ("SUBJECT", "PARTY", "COMPARISON")  # 연결하는 역할 (라벨 기준 v2.1). LISTED 나열·SOURCE 출처·GROUP 그룹은 연결 안 함
+UNCERTAIN_FACTS = ("FORECAST", "RUMOR")  # 근거가 이것뿐이면 감성 판단 보류
 
 
 def normalize(c):
@@ -107,6 +108,10 @@ def normalize(c):
     role 이 없는 예전 답(11/06 이전)은 is_main 그대로 → 주인공 SUBJECT, 아니면 PARTY 로 봄"""
     role = c.get("role") or ("SUBJECT" if c.get("is_main") else "PARTY")
     sent = c.get("sentiment")
+    # 06-1: 근거 문장이 전망·소문이면 판단 보류 (라벨 기준 v2.1 3절 2번). LLM 은 사실 종류를 FORECAST 라 적고도 감성을 단정함
+    #       (개발용 3번 실행: FORECAST 연결 20개 중 감성 맞음 2, 정답이 판단 보류 12)
+    if c.get("fact_type") in UNCERTAIN_FACTS:
+        sent = "UNCERTAIN"
     return {**c, "role": role, "is_main": role == "SUBJECT", "sentiment": None if sent == "UNCERTAIN" else sent}
 
 

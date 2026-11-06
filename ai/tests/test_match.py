@@ -29,6 +29,9 @@ def test_step6_match():
     assert [g[0] for g in got] == ["204320"] and got[0][1]["is_main"] and got[0][1]["sentiment"] is None, got
     assert match_one([co("HL만도", "LISTED"), co("샘표", "GROUP")], [], d) == []
     assert not match_one([co("샘표", "PARTY")], [], d)[0][1]["is_main"], "당사자는 주인공 아님"
+    fc = {**co("샘표", "SUBJECT"), "fact_type": "FORECAST"}
+    assert match_one([fc], [], d)[0][1]["sentiment"] is None, "전망 문장이 근거면 판단 보류 (06-1)"
+    assert match_one([{**fc, "fact_type": "FACT"}], [], d)[0][1]["sentiment"] == "POSITIVE"
     old = match_one([{"name": "샘표", "is_main": False, "sentiment": "NEUTRAL", "reason": "r"}], [], d)
     assert old and old[0][1]["role"] == "PARTY", "예전 답의 조연은 당사자로 읽음"
 
