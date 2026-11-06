@@ -116,16 +116,53 @@ def on_topic(title, body, found, names):
         return _seen(text_, code, name, names)
 
     head, lead, whole = norm(title), norm(body[:LEAD_CHARS]), norm(body)
-    # ponytail: 부분 문자열 비교라 '이닉스' 가 SK하이닉스에도 걸림. 명단 판단에만 쓰므로 둠, 오판이 나오면 최장 일치로
-    stocks = len({c for n, c in names.items() if len(n) >= 3 and n in whole})
+    # 04-2 (2026-11-06): 부분 문자열 대신 최장 일치로 셈 → 'SK하이닉스' 안의 '하이닉스'·'SK', 'RISK' 안의 'SK' 를 따로 세지 않음
+    stocks = len({c for b, e, c in spans(whole, names) if e - b >= 3})
     if stocks > LIST_TITLED_MAX or (stocks > LIST_MAX and not any(f[1]["is_main"] and seen(head, f[0], f[3]) for f in found)):
         return []
     return [f for f in found if seen(head, f[0], f[3]) or seen(lead, f[0], f[3]) or mentions(whole, f[0], f[3], names) >= MIN_MENTIONS]
 
 
+_SPANS = {}  # (사전 id, 글) → spans 결과. 한 기사에서 같은 글을 여러 번 훑지 않게
+SPAN_MIN = 2
+
+
+def _ascii_alnum(ch):
+    return ch.isascii() and ch.isalnum()
+
+
+def spans(text_, names):
+    """비교용 글(norm 한 것)에서 사전 이름(2글자 이상)이 나온 자리 [(시작, 끝, 종목코드)] — 최장 일치, 겹치지 않게 (04-2)
+    - 같은 자리에 겹치는 이름이 여럿이면 가장 긴 것 하나 ('SK하이닉스' 를 잡으면 그 안의 'SK'·'하이닉스' 는 안 셈)
+    - 영문으로 시작·끝나는 이름은 앞·뒤 글자가 영문·숫자면 낱말 일부로 보고 뺌 ('RISK' 의 'SK', 'LGES' 의 'LG')"""
+    key = (id(names), text_)
+    if key in _SPANS:
+        return _SPANS[key]
+    hits = []
+    for n, c in names.items():
+        if len(n) < SPAN_MIN:
+            continue
+        p = text_.find(n)
+        while p >= 0:
+            e = p + len(n)
+            if not ((_ascii_alnum(n[0]) and p and _ascii_alnum(text_[p - 1]))
+                    or (_ascii_alnum(n[-1]) and e < len(text_) and _ascii_alnum(text_[e]))):
+                hits.append((p, e, c))
+            p = text_.find(n, p + 1)
+    taken = []
+    for b, e, c in sorted(hits, key=lambda h: (h[0] - h[1], h[0])):  # 긴 것부터, 같으면 앞 자리부터
+        if not any(b < te and e > tb for tb, te, _ in taken):
+            taken.append((b, e, c))
+    if len(_SPANS) > 256:
+        _SPANS.clear()
+    _SPANS[key] = taken
+    return taken
+
+
 def _seen(text_, code, name, names):
-    """비교용 글(norm 한 것)에 그 종목 이름이 있나: LLM 이 쓴 이름 또는 사전 이름·별칭(2글자 이상)"""
-    return norm(name) in text_ or any(n in text_ for n, c in names.items() if c == code and len(n) >= 2)
+    """비교용 글(norm 한 것)에 그 종목 이름이 있나: LLM 이 쓴 이름(사전에 없는 표기일 때) 또는 사전 이름·별칭의 최장 일치"""
+    n = norm(name)
+    return (n not in names and n in text_) or any(c == code for _, _, c in spans(text_, names))
 
 
 def relevance(title, body, found_item, keywords, dictionary):
@@ -144,9 +181,13 @@ def relevance(title, body, found_item, keywords, dictionary):
 
 
 def mentions(text_, code, name, names):
-    """본문에 그 종목이 나온 횟수: LLM 이 쓴 이름과 사전 이름(3글자 이상) 중 가장 많이 나온 것 (겹쳐 세지 않게 최댓값)"""
-    words = {norm(name)} | {n for n, c in names.items() if c == code and len(n) >= 3}
-    return max(text_.count(w) for w in words if w)
+    """본문에 그 종목이 나온 횟수: 사전 이름(3글자 이상)의 최장 일치 자리 수 (04-2).
+    LLM 이 쓴 이름이 사전에 없는 표기면 그 이름이 나온 횟수와 큰 쪽"""
+    n = norm(name)
+    # 이름이 전부 2글자인 종목(SK·LG 등)은 2글자 자리도 셈. 최장 일치·영문 경계 덕에 'SK하이닉스'·'RISK' 안의 SK 는 이미 빠짐
+    short_only = not any(len(k) >= 3 for k, c in names.items() if c == code)
+    dict_count = sum(1 for b, e, c in spans(text_, names) if c == code and (e - b >= 3 or short_only))
+    return max(dict_count, text_.count(n) if n and n not in names else 0)
 
 
 EVIDENCE_MAX = 300  # 근거 문장 최대 글자

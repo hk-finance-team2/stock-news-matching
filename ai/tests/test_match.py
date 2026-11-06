@@ -52,6 +52,16 @@ def test_step6_match():
     assert on_topic("삼성전자 등 151곳 공표", "삼성전자 " + many, [main], names) == [], "제목에 있어도 종목이 너무 많으면 명단"
     assert on_topic("생산 지표 기사", None, [side], names) == [side], "본문이 지워졌으면 그대로"
 
+    # 최장 일치 (04-2): 긴 이름 안의 짧은 이름, 영문 낱말 안의 영문 이름은 따로 세지 않음
+    from hk_llm.steps.step6_match import mentions, spans
+    nm2 = {"SK": "003600", "SK하이닉스": "000660", "하이닉스": "000660", "카카오": "035720", "카카오뱅크": "323410"}
+    t = norm("SK하이닉스와 카카오뱅크, RISK 관리. SK 지주")
+    assert sorted(c for _, _, c in spans(t, nm2)) == ["000660", "003600", "323410"], spans(t, nm2)
+    assert mentions(t, "003600", "SK", nm2) == 1, "SK하이닉스·RISK 안의 SK 는 안 셈, 마지막 'SK 지주'만"
+    assert mentions(t, "035720", "카카오", nm2) == 0, "카카오뱅크 안의 카카오는 카카오가 아님"
+    assert not on_topic("카카오뱅크 실적", "카카오뱅크가 " * 3, [("035720", {"is_main": True}, 1.0, "카카오")], nm2), \
+        "LLM 이 '카카오'라 써도 글에는 카카오뱅크뿐이면 카카오 연결 안 함"
+
     # 관련도: 제목·첫 부분·주인공·언급 횟수·테마로 기사 안에서 얼마나 중심인지 (화면 순서용)
     from hk_llm.steps.step6_match import relevance
     d = (names, {"A": {"반도체"}}, s)
