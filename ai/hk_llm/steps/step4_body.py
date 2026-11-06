@@ -17,10 +17,11 @@ from urllib.parse import urlsplit
 
 import lxml.html
 import requests
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 
 from hk_llm.core.config import KST, USER_AGENT
 from hk_llm.core.db import get_engine
+from hk_llm.core.press_policy import title_only_presses
 from hk_llm.steps.robots import allowed, crawl_delay, reachable
 from hk_llm.core.util import get_logger, retry
 
@@ -46,12 +47,29 @@ MAX_DELAY = 10  # robots.txt Crawl-delay 가 터무니없이 커도 1건당 최�
 log = get_logger(__name__)
 
 
+CHARSET = re.compile(rb"""<meta[^>]+charset\s*=\s*["']?\s*([\w-]+)""", re.I)
+
+
+def decode(html):
+    """바이트 → 글자. 페이지 앞부분의 <meta charset> 을 따르고, 없으면 UTF-8 (2026-11-05 버그 수정)
+    전에는 바이트를 lxml 에 그대로 넘겼는데, lxml 은 meta 를 못 찾으면 latin-1 로 읽음 → 파이낸셜뉴스 본문 232건 중 144건이
+    'ì¤ì' 처럼 깨진 채 저장되고 그대로 LLM 에 들어감. 깨진 뒤 공백 정리(clean)에서 일부 바이트가 지워져 되돌릴 수도 없음"""
+    if isinstance(html, str):
+        return html
+    m = CHARSET.search(html[:8192])
+    enc = m.group(1).decode("ascii", "ignore").lower() if m else "utf-8"
+    try:
+        return html.decode(enc, errors="replace")
+    except LookupError:  # 모르는 이름이면 UTF-8
+        return html.decode("utf-8", errors="replace")
+
+
 def extract(html, url):
     """HTML 에서 정제된 본문. 모르는 사이트거나 본문 칸이 없으면 None (칸이 여러 개면 이어 붙임)"""
     xpath = BODY_XPATH.get(urlsplit(url).netloc)
     if not xpath:
         return None
-    found = lxml.html.fromstring(html).xpath(xpath)
+    found = lxml.html.fromstring(decode(html)).xpath(xpath)
     if not found:
         return None
     parts = []
@@ -71,7 +89,8 @@ def clean(text_):
     for line in text_.splitlines():
         line = re.sub(r"\s+", " ", line).strip()
         # 기자 이메일·저작권·제보 안내 줄은 요약에 쓸모없음
-        if (not line or re.search(r"\S+@\S+\.\S+|무단\s*전재", line) or line.startswith(("ⓒ", "©", "<저작권자", "제보는"))
+        # "관련종목하림지주(003380), 팬오션(028670)": 파이낸셜뉴스가 본문 첫 줄에 붙이는 목록 (기사 글이 아님, 지주사·증권사가 섞임, 04-4a)
+        if (not line or re.search(r"\S+@\S+\.\S+|무단\s*전재", line) or line.startswith(("ⓒ", "©", "<저작권자", "제보는", "관련종목"))
                 or line.endswith(" 송고")):  # 연합 "2026/11/02 10:30 송고"
             continue
         lines.append(line)
@@ -86,9 +105,12 @@ def fetch_bodies(engine=None, limit=BATCH):
     since = datetime.now(KST).date() - timedelta(days=1)  # 어제 이후만. 요약 대상이 아닌 옛 기사는 언론사에 요청하지 않음
     engine = engine or get_engine()
     with engine.connect() as conn:
+        # 본문을 쓰지 않는 언론사(press_policy TITLE_ONLY)는 요청 자체를 안 보냄 → title_only.py 가 제목으로 처리
         rows = conn.execute(text("""SELECT article_id, url, retry_count FROM article
                                     WHERE status = 'LISTED' AND source_type = 'NEWS' AND published_at >= :since
-                                    ORDER BY article_id DESC LIMIT :n"""), {"since": since, "n": limit}).all()
+                                      AND press NOT IN :skip
+                                    ORDER BY article_id DESC LIMIT :n""").bindparams(bindparam("skip", expanding=True)),
+                            {"since": since, "n": limit, "skip": title_only_presses()}).all()
     done = {"FETCHED": 0, "SKIPPED": 0, "RETRY": 0, "FAILED": 0}
     last_hit = {}  # 사이트별 마지막 요청 시각
     ok, bad = Counter(), Counter()  # 사이트별 본문 성공·실패

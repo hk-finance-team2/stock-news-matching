@@ -148,6 +148,7 @@
         글 전체 감성(article.sentiment)이 아니라 "이 종목에 대한" 감성(article_stock.sentiment)
         sourceType이 있으면 그 출처(NEWS/SNS) 글만, 없으면 둘 다 (요구사항 기본)
         결과 예: POSITIVE 1, NEUTRAL 1 (0건인 감성은 줄이 안 나옴)
+        감성이 NULL(판단 안 함: AI 활용 금지 언론사 기사를 제목만으로 연결한 것)인 줄은 세지 않음
     -->
     <select id="countSentiments" resultMap="sentimentCountRow">
         SELECT s.sentiment, COUNT(*) AS article_count
@@ -155,6 +156,7 @@
         JOIN article a ON a.article_id = s.article_id
         WHERE s.stock_code = #{stockCode}
           AND a.status = 'DONE'
+          AND s.sentiment IS NOT NULL   -- 감성을 판단하지 않은 연결(제목만 연결, V12)은 비율에서 뺌
           AND a.published_at >= #{from}
           <if test="sourceType != null">
               AND a.source_type = #{sourceType}

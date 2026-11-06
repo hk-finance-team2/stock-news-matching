@@ -18,6 +18,7 @@ from pathlib import Path
 from sqlalchemy import text
 
 from hk_llm.core.db import get_engine
+from hk_llm.core.press_policy import title_only_presses
 from hk_llm.core.util import get_logger
 
 OUT = Path(__file__).parent.parent.parent / "backend" / "src" / "main" / "resources" / "db" / "ai-data" / "R__ai_data.sql"
@@ -25,8 +26,8 @@ CHUNK = 300  # INSERT 한 문장에 넣는 줄 수
 
 ARTICLE_COLS = ("url_key", "url", "press", "title", "reporter", "published_at", "collected_at", "status", "summary",
                 "model", "summarized_at", "source_type", "channel", "collect_mode", "keywords", "sentiment")
-LINK_COLS = ("url_key", "stock_code", "is_main", "sentiment", "reason", "match_type", "relevance", "evidence",
-             "matched_keywords")
+# evidence(근거 문장)는 기사 원문 문장 그대로라 공개 레포에 올리지 않음 (2026-11-05). 팀원 PC 에서는 근거 칸이 비어 보임
+LINK_COLS = ("url_key", "stock_code", "is_main", "sentiment", "reason", "match_type", "relevance", "matched_keywords")
 SUMMARY_COLS = ("stock_code", "summary_date", "news_summary", "sns_summary", "pos_count", "neg_count", "neu_count",
                 "generated_at")
 RUN_COLS = ("started_at", "finished_at", "status", "collected_count", "summarized_count", "channel")
@@ -77,6 +78,14 @@ def build(engine):
                 AND finished_at = (SELECT MAX(finished_at) FROM collect_run x WHERE x.status = 'SUCCESS'
                                    AND x.channel <=> r.channel)"""))]
     out = [HEADER.format(n_art=len(arts), n_link=len(links), n_sum=len(sums), at=datetime.now())]
+    presses = ", ".join(lit(x) for x in title_only_presses())
+    out.append("-- 0. AI 활용 금지 언론사 기사: 예전 파일로 받은 AI 요약·감성을 지움 (2026-11-05, 제목만 연결로 바뀜)\n"
+               "--    AI 결과가 남은 기사만 대상이라 이미 정리된 PC 에서는 아무것도 안 바뀜. 연결은 아래 1·2번이 다시 넣음\n"
+               "DELETE s FROM article_stock s JOIN article a ON a.article_id = s.article_id\n"
+               f"WHERE a.channel = 'RSS' AND a.press IN ({presses}) AND a.summary IS NOT NULL;\n"
+               "UPDATE article SET summary = NULL, keywords = NULL, sentiment = NULL, model = NULL, summarized_at = NULL,\n"
+               "       status = IF(status = 'DONE', 'NO_STOCK', status)\n"
+               f"WHERE channel = 'RSS' AND press IN ({presses}) AND summary IS NOT NULL;\n")
     out.append("-- 1. 기사: 같은 주소가 있으면 갱신 (본문 body 칸은 건드리지 않음)")
     for part in chunks(arts):
         out.append(f"INSERT INTO article ({', '.join(ARTICLE_COLS)}) VALUES\n{values(part, ARTICLE_COLS)}\n"
@@ -104,36 +113,46 @@ def build(engine):
 HEADER = """-- AI 수집·분석 결과 (본문 없음) — 팀원이 같은 진짜 데이터로 화면·API 를 보게 함
 -- 만든 곳: 백엔드1 PC 의 DB, {at:%Y-%m-%d %H:%M} (python -m hk_llm.export_data). 이 파일은 손으로 고치지 않음
 -- 기사 {n_art}건 (뉴스·공시, DONE 만), 종목 연결 {n_link}개, 종목별 하루 요약 {n_sum}개
--- 빠진 것: 기사 본문(저작권, 7일 뒤 삭제), RSS 설명문, AI 내부 회사 목록, 연결 못 한 기사, 예시 기사, KIS 시세
+-- 빠진 것: 기사 본문(저작권, 7일 뒤 삭제), 근거 문장(원문 문장 그대로), RSS 설명문, AI 내부 회사 목록, 연결 못 한 기사, 예시 기사, KIS 시세
 -- 반복 지시서(R__): 이 파일이 바뀌면 백엔드를 켤 때 다시 실행됨. 다시 실행해도 안전 (기사 주소 기준 갱신)
 -- 끄려면 .env 의 FLYWAY_LOCATIONS 에서 classpath:db/ai-data 를 빼기 (docs/setup.md 2절)
 """
 
-LINK_HEAD = """-- 2. 종목 연결: 기사 번호는 PC 마다 달라서 주소로 찾아 붙임. 이 파일의 기사는 연결을 지우고 다시 넣음
+LINK_HEAD = """-- 2. 종목 연결: 기사 번호는 PC 마다 달라서 주소로 찾아 붙임. 이 파일의 기사는 연결을 파일 내용과 같게 맞춤
 CREATE TEMPORARY TABLE tmp_ai_link (
     url_key          VARCHAR(500)  NOT NULL COLLATE utf8mb4_bin,
     stock_code       CHAR(6)       NOT NULL,
     is_main          BOOLEAN       NOT NULL,
-    sentiment        VARCHAR(10)   NOT NULL,
+    sentiment        VARCHAR(10)   NULL,
     reason           VARCHAR(500)  NOT NULL,
     match_type       VARCHAR(10)   NULL,
     relevance        DECIMAL(3, 2) NULL,
-    evidence         VARCHAR(1000) NULL,
     matched_keywords VARCHAR(300)  NULL,
     KEY (url_key)
 ) DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;  -- 다른 표와 같은 비교 규칙 (안 적으면 MariaDB 11.8 기본값이라 종목코드 비교에서 오류)
 """
 
-LINK_TAIL = """DELETE s FROM article_stock s
-    JOIN article a ON a.article_id = s.article_id
-    JOIN (SELECT DISTINCT url_key FROM tmp_ai_link) t ON t.url_key = a.url_key;
+LINK_TAIL = """-- 파일에 없는 연결만 지우고, 있는 연결은 갱신 (근거 문장 evidence 칸은 건드리지 않음: 파일에 없으므로 내 PC 에 있는 근거를 지키려고)
+-- MariaDB 는 한 문장에서 임시 표를 두 번 열 수 없어서 기사 주소 목록을 따로 만듦
+CREATE TEMPORARY TABLE tmp_ai_link_key (url_key VARCHAR(500) NOT NULL COLLATE utf8mb4_bin, PRIMARY KEY (url_key))
+    DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci
+    SELECT DISTINCT url_key FROM tmp_ai_link;
 
-INSERT INTO article_stock (article_id, stock_code, is_main, sentiment, reason, match_type, relevance, evidence, matched_keywords)
-SELECT a.article_id, t.stock_code, t.is_main, t.sentiment, t.reason, t.match_type, t.relevance, t.evidence, t.matched_keywords
+DELETE s FROM article_stock s
+    JOIN article a ON a.article_id = s.article_id
+    JOIN tmp_ai_link_key k ON k.url_key = a.url_key
+    LEFT JOIN tmp_ai_link t ON t.url_key = a.url_key AND t.stock_code = s.stock_code
+WHERE t.url_key IS NULL;
+
+INSERT INTO article_stock (article_id, stock_code, is_main, sentiment, reason, match_type, relevance, matched_keywords)
+SELECT a.article_id, t.stock_code, t.is_main, t.sentiment, t.reason, t.match_type, t.relevance, t.matched_keywords
 FROM tmp_ai_link t
     JOIN article a ON a.url_key = t.url_key
-    JOIN stock_info i ON i.stock_code = t.stock_code;
+    JOIN stock_info i ON i.stock_code = t.stock_code
+ON DUPLICATE KEY UPDATE is_main = VALUES(is_main), sentiment = VALUES(sentiment), reason = VALUES(reason),
+    match_type = VALUES(match_type), relevance = VALUES(relevance), matched_keywords = VALUES(matched_keywords);
 
+DROP TEMPORARY TABLE tmp_ai_link_key;
 DROP TEMPORARY TABLE tmp_ai_link;
 """
 

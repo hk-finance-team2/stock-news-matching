@@ -19,10 +19,11 @@ from langchain_core.callbacks import get_usage_metadata_callback
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 
 from hk_llm.core.config import KST, LOG_DIR
 from hk_llm.core.db import get_engine, to_db
+from hk_llm.core.press_policy import title_only_presses
 from hk_llm.core.util import get_logger
 
 MODEL = "gpt-5.4-nano"  # 실측 1건 약 $0.0006 → 하루 1,000건 월 약 $19 (예산 5만원 안)
@@ -200,9 +201,21 @@ def summarize_articles(engine=None, limit=BATCH, model=MODEL, since=None):
     with engine.connect() as conn:
         rows = conn.execute(text("""SELECT article_id, title, body, retry_count FROM article
                                     WHERE status = 'FETCHED' AND source_type = 'NEWS' AND published_at >= :since
-                                    ORDER BY article_id DESC LIMIT :n"""), {"since": since, "n": limit}).all()
-    done = failed = 0
+                                      AND press NOT IN :skip
+                                    ORDER BY article_id DESC LIMIT :n""").bindparams(bindparam("skip", expanding=True)),
+                            {"since": since, "n": limit, "skip": title_only_presses()}).all()  # AI 활용 금지 언론사는 LLM 에 안 보냄
+    done = failed = skipped = 0
+    names = None
     for r in rows:
+        if names is None:
+            from hk_llm.steps.step6_match import could_link, load_dictionary  # 6단계 사전·규칙을 그대로 씀
+            names = load_dictionary(engine)[0]
+        if not could_link(r.title, r.body, names):  # 04-6: 연결될 수 없는 게 확실한 기사는 LLM 을 안 부름
+            with engine.begin() as conn:
+                conn.execute(text("""UPDATE article SET status = 'NO_STOCK', last_error = :e WHERE article_id = :id"""),
+                             {"e": "LLM 전 거르기: 사전 종목 이름 없음 (요약 안 함)", "id": r.article_id})
+            skipped += 1
+            continue
         try:
             s, _ = summarize(r.title, r.body, model)
             _save(engine, r.article_id, s, model)  # 저장 실패(값 이상 등)도 재시도 횟수에 넣음
@@ -222,7 +235,7 @@ def summarize_articles(engine=None, limit=BATCH, model=MODEL, since=None):
             failed += 1
             continue
         done += 1
-    log.info("요약: %d건 중 %d건 저장, 실패 %d건", len(rows), done, failed)
+    log.info("요약: %d건 중 %d건 저장, 실패 %d건, LLM 전 거르기 %d건", len(rows), done, failed, skipped)
     return done
 
 

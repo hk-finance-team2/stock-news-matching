@@ -194,6 +194,16 @@ def test_step4_extract():
     got = extract(html, "https://www.hankyung.com/article/1")
     assert got == "SOOP이 3분기 실적 부진에 급락하고 있다.\n2일 오전 9시16분 코스닥시장에서", repr(got)
     assert extract(html, "https://unknown.example/1") is None
+    # 바이트로 받은 페이지: meta charset 을 따라 UTF-8 로 읽어야 함 (2026-11-05 파이낸셜뉴스 글자 깨짐 버그)
+    fn = ('<html><head><title>t</title></head><body>' + '<!-- 긴 머리말 -->' * 200 + '<meta charset="UTF-8" />'
+          '<div class="article-view__body">삼성전자가 3분기 영업이익 10조원을 기록했다. 시장 예상을 웃돌았다.</div></body></html>').encode("utf-8")
+    got = extract(fn, "https://www.fnnews.com/news/1")
+    assert got and got.startswith("삼성전자가 3분기"), repr(got)
+    nometa = '<html><body><div class="article-view__body">한글 본문입니다.</div></body></html>'.encode("utf-8")
+    assert extract(nometa, "https://www.fnnews.com/news/2") == "한글 본문입니다.", "meta 가 없으면 UTF-8"
+    tagged = ('<div class="article-view__body"><div>관련종목하림지주(003380), 팬오션(028670)</div>'
+              '팬오션이 선박을 자사선으로 전환한다.</div>')
+    assert extract(tagged, "https://www.fnnews.com/news/3") == "팬오션이 선박을 자사선으로 전환한다.", "관련종목 꼬리표는 뺌"
 
 
 def test_robots():

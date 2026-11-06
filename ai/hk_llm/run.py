@@ -1,4 +1,4 @@
-"""파이프라인 1번 실행: 1 RSS → 2 중복 제거 → 3 DB 저장 + 공시 → 4 본문 → 5 요약 → 6 종목 매칭 → 공시 요약 → 7 기사 묶기, 실행 기록은 collect_run 에
+"""파이프라인 1번 실행: 1 RSS → 2 중복 제거 → 3 DB 저장 + 공시 → (AI 활용 금지 언론사는 제목만 연결) → 4 본문 → 5 요약 → 6 종목 매칭 → 공시 요약 → 7 기사 묶기, 실행 기록은 collect_run 에
 
     python -m hk_llm.run           (ai 폴더에서, DB 켜져 있어야 함. 5단계에서 OpenAI 비용 발생)
     python -m hk_llm.run --limit 30   요약을 30건까지만 (시험용)
@@ -22,6 +22,7 @@ from hk_llm.steps.step5_summary import BATCH, spent_today, summarize_articles
 from hk_llm.steps.step6_match import match_articles
 from hk_llm.steps.step7_group import save_groups
 from hk_llm.steps.step8_daily import summarize_recent
+from hk_llm.steps.title_only import link_title_only
 from hk_llm.core.util import get_logger
 
 log = get_logger(__name__)
@@ -69,6 +70,11 @@ def _run(engine, limit, daily):
         except Exception as e:
             log.error("공시 수집 실패: %s", e)
             errors.append(f"공시 실패: {e}")
+        try:  # AI 활용 금지 언론사: 본문·LLM 없이 제목으로만 연결 (비용 0). 실패해도 다른 단계는 계속
+            link_title_only(engine)
+        except Exception as e:
+            log.exception("제목만 연결 실패")
+            errors.append(f"제목만 연결 실패: {type(e).__name__}")
         bodies = fetch_bodies(engine)
         if bodies["bad_hosts"]:
             errors.append("본문 전부 실패: " + ", ".join(bodies["bad_hosts"]))

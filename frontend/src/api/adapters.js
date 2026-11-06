@@ -87,7 +87,8 @@ export function toUiArticle(item) {
     analysisStatus: 'COMPLETED',
     summary: summaryLines.slice(0, 3),
     keywords: item.keywords || [],
-    sentiment: item.sentiment || main?.sentiment || 'NEUTRAL',
+    // 감성이 없으면 null (AI 활용 금지 언론사 기사는 제목만 연결하고 감성을 판단하지 않음. 중립으로 채우면 '중립 판단'과 구별이 안 됨)
+    sentiment: item.sentiment || main?.sentiment || null,
     relatedStocks,
     matchedStocks: relatedStocks,
     relatedSns: (item.relatedSns || []).map((s) => ({
