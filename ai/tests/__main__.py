@@ -1,8 +1,17 @@
 """모든 시험 실행: ai 폴더에서 python -m tests (LLM 비용 없음)"""
 import importlib
+import os
 import pathlib
 import sys
+import tempfile
 import traceback
+
+# 시험은 진짜 Slack 에 보내지 않음: .env 에 SLACK_WEBHOOK_URL 이 있어도 비움 (load_dotenv 는 이미 있는 값을 덮어쓰지 않음)
+# 11/06 이 줄이 없어서 시험이 #ai-수집-알림 에 "시험"·"MagicMock" 글을 보냄
+os.environ["SLACK_WEBHOOK_URL"] = ""
+from hk_llm.core import notify  # noqa: E402
+
+notify.STATE_FILE = pathlib.Path(tempfile.mkdtemp()) / "health_state.json"  # 알림 상태도 진짜 파일 말고 임시 파일에
 
 # python -m tests offline: DB·인터넷이 필요한 시험을 뺌 (CI 용)
 NEEDS_NETWORK = {"test_step3_save", "test_sns_db", "test_robots"}
