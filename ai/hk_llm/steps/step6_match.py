@@ -83,6 +83,7 @@ def reason_text(c):
 
 
 PAREN = re.compile(r"^(.+?)\s*\((.+)\)$")
+DIVISION = re.compile(r"^(.+?)\s+\S*(?:부문|사업부)$")  # "한화 건설부문", "삼성물산 패션부문", "삼성전자 DS부문" (05-2a)
 
 
 def lookup(names, name):
@@ -92,6 +93,9 @@ def lookup(names, name):
     m = None if code else PAREN.match(name.strip())
     if m:
         code = names.get(norm(m.group(1))) or names.get(norm(m.group(2)))
+    d = None if code else DIVISION.match(name.strip())
+    if d:  # 사업부 표기: 앞의 회사 이름으로 (05-2a: 개발용 D065 "한화 건설부문" 을 놓침)
+        code = names.get(norm(d.group(1)))
     return code
 
 

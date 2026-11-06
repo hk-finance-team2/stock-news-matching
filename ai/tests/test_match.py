@@ -38,6 +38,9 @@ def test_step6_match():
     assert lookup(nm, "한국항공우주(KAI)") == "047810", "괄호 앞"
     assert lookup(nm, "KG모빌리티(KGM)") == "003620", "괄호 안"
     assert lookup(nm, "HL만도") == "204320" and lookup(nm, "없는회사(XYZ)") is None
+    nm.update({"한화": "000880", "삼성물산": "028260"})
+    assert lookup(nm, "한화 건설부문") == "000880" and lookup(nm, "삼성물산 패션부문") == "028260", "사업부 → 회사 (05-2a)"
+    assert lookup(nm, "건설부문") is None and lookup(nm, "없는회사 건설부문") is None
     assert reason_text({"reason": "수주", "long_term": "POSITIVE"}) == "수주 (장기: 호재)"
     assert reason_text({"reason": "수주"}) == "수주"
 
