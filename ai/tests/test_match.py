@@ -79,6 +79,16 @@ def test_step6_match():
     two = "외국인이 삼성전자를 팔았다는 소식이다.\nSK하이닉스는 3% 내린 140만원에 거래됐다."
     assert on_topic("외국인, 삼전닉스 1조 순매도에…코스피 하락", two, [f_sam, f_hy], nm3) == [f_sam, f_hy], "삼전닉스 = 두 종목"
 
+    # LLM 전 거르기 (04-6): 연결될 수 없는 게 확실한 기사만 False
+    from hk_llm.steps.step6_match import could_link
+    assert could_link("삼성전자 실적", "실적이 좋았다.", nm3), "제목에 이름"
+    assert could_link("반도체 업황", "업계에서는 삼성전자 투자가 늘 것으로 본다.", nm3), "본문 어디든 이름"
+    assert not could_link("서울 아파트값 올라", "부동산 시장이 들썩였다.", nm3), "사전 이름이 하나도 없음"
+    assert not could_link("[부고] 삼성전자 전무 부친상", "삼성전자 전무", nm3), "유형 말머리"
+    assert not could_link("코스피 2% 하락", "삼성전자는 3% 내린 22만원에 거래되고 있다.", nm3), "시황인데 제목에 종목 없음"
+    assert could_link("코스피 하락…삼전 약세", "삼성전자는 3% 내린 22만원에 거래되고 있다.", nm3), "시황 + 제목에 종목"
+    assert could_link("[특징주] 코스피 급락에도 삼성전자 상승", "", nm3) and could_link("외국인, 삼전닉스 매도", None, nm3)
+
     # 언론사 꼬리표 줄 (04-4a): "관련종목…" 줄은 매칭에서 안 읽음
     from hk_llm.steps.step6_match import article_text
     assert article_text("관련종목SK하이닉스(000660), 삼성전자(005930)\n블룸에너지 수혜") == "블룸에너지 수혜"

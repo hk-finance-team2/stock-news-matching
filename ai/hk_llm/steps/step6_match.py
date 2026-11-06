@@ -145,6 +145,27 @@ def on_topic(title, body, found, names):
     return [f for f in found if seen(head, f[0], f[3]) or seen(lead, f[0], f[3]) or mentions(whole, f[0], f[3], names) >= MIN_MENTIONS]
 
 
+def could_link(title, body, names):
+    """LLM 을 부르기 전에: 연결될 수 없는 것이 **확실한** 기사만 False (04-6, 감사 A1). False 면 요약(LLM)을 부르지 않음
+    - 유형 말머리(부고·인사·지표) 기사 → on_topic 이 항상 []
+    - 제목·본문 어디에도 사전 종목 이름(최장 일치)이 없음 → LLM 이 무엇을 답해도 사전에서 못 찾음
+    - 시황인데 제목에 종목 이름이 없음 → 시황 규칙(제목 + 자기 문장)을 못 넘음
+    on_topic 의 위치·명단·언급 횟수 조건까지 옮기면 14% 를 건너뛰지만, 05 에서 고칠 여러 종목·당사자 기사(정답 있는 개발용 4건)를
+    LLM 전에 막아 버림 → 규칙이 바뀌어도 변하지 않는 조건만 씀 (6.5%, 지금 연결 놓침 0, 개발용 정답 기사 0)"""
+    feature = any(t in title for t in FEATURE_TAGS)
+    if not feature and any(w in title for w in TYPE_WORDS):
+        return False
+    head = norm(title)
+    for k, v in TITLE_PAIRS.items():
+        head = head.replace(k, v)
+    in_head = bool(spans(head, names))
+    market = not feature and (any(w in title for w in MARKET_WORDS)
+                              or (any(w in title for w in MARKET_INDEX) and not NOT_MARKET.search(title)))
+    if market:
+        return in_head
+    return in_head or bool(body and spans(norm(article_text(body)), names))
+
+
 def own_sentence(body, code, names):
     """본문에 그 종목만 나오는 문장이 있나 (시황 기사 규칙, 04-4b). "삼성전자는 7000원(3.06%) 내린 22만2000원" 은 있음,
     "삼성SDI(-4.28%), 두산에너빌리티(-4.49%) 등이 약세" 처럼 여러 종목을 나열한 문장뿐이면 없음"""
