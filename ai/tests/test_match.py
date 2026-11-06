@@ -22,6 +22,12 @@ def test_step6_match():
     miss = Counter()
     match_one([{"name": "바이낸스", "is_main": False, "sentiment": "NEUTRAL", "reason": "r"}], [], d, miss)
     assert miss == {"바이낸스": 1}, "못 찾은 이름을 모음"
+    # 괄호를 붙인 이름: 앞 → 안 순서로 찾음 (04-1)
+    from hk_llm.steps.step6_match import lookup
+    nm = {"한국항공우주": "047810", "KGM": "003620", "HL만도": "204320"}
+    assert lookup(nm, "한국항공우주(KAI)") == "047810", "괄호 앞"
+    assert lookup(nm, "KG모빌리티(KGM)") == "003620", "괄호 안"
+    assert lookup(nm, "HL만도") == "204320" and lookup(nm, "없는회사(XYZ)") is None
     assert reason_text({"reason": "수주", "long_term": "POSITIVE"}) == "수주 (장기: 호재)"
     assert reason_text({"reason": "수주"}) == "수주"
 

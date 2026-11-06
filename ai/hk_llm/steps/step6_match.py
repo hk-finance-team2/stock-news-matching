@@ -76,12 +76,25 @@ def reason_text(c):
     return f"{c['reason']} (장기: {long_term})" if long_term else c["reason"]
 
 
+PAREN = re.compile(r"^(.+?)\s*\((.+)\)$")
+
+
+def lookup(names, name):
+    """LLM 이 쓴 회사 이름 → 종목코드. 그대로 없으면 "한국항공우주(KAI)" 처럼 괄호를 붙인 이름의 앞·안을 차례로 찾음
+    (2026-11-06 04-1: 정답지 v2 개발용에서 괄호 이름 때문에 주인공 2개를 놓침 — D072 KAI, D095 KGM)"""
+    code = names.get(norm(name))
+    m = None if code else PAREN.match(name.strip())
+    if m:
+        code = names.get(norm(m.group(1))) or names.get(norm(m.group(2)))
+    return code
+
+
 def match_one(companies, keywords, dictionary, missing=None):
     """[(종목코드, 회사 dict, 점수, 일치한 이름)] — 최소 점수 이상, 종목당 1개 (점수 높은 쪽)"""
     names, themes, s = dictionary
     best = {}
     for c in companies:
-        code = names.get(norm(c["name"]))
+        code = lookup(names, c["name"])
         if not code:
             if missing is not None:
                 missing[c["name"]] += 1
