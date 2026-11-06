@@ -204,6 +204,11 @@ def test_step4_extract():
     tagged = ('<div class="article-view__body"><div>관련종목하림지주(003380), 팬오션(028670)</div>'
               '팬오션이 선박을 자사선으로 전환한다.</div>')
     assert extract(tagged, "https://www.fnnews.com/news/3") == "팬오션이 선박을 자사선으로 전환한다.", "관련종목 꼬리표는 뺌"
+    from hk_llm.steps.step4_body import TABLES_DROPPED
+    before = TABLES_DROPPED["www.fnnews.com"]
+    withtable = '<div class="article-view__body">실적이 늘었다.<table><tr><td>매출</td><td>1조</td></tr></table></div>'
+    assert extract(withtable, "https://www.fnnews.com/news/4") == "실적이 늘었다.", "표는 빼고"
+    assert TABLES_DROPPED["www.fnnews.com"] == before + 1, "버린 표 수를 셈 (07)"
 
 
 def test_health_rules():
