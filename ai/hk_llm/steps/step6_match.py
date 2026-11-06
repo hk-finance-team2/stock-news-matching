@@ -304,6 +304,13 @@ def numbered(title, body, limit=LLM_CHARS):
     return [title] + sentences(article_text(body or "")[:limit])
 
 
+def _named(text_, code, name, names):
+    """그 종목 이름이 글에 있나. LLM 이 "KG모빌리티(KGM)" 처럼 괄호를 붙여 쓰면 앞·안을 따로 봄
+    (13: 개발용 D095 제목 "KGM, 3분기 적자전환…" 을 이름 없음으로 보고 버렸음)"""
+    p = PAREN.match(name.strip())
+    return any(_seen(text_, code, n, names) for n in [name] + ([p.group(1), p.group(2)] if p else []))
+
+
 def evidence(body, item, names, title=None):
     """근거 문장 (F-06). LLM 이 근거 문장 번호를 골랐으면(05-1) 그 문장, 아니면(예전 답·번호 잘못) 예전 방식:
     그 종목 이름이 나온 문장 중 LLM 이유와 단어가 가장 많이 겹치는 문장. 이름이 나온 문장이 없으면 None"""
@@ -315,7 +322,9 @@ def evidence(body, item, names, title=None):
         if 0 <= i < len(sents):
             picked = sents[i][:EVIDENCE_MAX]
             # 06-3: 화면에 "이 종목의 근거"로 나가므로 그 종목 이름이 있어야 함. 없으면(개발용 152개 중 14%) 아래 방식으로 이름이 있는 문장
-            if _seen(norm(picked), code, name, names):
+            # 13: "앞 문장에 이어지는 문장(주어 생략)도 살리기"를 시험했지만 가린 판정에서 나아지지 않아 뺌 — 화면엔 문장 하나만 보여
+            #     이름 없는 문장은 누구 이야기인지 모름 (06-3 의 이유가 맞음). 괄호 이름만 고침
+            if _named(norm(picked), code, name, names):
                 return picked
     words = {norm(name)} | {n for n, cc in names.items() if cc == code and len(n) >= 2}
     reason = set(re.findall(r"[가-힣A-Za-z0-9]{2,}", c.get("reason", "")))
