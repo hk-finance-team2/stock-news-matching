@@ -1048,8 +1048,8 @@ INITIAL_WATCHLIST_CODES[0] || allStocks[0]?.code || '005930'
         </ul>
         {/* <SentimentBar ratio={articleSentimentRatio} /> */}
         {articleSentimentRatio && (
-  <SentimentBar ratio={articleSentimentRatio} />
-)}
+          <SentimentBar ratio={articleSentimentRatio} />
+        )}
         <div className="llm-notice">
           🤖 AI(LLM) 요약 및 감성 분석 결과는 원문과 차이가 있을 수 있습니다.
         </div>
@@ -1080,11 +1080,11 @@ INITIAL_WATCHLIST_CODES[0] || allStocks[0]?.code || '005930'
 
                   const st = quote
                     ? {
-                        ...stock,
-                        price: quote.price,
-                        changeRate: quote.changeRate,
-                        changeAmount: quote.changeAmount,
-                      }
+                      ...stock,
+                      price: quote.price,
+                      changeRate: quote.changeRate,
+                      changeAmount: quote.changeAmount,
+                    }
                     : stock;
 
                   const hasPrice = st?.price != null;
@@ -1180,7 +1180,7 @@ INITIAL_WATCHLIST_CODES[0] || allStocks[0]?.code || '005930'
                   <div className="evidence-quote">
                     {/* <strong>근거 원문:</strong> {rel.evidence} */}
                     <strong>근거 원문:</strong>{' '}
-{rel.evidence?.trim() || ''}
+                    {rel.evidence?.trim() || ''}
                   </div>
                 </div>
               ))}
@@ -1583,70 +1583,70 @@ export default function DashboardPage() {
   // 백엔드 종목 검색으로 고른 종목 중 가짜 데이터에 없는 것 (시세·요약은 아직 없음 → analysisReady: false)
   // const allStocks = useMemo(() => [...mockStocks, ...apiStocks], [mockStocks, apiStocks]);
   const [apiStocks, setApiStocks] = useState([]);
-const [liveQuotes, setLiveQuotes] = useState({});
+  const [liveQuotes, setLiveQuotes] = useState({});
 
-const allStocks = useMemo(
-  () =>
-    [...mockStocks, ...apiStocks].map((stock) => {
-      const quote = liveQuotes[stock.code];
+  const allStocks = useMemo(
+    () =>
+      [...mockStocks, ...apiStocks].map((stock) => {
+        const quote = liveQuotes[stock.code];
 
-      if (!quote) return stock;
+        if (!quote) return stock;
 
-      return {
-        ...stock,
-        price: quote.price,
-        changeRate: quote.changeRate,
-        changeAmount: quote.changeAmount,
-      };
-    }),
-  [mockStocks, apiStocks, liveQuotes]
-);
+        return {
+          ...stock,
+          price: quote.price,
+          changeRate: quote.changeRate,
+          changeAmount: quote.changeAmount,
+        };
+      }),
+    [mockStocks, apiStocks, liveQuotes]
+  );
 
-// // 현재 선택한 종목과 관심종목의 실제 시세 조회
-// useEffect(() => {
-//   const codes = [...new Set([selectedStockCode, ...watchlistCodes].filter(Boolean))];
-//   let cancelled = false;
+  // // 현재 선택한 종목과 관심종목의 실제 시세 조회
+  // useEffect(() => {
+  //   const codes = [...new Set([selectedStockCode, ...watchlistCodes].filter(Boolean))];
+  //   let cancelled = false;
 
-//   Promise.allSettled(
-//     codes.map((code) => quoteApi.get(code))
-//   ).then((results) => {
-//     if (cancelled) return;
+  //   Promise.allSettled(
+  //     codes.map((code) => quoteApi.get(code))
+  //   ).then((results) => {
+  //     if (cancelled) return;
 
-//     const quotes = {};
+  //     const quotes = {};
 
-//     results.forEach((result, index) => {
-//       if (result.status === 'fulfilled' && result.value?.price != null) {
-//         quotes[codes[index]] = result.value;
-//       }
-//     });
+  //     results.forEach((result, index) => {
+  //       if (result.status === 'fulfilled' && result.value?.price != null) {
+  //         quotes[codes[index]] = result.value;
+  //       }
+  //     });
 
-//     setLiveQuotes((prev) => ({ ...prev, ...quotes }));
-//   });
+  //     setLiveQuotes((prev) => ({ ...prev, ...quotes }));
+  //   });
 
-//   return () => {
-//     cancelled = true;
-//   };
-// }, [selectedStockCode, watchlistCodes]);
+  //   return () => {
+  //     cancelled = true;
+  //   };
+  // }, [selectedStockCode, watchlistCodes]);
 
   // const allArticles = useMemo(() => normalizeArticles(ARTICLES_DATA), []);
   const [allArticles, setAllArticles] = useState([]);
 
-useEffect(() => {
-  const controller = new AbortController();
+  useEffect(() => {
+    const controller = new AbortController();
 
-  articleApi
-    .list({ page: 1, size: 100 }, { signal: controller.signal })
-    .then((res) => {
-      setAllArticles((res.items || []).map(toUiArticle));
-    })
-    .catch((err) => {
-      if (err.name !== 'AbortError') {
-        console.error('뉴스 API 조회 실패:', err);
-      }
-    });
+    articleApi
+      .list({ page: 1, size: 100 }, { signal: controller.signal })
+      .then((res) => {
+        setAllArticles((res.items || []).map(toUiArticle));
+      })
+      .catch((err) => {
+        if (err.name !== 'AbortError') {
+          console.error('뉴스 API 조회 실패:', err);
+        }
+      });
 
-  return () => controller.abort();
-}, []);
+    return () => controller.abort();
+  }, []);
 
   const initialSummaries = useMemo(() => normalizeSummaries(STOCK_SUMMARIES_DATA), []);
   const initialTrends = useMemo(() => normalizeMentionTrends(MENTION_TRENDS_DATA), []);
@@ -1677,145 +1677,145 @@ useEffect(() => {
   const [selectedStockCode, setSelectedStockCode] = useState(
     INITIAL_WATCHLIST_CODES[0] || allStocks[0]?.code || '005930'
   );
-//   // 주식 가격 차트 상태
-// const [priceChartUnit, setPriceChartUnit] = useState('day');
-// const [priceChartData, setPriceChartData] = useState([]);
-// const [priceChartLoading, setPriceChartLoading] = useState(false);
-// const [priceChartError, setPriceChartError] = useState(false);
+  //   // 주식 가격 차트 상태
+  // const [priceChartUnit, setPriceChartUnit] = useState('day');
+  // const [priceChartData, setPriceChartData] = useState([]);
+  // const [priceChartLoading, setPriceChartLoading] = useState(false);
+  // const [priceChartError, setPriceChartError] = useState(false);
 
-// // 선택한 종목의 실제 주가 차트 조회
-// useEffect(() => {
-//   if (!selectedStockCode) return undefined;
+  // // 선택한 종목의 실제 주가 차트 조회
+  // useEffect(() => {
+  //   if (!selectedStockCode) return undefined;
 
-//   const controller = new AbortController();
+  //   const controller = new AbortController();
 
-//   setPriceChartLoading(true);
-//   setPriceChartError(false);
+  //   setPriceChartLoading(true);
+  //   setPriceChartError(false);
 
-//   quoteApi.chart(selectedStockCode, priceChartUnit, {
-//     signal: controller.signal,
-//   })
-//     .then((res) => {
-//       setPriceChartData(res.items || []);
-//     })
-//     .catch((err) => {
-//       if (err.name !== 'AbortError') {
-//         console.error('주식 차트 조회 실패:', err);
-//         setPriceChartData([]);
-//         setPriceChartError(true);
-//       }
-//     })
-//     .finally(() => {
-//       if (!controller.signal.aborted) {
-//         setPriceChartLoading(false);
-//       }
-//     });
+  //   quoteApi.chart(selectedStockCode, priceChartUnit, {
+  //     signal: controller.signal,
+  //   })
+  //     .then((res) => {
+  //       setPriceChartData(res.items || []);
+  //     })
+  //     .catch((err) => {
+  //       if (err.name !== 'AbortError') {
+  //         console.error('주식 차트 조회 실패:', err);
+  //         setPriceChartData([]);
+  //         setPriceChartError(true);
+  //       }
+  //     })
+  //     .finally(() => {
+  //       if (!controller.signal.aborted) {
+  //         setPriceChartLoading(false);
+  //       }
+  //     });
 
-//   return () => controller.abort();
-// }, [selectedStockCode, priceChartUnit]);
+  //   return () => controller.abort();
+  // }, [selectedStockCode, priceChartUnit]);
 
   // 현재 선택한 종목과 관심종목의 실제 시세 조회
-useEffect(() => {
-  const codes = [...new Set([selectedStockCode, ...watchlistCodes].filter(Boolean))];
-  let cancelled = false;
+  useEffect(() => {
+    const codes = [...new Set([selectedStockCode, ...watchlistCodes].filter(Boolean))];
+    let cancelled = false;
 
-  Promise.allSettled(
-    codes.map((code) => quoteApi.get(code))
-  ).then((results) => {
-    if (cancelled) return;
+    Promise.allSettled(
+      codes.map((code) => quoteApi.get(code))
+    ).then((results) => {
+      if (cancelled) return;
 
-    const quotes = {};
+      const quotes = {};
 
-    results.forEach((result, index) => {
-      if (result.status === 'fulfilled' && result.value?.price != null) {
-        quotes[codes[index]] = result.value;
-      }
+      results.forEach((result, index) => {
+        if (result.status === 'fulfilled' && result.value?.price != null) {
+          quotes[codes[index]] = result.value;
+        }
+      });
+
+
+      setLiveQuotes((prev) => ({ ...prev, ...quotes }));
     });
 
-
-    setLiveQuotes((prev) => ({ ...prev, ...quotes }));
-  });
-
-  return () => {
-    cancelled = true;
-  };
-}, [selectedStockCode, watchlistCodes]);
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedStockCode, watchlistCodes]);
 
   const [selectedArticleId, setSelectedArticleId] = useState(null);
 
   const [articleDetails, setArticleDetails] = useState({});
-// 선택한 뉴스에 매칭된 종목의 실제 주가 조회
-// 선택한 뉴스에 매칭된 종목의 실제 주가 조회
-useEffect(() => {
-  if (!selectedArticleId) return;
+  // 선택한 뉴스에 매칭된 종목의 실제 주가 조회
+  // 선택한 뉴스에 매칭된 종목의 실제 주가 조회
+  useEffect(() => {
+    if (!selectedArticleId) return;
 
-  const article =
-    articleDetails[selectedArticleId] ||
-    allArticles.find((a) => String(a.id) === String(selectedArticleId));
+    const article =
+      articleDetails[selectedArticleId] ||
+      allArticles.find((a) => String(a.id) === String(selectedArticleId));
 
-  if (!article) return;
+    if (!article) return;
 
-  const codes = [
-    ...new Set(
-      (article.relatedStocks || [])
-        .map((stock) => stock.code)
-        .filter(Boolean)
-    ),
-  ];
+    const codes = [
+      ...new Set(
+        (article.relatedStocks || [])
+          .map((stock) => stock.code)
+          .filter(Boolean)
+      ),
+    ];
 
-  // 이미 조회한 종목은 다시 요청하지 않음
-  const missingCodes = codes.filter((code) => !liveQuotes[code]);
+    // 이미 조회한 종목은 다시 요청하지 않음
+    const missingCodes = codes.filter((code) => !liveQuotes[code]);
 
-  if (missingCodes.length === 0) return;
+    if (missingCodes.length === 0) return;
 
-  let cancelled = false;
+    let cancelled = false;
 
-  Promise.allSettled(
-    missingCodes.map((code) => quoteApi.get(code))
-  ).then((results) => {
-    if (cancelled) return;
+    Promise.allSettled(
+      missingCodes.map((code) => quoteApi.get(code))
+    ).then((results) => {
+      if (cancelled) return;
 
-    const quotes = {};
+      const quotes = {};
 
-    results.forEach((result, index) => {
-      if (result.status === 'fulfilled' && result.value?.price != null) {
-        quotes[missingCodes[index]] = result.value;
-      } else {
-        console.warn('주가 조회 실패:', missingCodes[index], result.reason);
+      results.forEach((result, index) => {
+        if (result.status === 'fulfilled' && result.value?.price != null) {
+          quotes[missingCodes[index]] = result.value;
+        } else {
+          console.warn('주가 조회 실패:', missingCodes[index], result.reason);
+        }
+      });
+
+      if (Object.keys(quotes).length > 0) {
+        setLiveQuotes((prev) => ({ ...prev, ...quotes }));
       }
     });
 
-    if (Object.keys(quotes).length > 0) {
-      setLiveQuotes((prev) => ({ ...prev, ...quotes }));
-    }
-  });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedArticleId, articleDetails, allArticles]);
 
-  return () => {
-    cancelled = true;
-  };
-}, [selectedArticleId, articleDetails, allArticles]);
+  useEffect(() => {
+    if (!selectedArticleId) return undefined;
 
-useEffect(() => {
-  if (!selectedArticleId) return undefined;
+    const controller = new AbortController();
 
-  const controller = new AbortController();
+    articleApi
+      .get(selectedArticleId, { signal: controller.signal })
+      .then((data) => {
+        setArticleDetails((prev) => ({
+          ...prev,
+          [selectedArticleId]: toUiArticle(data),
+        }));
+      })
+      .catch((err) => {
+        if (err.name !== 'AbortError') {
+          console.error('뉴스 상세 API 조회 실패:', err);
+        }
+      });
 
-  articleApi
-    .get(selectedArticleId, { signal: controller.signal })
-    .then((data) => {
-      setArticleDetails((prev) => ({
-        ...prev,
-        [selectedArticleId]: toUiArticle(data),
-      }));
-    })
-    .catch((err) => {
-      if (err.name !== 'AbortError') {
-        console.error('뉴스 상세 API 조회 실패:', err);
-      }
-    });
-
-  return () => controller.abort();
-}, [selectedArticleId]);
+    return () => controller.abort();
+  }, [selectedArticleId]);
 
   // 홈 우측 랭킹 탭 필터: 'issue'(매칭 급증) | 'up'(급상승) | 'down'(급하락)
   const [homeRankFilter, setHomeRankFilter] = useState('issue');
@@ -1834,50 +1834,50 @@ useEffect(() => {
   const [trendPeriod, setTrendPeriod] = useState('today'); // today | 7d | 30d
 
   // 백엔드 뉴스·SNS 언급량 데이터
-const [mentionSeries, setMentionSeries] = useState([]);
-const [mentionLoading, setMentionLoading] = useState(false);
-const [mentionError, setMentionError] = useState(false);
+  const [mentionSeries, setMentionSeries] = useState([]);
+  const [mentionLoading, setMentionLoading] = useState(false);
+  const [mentionError, setMentionError] = useState(false);
 
-useEffect(() => {
-  if (!selectedStockCode) return undefined;
+  useEffect(() => {
+    if (!selectedStockCode) return undefined;
 
-  const controller = new AbortController();
+    const controller = new AbortController();
 
-  setMentionSeries([]);
-  setMentionLoading(true);
-  setMentionError(false);
+    setMentionSeries([]);
+    setMentionLoading(true);
+    setMentionError(false);
 
-  stockApi.mentions(selectedStockCode, trendPeriod, {
-    signal: controller.signal,
-  })
-    .then((res) => {
-      if (controller.signal.aborted) return;
-
-      const series = (res.items || []).map((item) => ({
-        label:
-          trendPeriod === 'today'
-            ? item.time.slice(11, 16)
-            : item.time.slice(5, 10),
-        news: Number(item.newsCount || 0),
-        sns: Number(item.snsCount || 0),
-      }));
-
-      setMentionSeries(series);
+    stockApi.mentions(selectedStockCode, trendPeriod, {
+      signal: controller.signal,
     })
-    .catch((err) => {
-      if (controller.signal.aborted) return;
+      .then((res) => {
+        if (controller.signal.aborted) return;
 
-      console.error('언급량 API 조회 실패:', err);
-      setMentionError(true);
-    })
-    .finally(() => {
-      if (!controller.signal.aborted) {
-        setMentionLoading(false);
-      }
-    });
+        const series = (res.items || []).map((item) => ({
+          label:
+            trendPeriod === 'today'
+              ? item.time.slice(11, 16)
+              : item.time.slice(5, 10),
+          news: Number(item.newsCount || 0),
+          sns: Number(item.snsCount || 0),
+        }));
 
-  return () => controller.abort();
-}, [selectedStockCode, trendPeriod]);
+        setMentionSeries(series);
+      })
+      .catch((err) => {
+        if (controller.signal.aborted) return;
+
+        console.error('언급량 API 조회 실패:', err);
+        setMentionError(true);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setMentionLoading(false);
+        }
+      });
+
+    return () => controller.abort();
+  }, [selectedStockCode, trendPeriod]);
 
   // 뉴스·SNS 필터 및 정렬
   const [channelFilter, setChannelFilter] = useState('ALL'); // ALL | NEWS | SNS
@@ -2209,51 +2209,51 @@ useEffect(() => {
   const [remoteStockResult, setRemoteStockResult] = useState(null);
   const requestedSearchQuotes = useRef(new Set());
 
-useEffect(() => {
-  if (!remoteStockResult?.items?.length) return;
+  useEffect(() => {
+    if (!remoteStockResult?.items?.length) return;
 
-  const codes = remoteStockResult.items
-    .map((item) => item.stockCode)
-    .filter((code) => {
-      if (liveQuotes[code] || requestedSearchQuotes.current.has(code)) {
-        return false;
+    const codes = remoteStockResult.items
+      .map((item) => item.stockCode)
+      .filter((code) => {
+        if (liveQuotes[code] || requestedSearchQuotes.current.has(code)) {
+          return false;
+        }
+
+        requestedSearchQuotes.current.add(code);
+        return true;
+      });
+
+    if (codes.length === 0) return;
+
+    let cancelled = false;
+
+    Promise.allSettled(
+      codes.map((code) => quoteApi.get(code))
+    ).then((results) => {
+      if (cancelled) return;
+
+      const quotes = {};
+
+      results.forEach((result, index) => {
+        const code = codes[index];
+
+        if (result.status === 'fulfilled' && result.value?.price != null) {
+          quotes[code] = result.value;
+        } else {
+          requestedSearchQuotes.current.delete(code);
+        }
+      });
+
+      if (Object.keys(quotes).length > 0) {
+        setLiveQuotes((prev) => ({ ...prev, ...quotes }));
       }
-
-      requestedSearchQuotes.current.add(code);
-      return true;
     });
 
-  if (codes.length === 0) return;
-
-  let cancelled = false;
-
-  Promise.allSettled(
-    codes.map((code) => quoteApi.get(code))
-  ).then((results) => {
-    if (cancelled) return;
-
-    const quotes = {};
-
-    results.forEach((result, index) => {
-      const code = codes[index];
-
-      if (result.status === 'fulfilled' && result.value?.price != null) {
-        quotes[code] = result.value;
-      } else {
-        requestedSearchQuotes.current.delete(code);
-      }
-    });
-
-    if (Object.keys(quotes).length > 0) {
-      setLiveQuotes((prev) => ({ ...prev, ...quotes }));
-    }
-  });
-
-  return () => {
-    cancelled = true;
-    codes.forEach((code) => requestedSearchQuotes.current.delete(code));
-  };
-}, [remoteStockResult]);
+    return () => {
+      cancelled = true;
+      codes.forEach((code) => requestedSearchQuotes.current.delete(code));
+    };
+  }, [remoteStockResult]);
 
   useEffect(() => {
     const q = searchQuery.trim();
@@ -2282,27 +2282,27 @@ useEffect(() => {
     const remote =
       remoteStockResult && remoteStockResult.q.toLowerCase() === q ? remoteStockResult.items : null;
 
-      // const matchedStocks = remote
-      // ? remote.map((item) => allStocks.find((st) => st.code === item.stockCode) || toUiStock(item))
-      // : allStocks.filter((st) => matchStockByQuery(st, q)).slice(0, 5);
-      const matchedStocks = remote
-  ? remote.map((item) => {
-      const stock =
-        allStocks.find((st) => st.code === item.stockCode) ||
-        toUiStock(item);
+    // const matchedStocks = remote
+    // ? remote.map((item) => allStocks.find((st) => st.code === item.stockCode) || toUiStock(item))
+    // : allStocks.filter((st) => matchStockByQuery(st, q)).slice(0, 5);
+    const matchedStocks = remote
+      ? remote.map((item) => {
+        const stock =
+          allStocks.find((st) => st.code === item.stockCode) ||
+          toUiStock(item);
 
-      const quote = liveQuotes[item.stockCode];
+        const quote = liveQuotes[item.stockCode];
 
-      return quote
-        ? {
+        return quote
+          ? {
             ...stock,
             price: quote.price,
             changeRate: quote.changeRate,
             changeAmount: quote.changeAmount,
           }
-        : stock;
-    })
-  : allStocks.filter((st) => matchStockByQuery(st, q)).slice(0, 5);
+          : stock;
+      })
+      : allStocks.filter((st) => matchStockByQuery(st, q)).slice(0, 5);
 
 
     const matchedArticles = allArticles
@@ -2419,53 +2419,53 @@ const currentSummary = summariesByStock[selectedStockCode] || {
 
   // [화면 B] 개별 종목 상세(news / sns 탭) 전용 소식 필터링
   // 선택한 종목의 뉴스·SNS를 백엔드에서 직접 조회
-useEffect(() => {
-  if (
-    activeNav !== 'stock' ||
-    stockViewMode !== 'detail' ||
-    (stockTab !== 'news' && stockTab !== 'sns')
-  ) {
-    return;
-  }
+  useEffect(() => {
+    if (
+      activeNav !== 'stock' ||
+      stockViewMode !== 'detail' ||
+      (stockTab !== 'news' && stockTab !== 'sns')
+    ) {
+      return;
+    }
 
-  const controller = new AbortController();
-  const source = stockTab === 'sns' ? 'SNS' : 'NEWS';
+    const controller = new AbortController();
+    const source = stockTab === 'sns' ? 'SNS' : 'NEWS';
 
-  articleApi
-    .list(
-      {
-        stockCode: selectedStockCode,
-        source,
-        page: 1,
-        size: 30,
-      },
-      { signal: controller.signal }
-    )
-    .then((res) => {
-      const articles = (res.items || []).map(toUiArticle);
+    articleApi
+      .list(
+        {
+          stockCode: selectedStockCode,
+          source,
+          page: 1,
+          size: 30,
+        },
+        { signal: controller.signal }
+      )
+      .then((res) => {
+        const articles = (res.items || []).map(toUiArticle);
 
-      // 기존 뉴스는 유지하고, 새로 가져온 기사를 추가
-      // 같은 기사는 중복 저장하지 않음
-      setAllArticles((prev) => {
-        const merged = new Map(
-          prev.map((article) => [String(article.id), article])
-        );
+        // 기존 뉴스는 유지하고, 새로 가져온 기사를 추가
+        // 같은 기사는 중복 저장하지 않음
+        setAllArticles((prev) => {
+          const merged = new Map(
+            prev.map((article) => [String(article.id), article])
+          );
 
-        articles.forEach((article) => {
-          merged.set(String(article.id), article);
+          articles.forEach((article) => {
+            merged.set(String(article.id), article);
+          });
+
+          return [...merged.values()];
         });
-
-        return [...merged.values()];
+      })
+      .catch((err) => {
+        if (err.name !== 'AbortError') {
+          console.error('종목별 뉴스 조회 실패:', err);
+        }
       });
-    })
-    .catch((err) => {
-      if (err.name !== 'AbortError') {
-        console.error('종목별 뉴스 조회 실패:', err);
-      }
-    });
 
-  return () => controller.abort();
-}, [activeNav, stockViewMode, stockTab, selectedStockCode]);
+    return () => controller.abort();
+  }, [activeNav, stockViewMode, stockTab, selectedStockCode]);
 
   const stockFeedArticles = useMemo(() => {
     const targetSource = stockTab === 'sns' ? 'SNS' : 'NEWS';
@@ -2778,11 +2778,11 @@ const handleRefreshData = async () => {
       );
       return;
     }
-  //   if (handleAddWatchlist(target.code)) setWatchAddQuery('');
-  // };
-  handleAddWatchlist(target.code).then((added) => {
-    if (added) setWatchAddQuery('');
-  });
+    //   if (handleAddWatchlist(target.code)) setWatchAddQuery('');
+    // };
+    handleAddWatchlist(target.code).then((added) => {
+      if (added) setWatchAddQuery('');
+    });
   };
 
   // 통합 검색 자동완성 선택 핸들러
@@ -3417,9 +3417,9 @@ const handleDeleteCommentForStock = async (stockCode, postId) => {
   // ============================================================================
   const renderHomeView = () => {
     const selectedHomeArticle =
-    articleDetails[selectedArticleId] ||
-    homeFeedArticles.find((a) => a.id === selectedArticleId) ||
-    null;
+      articleDetails[selectedArticleId] ||
+      homeFeedArticles.find((a) => a.id === selectedArticleId) ||
+      null;
 
     return (
       <div className="wrapper">
@@ -4120,10 +4120,10 @@ const handleDeleteCommentForStock = async (stockCode, postId) => {
         {/* [탭 1] 요약·감성 (summary) */}
         {stockTab === 'summary' && (
           <>
-         <StockPriceChart
-  stockCode={selectedStockCode}
-  stockName={selectedStock?.name || selectedStockCode}
-/>
+            <StockPriceChart
+              stockCode={selectedStockCode}
+              stockName={selectedStock?.name || selectedStockCode}
+            />
 
             <div className="content-card">
               <div className="card-header">
@@ -4328,16 +4328,16 @@ const handleDeleteCommentForStock = async (stockCode, postId) => {
               </div>
               {/* <MentionTrendChart series={trendSeries} plotHeight={250} /> */}
               {mentionLoading ? (
-  <div className="empty-text">
-    언급량 데이터를 불러오는 중...
-  </div>
-) : mentionError ? (
-  <div className="empty-text">
-    언급량 데이터를 불러오지 못했습니다.
-  </div>
-) : (
-  <MentionTrendChart series={trendSeries} plotHeight={250} />
-)}
+                <div className="empty-text">
+                  언급량 데이터를 불러오는 중...
+                </div>
+              ) : mentionError ? (
+                <div className="empty-text">
+                  언급량 데이터를 불러오지 못했습니다.
+                </div>
+              ) : (
+                <MentionTrendChart series={trendSeries} plotHeight={250} />
+              )}
             </div>
 
             <div className="dashboard-grid">
