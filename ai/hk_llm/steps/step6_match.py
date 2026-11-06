@@ -303,10 +303,14 @@ def evidence(body, item, names, title=None):
     그 종목 이름이 나온 문장 중 LLM 이유와 단어가 가장 많이 겹치는 문장. 이름이 나온 문장이 없으면 None"""
     code, c, _, name = item
     i = c.get("evidence")
+    picked = None
     if isinstance(i, int) and not isinstance(i, bool) and title is not None:
         sents = numbered(title, body)
         if 0 <= i < len(sents):
-            return sents[i][:EVIDENCE_MAX]
+            picked = sents[i][:EVIDENCE_MAX]
+            # 06-3: 화면에 "이 종목의 근거"로 나가므로 그 종목 이름이 있어야 함. 없으면(개발용 152개 중 14%) 아래 방식으로 이름이 있는 문장
+            if _seen(norm(picked), code, name, names):
+                return picked
     words = {norm(name)} | {n for n, cc in names.items() if cc == code and len(n) >= 2}
     reason = set(re.findall(r"[가-힣A-Za-z0-9]{2,}", c.get("reason", "")))
     best, best_score = None, -1
@@ -316,7 +320,7 @@ def evidence(body, item, names, title=None):
         overlap = sum(1 for w in reason if w in s)
         if overlap > best_score:
             best, best_score = s, overlap
-    return best[:EVIDENCE_MAX] if best else None
+    return best[:EVIDENCE_MAX] if best else picked  # 이름 있는 문장이 하나도 없으면 LLM 이 고른 문장이라도
 
 
 def match_articles(engine=None, statuses=("SUMMARIZED",)):
