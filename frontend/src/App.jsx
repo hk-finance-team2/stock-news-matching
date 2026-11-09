@@ -1,6 +1,13 @@
-// 화면은 DashboardPageV6 하나 (모든 데이터는 백엔드 API, 가짜 데이터 없음)
-// 이전 버전(V1~V5)과 가짜 데이터(mocks/mockData.js)는 2026-11-09 정리. Git 기록에서 볼 수 있음
-import DashboardPage from './pages/DashboardPageV6';
+// ============================================================================
+// 대시보드 버전 전환 스위치 (1줄 변경):
+// - V1 (기본 원본):                     import DashboardPage from './pages/DashboardPage';
+// - V2 (에디토리얼 피드):                import DashboardPage from './pages/DashboardPageV2';
+// - V3 (소식 검색·페이지네이션·계정찾기): import DashboardPage from './pages/DashboardPageV3';
+// - V4 (감성 필터 칩 + 라이트/다크 모드): import DashboardPage from './pages/DashboardPageV4';
+// - V5 (다크모드 백화 수정·필터 정리):     import DashboardPage from './pages/DashboardPageV5';
+// - V6 (레이아웃 전면 개선·홈 통합 툴바):  import DashboardPage from './pages/DashboardPageV6';
+// ============================================================================
+import DashboardPage from './pages/DashboardPageV7';
 
 export default function App() {
   return <DashboardPage />;
