@@ -194,6 +194,59 @@ def test_step4_extract():
     got = extract(html, "https://www.hankyung.com/article/1")
     assert got == "SOOP이 3분기 실적 부진에 급락하고 있다.\n2일 오전 9시16분 코스닥시장에서", repr(got)
     assert extract(html, "https://unknown.example/1") is None
+    # 바이트로 받은 페이지: meta charset 을 따라 UTF-8 로 읽어야 함 (2026-11-05 파이낸셜뉴스 글자 깨짐 버그)
+    fn = ('<html><head><title>t</title></head><body>' + '<!-- 긴 머리말 -->' * 200 + '<meta charset="UTF-8" />'
+          '<div class="article-view__body">삼성전자가 3분기 영업이익 10조원을 기록했다. 시장 예상을 웃돌았다.</div></body></html>').encode("utf-8")
+    got = extract(fn, "https://www.fnnews.com/news/1")
+    assert got and got.startswith("삼성전자가 3분기"), repr(got)
+    nometa = '<html><body><div class="article-view__body">한글 본문입니다.</div></body></html>'.encode("utf-8")
+    assert extract(nometa, "https://www.fnnews.com/news/2") == "한글 본문입니다.", "meta 가 없으면 UTF-8"
+    tagged = ('<div class="article-view__body"><div>관련종목하림지주(003380), 팬오션(028670)</div>'
+              '팬오션이 선박을 자사선으로 전환한다.</div>')
+    assert extract(tagged, "https://www.fnnews.com/news/3") == "팬오션이 선박을 자사선으로 전환한다.", "관련종목 꼬리표는 뺌"
+    from hk_llm.steps.step4_body import TABLES_DROPPED
+    before = TABLES_DROPPED["www.fnnews.com"]
+    withtable = '<div class="article-view__body">실적이 늘었다.<table><tr><td>매출</td><td>1조</td></tr></table></div>'
+    assert extract(withtable, "https://www.fnnews.com/news/4") == "실적이 늘었다.", "표는 빼고"
+    assert TABLES_DROPPED["www.fnnews.com"] == before + 1, "버린 표 수를 셈 (07)"
+
+
+def test_health_rules():
+    """수집 점검 (health.py): DB 없이 판단 규칙만"""
+    from datetime import datetime, timedelta
+
+    from hk_llm.steps import health
+    from hk_llm.steps.step4_body import broken
+
+    now = datetime(2026, 11, 6, 9, 0)
+    assert health.gap_issue(now - timedelta(minutes=10), now) is None, "15분 이내는 정상"
+    assert health.gap_issue(now - timedelta(minutes=25), now).startswith("수집 공백 25분"), "15분 넘으면 공백"
+    assert health.gap_issue(None, now) is None, "처음 실행"
+    feed = "https://rss.etnews.com/02.xml"
+    errs = [f"실패한 피드: {feed} (ParseError: x)"] * health.FEED_STREAK
+    assert health.feed_issues(errs, [feed, "https://other"]) == [f"피드 {health.FEED_STREAK}번 연속 실패: {feed}"]
+    assert health.feed_issues(errs[:-1] + [None], [feed]) == [], "한 번이라도 성공하면 연속 아님"
+    assert health.feed_issues(errs[:3], [feed]) == [], "기록이 모자라면 판단 안 함"
+    got = health.volume_issues({"전자신문": 0, "한국경제": 50}, {"전자신문": 13, "한국경제": 54, "작은곳": 4})
+    assert got == ["수집량 급감 전자신문: 최근 24시간 0건 (지난 7일 하루 평균 13건)"], "평균 절반 아래만, 평균이 작은 곳은 빼고"
+    assert broken("ì¤ì\x80ë\x8f" * 3) and not broken("삼성전자가 3분기 영업이익 10조원을 기록했다. Ã 한 글자"), "글자 깨짐 의심"
+
+
+def test_notify_rules():
+    """Slack 알림: 새 문제·해결·12시간 뒤 다시만, 숫자만 바뀐 건 같은 문제. 네트워크 없음"""
+    from hk_llm.core import notify
+
+    assert notify.key("수집 공백 25분 (마지막 성공 11/05 15:21)") == notify.key("수집 공백 1,336분 (마지막 성공 11/06 09:00)")
+    assert notify.key("멈춘 기사 전자신문 34건 (…)") != notify.key("멈춘 기사 한국경제 5건 (…)")
+    first, s1 = notify.plan(["수집 공백 25분 (x)", "멈춘 기사 전자신문 34건 (y)"], {}, now=0)
+    assert first == ["🔴 수집 공백 25분 (x)", "🔴 멈춘 기사 전자신문 34건 (y)"]
+    again, s2 = notify.plan(["수집 공백 30분 (x)", "멈춘 기사 전자신문 35건 (y)"], s1, now=600)
+    assert again == [] and s2 == s1, "숫자만 바뀐 같은 문제는 다시 안 보냄"
+    later, s3 = notify.plan(["멈춘 기사 전자신문 40건 (y)"], s2, now=13 * 3600)
+    assert later == ["🟠 아직 계속됨: 멈춘 기사 전자신문 40건 (y)", "✅ 해결됨: 수집 공백 25분 (x)"], later
+    assert notify.plan([], s3, now=13 * 3600 + 1)[0] == ["✅ 해결됨: 멈춘 기사 전자신문 40건 (y)"]
+    with mock.patch.dict("os.environ", {"SLACK_WEBHOOK_URL": ""}):  # .env 의 진짜 주소로 보내지 않게
+        assert notify.send("시험", url="") is False, "주소가 없으면 안 보냄"
 
 
 def test_robots():
@@ -239,7 +292,10 @@ def test_robots_failure_not_cached():
                 mock.patch.object(step4_body, "_get") as page, mock.patch.object(step4_body, "_update") as update:
             assert step4_body.fetch_bodies(engine)["RETRY"] == 2
         assert get.call_count == 1, "같은 실행에서 다시 안 물어봄"
-        assert not page.called and not update.called, "SKIPPED 로 굳지 않고 LISTED 그대로"
+        assert not page.called, "확인 못 한 사이트엔 본문 요청 안 함"
+        # SKIPPED 로 굳지 않고 LISTED 그대로, 재시도 횟수도 안 셈. 이유만 남김 (수집 점검이 "멈춘 기사"의 이유로 보여 줌)
+        assert all(c.kwargs.get("status") == "LISTED" and c.kwargs.get("tries") is None and "robots" in c.kwargs.get("error", "")
+                   for c in update.call_args_list) and update.call_count == 2, update.call_args_list
     finally:
         robots._parser.cache_clear()
         robots._down.clear()

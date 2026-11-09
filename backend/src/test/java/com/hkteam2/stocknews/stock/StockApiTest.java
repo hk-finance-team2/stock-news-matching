@@ -1,6 +1,7 @@
 package com.hkteam2.stocknews.stock;
 
 import static org.hamcrest.Matchers.everyItem;
+import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
@@ -63,6 +64,40 @@ class StockApiTest extends ApiTestSupport {
         // 이름이 딱 맞는 순위가 더 우선: 언급이 없어도 "삼성공조"는 삼성공조가 1위
         mvc.perform(get("/api/stocks").param("q", "삼성공조"))
                 .andExpect(jsonPath("$.items[0].stockName").value("삼성공조"));
+    }
+
+    @Test
+    void 테마_이름과_딱_같으면_그_테마_종목도_나오고_많이_언급된_종목이_앞() throws Exception {
+        // 이름에 "반도체"가 든 종목(matchedTheme 없음)과 테마로만 찾은 종목(matchedTheme "반도체")이 함께
+        mvc.perform(get("/api/stocks").param("q", "반도체").param("size", "100"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalCount", greaterThanOrEqualTo(100)))
+                .andExpect(jsonPath("$.items[?(@.stockName == '한미반도체')].matchedTheme", hasItem(nullValue())))
+                .andExpect(jsonPath("$.items[?(@.stockCode == '005930')].matchedTheme", hasItem("반도체")));
+
+        // 이름 가운데 글자와 테마는 같은 순위 → 최근 언급이 많은 SK하이닉스가 1위 (테마를 맨 뒤로 보내면 11번째라 통합 검색 5개에 안 나옴)
+        for (int i = 1; i <= 3; i++) {
+            link(insertArticle("SK하이닉스 소식 " + i, "NEWS", "DONE", today(i)), "000660", 0.9);
+        }
+        mvc.perform(get("/api/stocks").param("q", "반도체"))
+                .andExpect(jsonPath("$.items[0].stockCode").value("000660"))
+                .andExpect(jsonPath("$.items[0].matchedTheme").value("반도체"));
+        mvc.perform(get("/api/search").param("q", "반도체"))
+                .andExpect(jsonPath("$.stocks.items[0].stockCode").value("000660"))
+                .andExpect(jsonPath("$.stocks.items[0].matchedTheme").value("반도체"));
+
+        // 이름이 q로 시작하는 순위는 그대로 우선: "서울반도체"는 서울반도체가 1위
+        mvc.perform(get("/api/stocks").param("q", "서울반도체"))
+                .andExpect(jsonPath("$.items[0].stockName").value("서울반도체"));
+    }
+
+    @Test
+    void 테마는_딱_같을_때만_찾고_종목_상세에는_matchedTheme_칸이_없다() throws Exception {
+        // "반도" 는 테마 "반도체"와 딱 같지 않음 → 테마로 찾은 종목 없음 (바이 → 바이오 160종목이 쏟아지지 않게)
+        mvc.perform(get("/api/stocks").param("q", "반도").param("size", "100"))
+                .andExpect(jsonPath("$.items[*].matchedTheme", everyItem(nullValue())));
+        mvc.perform(get("/api/stocks/{code}", "005930"))
+                .andExpect(jsonPath("$.matchedTheme").doesNotExist());
     }
 
     @Test
@@ -139,6 +174,19 @@ class StockApiTest extends ApiTestSupport {
         mvc.perform(get("/api/stocks/{code}/summary", KIA).param("source", "SNS"))
                 .andExpect(jsonPath("$.sentiment.articleCount").value(1))
                 .andExpect(jsonPath("$.sentiment.neutral").value(100));
+    }
+
+    @Test
+    void 감성을_판단하지_않은_연결은_감성_비율에서_빠진다() throws Exception {
+        // V12: AI 활용 금지 언론사 기사는 제목만으로 연결하고 감성은 NULL (중립으로 세면 비율이 왜곡됨)
+        link(insertArticle("좋은 소식", "NEWS", "DONE", today(1)), KIA, "POSITIVE", null, true);
+        link(insertArticle("제목만 연결한 기사", "NEWS", "DONE", today(2)), KIA, null, null, true);
+
+        mvc.perform(get("/api/stocks/{code}/summary", KIA))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.sentiment.articleCount").value(1))
+                .andExpect(jsonPath("$.sentiment.positive").value(100))
+                .andExpect(jsonPath("$.sentiment.neutral").value(0));
     }
 
     @Test

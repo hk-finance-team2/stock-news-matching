@@ -34,7 +34,7 @@ public class StockService {
     }
 
     /** 종목 검색. q가 비어 있으면 전체를 이름순으로. 같은 순위끼리는 최근 7일 많이 언급된 종목 먼저 */
-    public ListResponse<StockResponse> getStocks(String q, PageQuery pageQuery) {
+    public ListResponse<StockSearchResponse> getStocks(String q, PageQuery pageQuery) {
         String keyword = SearchKeyword.normalize(q);
         String likeKeyword = SearchKeyword.escapeLike(keyword);
         // DB 시간대 설정에 기대지 않게 앱에서 한국 시간으로 계산해 넘김 (이슈 순위와 같은 방식)
