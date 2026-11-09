@@ -26,10 +26,11 @@ public class StockController {
     }
 
     @Operation(summary = "종목 검색·목록",
-            description = "q가 있으면 종목명(포함)·종목코드(시작)·별칭(포함)으로 검색. 이름이 딱 맞는 것 → 이름이 q로 시작 → 코드 → 나머지 순."
+            description = "q가 있으면 종목명(포함)·종목코드(시작)·별칭(포함)·테마(딱 같을 때)로 검색. 이름이 딱 맞는 것 → 이름이 q로 시작 → 코드 → 나머지(가운데 글자·테마, 최근 언급 순) 순."
+                    + " 테마로만 찾은 종목은 matchedTheme에 그 테마(예: 반도체), 아니면 null."
                     + " q가 없으면 전체를 이름순으로. page는 1부터, size 1~100 (기본 20)")
     @GetMapping
-    public ListResponse<StockResponse> getStocks(
+    public ListResponse<StockSearchResponse> getStocks(
             @Parameter(description = "검색어 (50자 이하)", example = "삼성") @RequestParam(required = false) String q,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "" + PageQuery.DEFAULT_SIZE) int size) {

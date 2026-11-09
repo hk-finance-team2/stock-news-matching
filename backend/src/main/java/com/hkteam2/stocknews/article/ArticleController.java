@@ -42,9 +42,12 @@ public class ArticleController {
             @RequestParam(required = false) String q,
             @Parameter(description = "기간: today, 7d, 30d (없으면 전체). 7d = 오늘 포함 7일", example = "7d")
             @RequestParam(required = false) String period,
+            @Parameter(description = "감성: POSITIVE, NEGATIVE, NEUTRAL (없으면 전체). 종목을 골랐으면 그 종목, 아니면 주인공 종목 기준",
+                    example = "POSITIVE")
+            @RequestParam(required = false) String sentiment,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "" + PageQuery.DEFAULT_SIZE) int size) {
-        return articleService.getArticles(source, sort, minRelevance, stockCode, q, period,
+        return articleService.getArticles(source, sort, minRelevance, stockCode, q, period, sentiment,
                 new PageQuery(page, size));
     }
 

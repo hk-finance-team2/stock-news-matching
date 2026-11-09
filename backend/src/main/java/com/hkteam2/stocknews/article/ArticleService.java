@@ -24,6 +24,7 @@ public class ArticleService {
 
     private static final Set<String> SOURCE_TYPES = Set.of("NEWS", "SNS");
     private static final Set<String> SORTS = Set.of("latest", "relevance");
+    private static final Set<String> SENTIMENTS = Set.of("POSITIVE", "NEGATIVE", "NEUTRAL");
     /** 뉴스 상세에 붙일 SNS: 작성 시각 앞뒤 24시간 안에서 최대 5개 (F-11) */
     private static final int NEARBY_SNS_HOURS = 24;
     private static final int NEARBY_SNS_LIMIT = 5;
@@ -38,7 +39,7 @@ public class ArticleService {
 
     /** 기사 목록 거르기 조건 묶음. 모두 선택 (null이면 안 거름). SQL listCondition과 한 칸씩 짝 */
     private record Filter(String sourceType, String stockCode, BigDecimal minRelevance, Long watchUserId,
-                          String likeKeyword, LocalDateTime from) {
+                          String likeKeyword, LocalDateTime from, String sentiment) {
     }
 
     /**
@@ -48,7 +49,7 @@ public class ArticleService {
     @Transactional(readOnly = true)
     public ListResponse<ArticleResponse> getArticles(String source, String sort, Integer minRelevance,
                                                      String stockCode, String q, String period,
-                                                     PageQuery pageQuery) {
+                                                     String sentiment, PageQuery pageQuery) {
         String sourceType = toSourceType(source);
         checkSort(sort);
         BigDecimal minRelevanceDecimal = toMinRelevance(minRelevance);
@@ -56,7 +57,8 @@ public class ArticleService {
             throw new BusinessException(ErrorCode.STOCK_NOT_FOUND);
         }
         String likeKeyword = SearchKeyword.escapeLike(SearchKeyword.normalize(q));
-        return findPage(new Filter(sourceType, stockCode, minRelevanceDecimal, null, likeKeyword, toFrom(period)),
+        return findPage(new Filter(sourceType, stockCode, minRelevanceDecimal, null, likeKeyword, toFrom(period),
+                        toSentiment(sentiment)),
                 sort, pageQuery);
     }
 
@@ -66,19 +68,21 @@ public class ArticleService {
      */
     @Transactional(readOnly = true)
     public ListResponse<ArticleResponse> getWatchlistArticles(Long userId, String source, String sort,
-                                                              Integer minRelevance, PageQuery pageQuery) {
+                                                              Integer minRelevance, String sentiment,
+                                                              String period, PageQuery pageQuery) {
         String sourceType = toSourceType(source);
         checkSort(sort);
-        return findPage(new Filter(sourceType, null, toMinRelevance(minRelevance), userId, null, null),
+        return findPage(new Filter(sourceType, null, toMinRelevance(minRelevance), userId, null, toFrom(period),
+                        toSentiment(sentiment)),
                 sort, pageQuery);
     }
 
     /** 조건에 맞는 기사 한 페이지 + 관련 종목 칩 (목록·관심 종목 글·검색이 같이 씀) */
     private ListResponse<ArticleResponse> findPage(Filter f, String sort, PageQuery pageQuery) {
         long totalCount = articleMapper.countArticles(f.sourceType(), f.stockCode(), f.minRelevance(),
-                f.watchUserId(), f.likeKeyword(), f.from());
+                f.watchUserId(), f.likeKeyword(), f.from(), f.sentiment());
         List<ArticleRow> rows = articleMapper.findArticles(f.sourceType(), f.stockCode(), f.minRelevance(),
-                f.watchUserId(), f.likeKeyword(), f.from(), sort, pageQuery.limit(), pageQuery.offset());
+                f.watchUserId(), f.likeKeyword(), f.from(), f.sentiment(), sort, pageQuery.limit(), pageQuery.offset());
         if (rows.isEmpty()) {
             return new ListResponse<>(List.of(), totalCount);
         }
@@ -113,6 +117,15 @@ public class ArticleService {
             return null;
         }
         return MentionPeriod.from(period).start(LocalDateTime.now(TimeUtils.KST));
+    }
+
+    /** 감성 조건: 없으면 null(전체), 대소문자 상관없이 POSITIVE/NEGATIVE/NEUTRAL만. 그 밖은 400 */
+    private static String toSentiment(String sentiment) {
+        String value = sentiment == null || sentiment.isBlank() ? null : sentiment.toUpperCase();
+        if (value != null && !SENTIMENTS.contains(value)) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+        return value;
     }
 
     private static void checkSort(String sort) {

@@ -12,20 +12,47 @@
         </constructor>
     </resultMap>
 
+    <!-- 검색 결과 한 건 = StockResponse + matchedTheme (테마로만 찾은 종목이면 그 테마) -->
+    <resultMap id="stockSearchResponse" type="com.hkteam2.stocknews.stock.StockSearchResponse">
+        <constructor>
+            <arg column="stock_code" javaType="String"/>
+            <arg column="stock_name" javaType="String"/>
+            <arg column="market" javaType="String"/>
+            <arg column="sector" javaType="String"/>
+            <arg column="matched_theme" javaType="String"/>
+        </constructor>
+    </resultMap>
+
     <!--
         검색 조건. keyword가 없으면 조건 없이 전체.
         keyword: 사용자가 친 검색어 그대로 (정렬 비교용)
         likeKeyword: LIKE에서 특수 문자(%, _)를 글자로 취급하도록 바꾼 검색어
         종목명에 들어 있거나, 종목코드가 검색어로 시작하거나, 별칭에 들어 있으면 찾음
     -->
+    <!-- 글자로 맞음: 종목명에 들어 있음 / 코드가 검색어로 시작 / 별칭에 들어 있음 -->
+    <sql id="textMatch">
+        (s.stock_name LIKE CONCAT('%', #{likeKeyword}, '%')
+         OR s.stock_code LIKE CONCAT(#{likeKeyword}, '%')
+         OR EXISTS (SELECT 1 FROM stock_alias a
+                    WHERE a.stock_code = s.stock_code
+                      AND a.alias LIKE CONCAT('%', #{likeKeyword}, '%')))
+    </sql>
+
+    <!--
+        테마로 맞음 (QA #11): 검색어가 테마 이름과 **딱 같을 때만** ("반도체" → 삼성전자·SK하이닉스 등)
+        포함(LIKE)으로 하면 "바이"만 쳐도 바이오 160종목이 쏟아져서 딱 맞을 때만
+    -->
+    <sql id="themeMatch">
+        EXISTS (SELECT 1 FROM stock_theme t
+                WHERE t.stock_code = s.stock_code
+                  AND t.theme = #{keyword})
+    </sql>
+
     <sql id="searchCondition">
         <where>
             <if test="keyword != null">
-                s.stock_name LIKE CONCAT('%', #{likeKeyword}, '%')
-                OR s.stock_code LIKE CONCAT(#{likeKeyword}, '%')
-                OR EXISTS (SELECT 1 FROM stock_alias a
-                           WHERE a.stock_code = s.stock_code
-                             AND a.alias LIKE CONCAT('%', #{likeKeyword}, '%'))
+                <include refid="textMatch"/>
+                OR <include refid="themeMatch"/>
             </if>
         </where>
     </sql>
@@ -38,7 +65,7 @@
 
     <!--
         정렬
-        1) 순위: 이름이 딱 맞음 → 별칭이 딱 맞음 → 이름이 검색어로 시작 → 코드가 검색어로 시작 → 나머지
+        1) 순위: 이름이 딱 맞음 → 별칭이 딱 맞음 → 이름이 검색어로 시작 → 코드가 검색어로 시작 → 나머지(가운데 글자·테마)
            (별칭 순위가 없으면 "현대차" 검색에서 이름이 "현대차"로 시작하는 현대차증권이 현대자동차보다 앞에 옴)
         2) 코드로 찾은 것끼리는 코드 순서
         3) 같은 순위 안에서는 최근 7일(mentionFrom 이후) 분석이 끝난 글에 많이 나온 종목부터
@@ -46,8 +73,17 @@
         4) 그다음 이름이 짧은 것부터 (삼성전자가 삼성바이오로직스·삼성스팩10호보다 앞), 그다음 이름순
         글이 없으면 3)은 모두 0이라 예전과 같은 순서
     -->
-    <select id="search" resultMap="stockResponse">
-        SELECT s.stock_code, s.stock_name, s.market, s.sector
+    <select id="search" resultMap="stockSearchResponse">
+        SELECT s.stock_code, s.stock_name, s.market, s.sector,
+        <choose>
+            <when test="keyword != null">
+                CASE WHEN <include refid="textMatch"/> THEN NULL
+                     ELSE (SELECT MIN(t.theme) FROM stock_theme t
+                           WHERE t.stock_code = s.stock_code AND t.theme = #{keyword})
+                END
+            </when>
+            <otherwise>NULL</otherwise>
+        </choose> AS matched_theme
         FROM stock_info s
         <include refid="searchCondition"/>
         ORDER BY
@@ -58,6 +94,11 @@
                              WHERE a.stock_code = s.stock_code AND a.alias = #{keyword}) THEN 1
                 WHEN s.stock_name LIKE CONCAT(#{likeKeyword}, '%') THEN 2
                 WHEN s.stock_code LIKE CONCAT(#{likeKeyword}, '%') THEN 3
+                <!--
+                    나머지 = 이름·별칭 가운데에 든 것 + 테마로만 맞은 것을 **같은 순위**로 두고 아래 최근 언급 순
+                    테마를 맨 뒤로 보내면 "반도체"에서 이름에 반도체가 든 10종목에 밀려 삼성전자가 11번째
+                    → 통합 검색(위 5개)에 안 나옴. 같은 순위면 뉴스에 많이 나온 삼성전자·SK하이닉스가 앞
+                -->
                 ELSE 4
             END,
             CASE
