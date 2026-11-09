@@ -1,21 +1,24 @@
 // src/pages/DashboardPageV6.jsx
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import {
-  INITIAL_SYSTEM_STATUS,
-  INITIAL_WATCHLIST_CODES,
-  STOCKS_DATA,
-  ARTICLES_DATA,
-  STOCK_SUMMARIES_DATA,
-  MENTION_TRENDS_DATA,
-  INITIAL_STOCK_COMMENTS,
-  normalizeStocks,
-  normalizeArticles,
-  normalizeSummaries,
-  normalizeMentionTrends,
-  normalizeComments,
-} from '../mocks/mockData';
-import { stockApi, quoteApi, articleApi, watchlistApi, authApi } from '../api';
-import { toUiStock, toUiArticle } from '../api/adapters';
+  stockApi,
+  quoteApi,
+  articleApi,
+  watchlistApi,
+  authApi,
+  boardApi,
+  statusApi,
+  searchApi,
+  tokenStore,
+} from '../api';
+import {
+  toUiStock,
+  toUiArticle,
+  toUiSummary,
+  toUiBoardComment,
+  toDisplayTime,
+} from '../api/adapters';
+import { useApi } from '../hooks/useApi';
 import '../styles/dashboardV6.css';
 
 // 1계층: 왼쪽 사이드바 네비게이션 메뉴 (장소 이동 전용)
@@ -94,13 +97,11 @@ const COMMENT_TAGS = {
   board: { label: '뉴스', className: 'tag-news' },
 };
 const COMMENT_TAG_PATTERN = /^\[(뉴스|SNS|언급량)\]\s*/;
-const COMMENT_MAX_LENGTH = 1000;
-
-const DEFAULT_USERS_DB = {
-  tester01: 'password123',
-  seojun: '1234',
-  admin: '1234',
-};
+// 의견 하나 = 게시판 글 하나 (서버 게시판 제목 칸이 200자라 그 길이에 맞춤)
+const COMMENT_MAX_LENGTH = 200;
+// 오늘의 이슈 종목: 홈 TOP 7, 종목 탐색 기본 목록은 같은 응답의 앞쪽 50개
+const ISSUE_LIMIT = 50;
+const PERIOD_PARAM = { 0: 'today', 7: '7d', 30: '30d' };
 
 const formatRate = (rate) => {
   if (rate === null || rate === undefined || Number.isNaN(Number(rate))) return '0.00%';
@@ -116,11 +117,6 @@ const rateTone = (rate) => {
 };
 
 const formatPercent = (value) => `${(Math.round(value * 10) / 10).toFixed(1)}%`;
-
-const nowIsoSeoul = () => {
-  const kst = new Date(Date.now() + 9 * 60 * 60 * 1000);
-  return `${kst.toISOString().slice(0, 19)}+09:00`;
-};
 
 const nowTimeShort = () => {
   const now = new Date();
@@ -185,9 +181,19 @@ function SentimentBadge({ sentiment }) {
 }
 
 function SentimentBar({ ratio }) {
-  const pos = Number(ratio?.positive ?? 60);
-  const neu = Number(ratio?.neutral ?? 25);
-  const neg = Number(ratio?.negative ?? 15);
+  const pos = Number(ratio?.positive ?? 0);
+  const neu = Number(ratio?.neutral ?? 0);
+  const neg = Number(ratio?.negative ?? 0);
+  // 오늘 감성을 판단한 글이 없으면 비율을 지어내지 않고 그렇다고 알림
+  if (pos + neu + neg === 0) {
+    return (
+      <div className="sentiment">
+        <div className="sentiment-legend num">
+          <span className="sent-neu">오늘 감성을 판단한 기사가 없습니다</span>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="sentiment">
       <div className="sentiment-bar" role="img" aria-label={`긍정 ${pos}%, 중립 ${neu}%, 부정 ${neg}%`}>
@@ -713,6 +719,7 @@ function ArticleDetail({
   onDeleteCommentForStock,
   onToggleLikeForStock,
   onRequireLogin,
+  onNeedComments,
 }) {
   const sortedRelatedStocks = useMemo(
     () => [...(article?.relatedStocks || [])].sort((a, b) => b.relevance - a.relevance),
@@ -736,6 +743,11 @@ function ArticleDetail({
         : sortedRelatedStocks[0]?.code || preferredStockCode || '005930'
     );
   }, [article, preferredStockCode, sortedRelatedStocks]);
+
+  // 의견을 보여 줄 종목의 토론 글을 아직 안 받았으면 받음
+  useEffect(() => {
+    if (commentTargetCode && !commentsByStock[commentTargetCode]) onNeedComments?.(commentTargetCode);
+  }, [commentTargetCode, commentsByStock, onNeedComments]);
 
   if (!article) {
     return (
@@ -1055,7 +1067,7 @@ function StockPriceChart({ stockCode, stockName }) {
     setHoveredIndex(null);
     setCandles([]);
 
-    quoteApi.chart(stockCode, unit, {
+    quoteApi.chart(stockCode, unit, {}, {
       signal: controller.signal,
     })
       .then((res) => {
@@ -1332,9 +1344,7 @@ function StockPriceChart({ stockCode, stockName }) {
 
 export default function DashboardPageV6() {
   // 💡 [수정 포인트] 에러 방지를 위해 컴포넌트 최상단에 상태 변수들을 먼저 선언합니다.
-  const [selectedStockCode, setSelectedStockCode] = useState(
-    INITIAL_WATCHLIST_CODES[0] || '005930'
-  );
+  const [selectedStockCode, setSelectedStockCode] = useState('005930');
   const [activeNav, setActiveNav] = useState('home');
   const [stockViewMode, setStockViewMode] = useState('detail');
   const [stockTab, setStockTab] = useState('summary');
@@ -1350,17 +1360,37 @@ export default function DashboardPageV6() {
   const [articleSort, setArticleSort] = useState('latest');
   const [onlyWatchlistArticles, setOnlyWatchlistArticles] = useState(false);
 
-  const mockStocks = useMemo(
-    () => normalizeStocks(STOCKS_DATA, STOCK_SUMMARIES_DATA, MENTION_TRENDS_DATA),
-    []
-  );
+  // 화면에 나온 종목 { 종목코드: 종목 } — 가짜 종목 목록 없이, API가 알려 준 종목만 모음
+  // (이슈 순위·관심 종목·검색 결과·글의 연결 종목·종목 하나 조회). 값은 서버가 준 것만, 없으면 비워 둠
+  const [knownStocks, setKnownStocks] = useState({});
+  // onlyNew: 이름만 아는 종목(글의 연결 종목 등)은 처음 볼 때만 넣음 → 이슈 순위의 오늘 글 수를 덮지 않게
+  const rememberStocks = useCallback((list, { onlyNew = false } = {}) => {
+    if (!list?.length) return;
+    setKnownStocks((prev) => {
+      const next = { ...prev };
+      list.forEach((st) => {
+        if (!st?.code) return;
+        const old = next[st.code];
+        if (old && onlyNew) return;
+        // 이미 아는 칸(오늘 글 수 등)은 새 값이 비어 있으면 그대로 둠
+        next[st.code] = old
+          ? Object.fromEntries(
+            Object.entries({ ...old, ...st }).map(([k, v]) => [
+              k,
+              v === null || v === undefined || v === '' ? old[k] : v,
+            ])
+          )
+          : { ...toUiStock({ stockCode: st.code, stockName: st.name }), ...st };
+      });
+      return next;
+    });
+  }, []);
 
-  const [apiStocks, setApiStocks] = useState([]);
   const [liveQuotes, setLiveQuotes] = useState({});
 
   const allStocks = useMemo(
     () =>
-      [...mockStocks, ...apiStocks].map((stock) => {
+      Object.values(knownStocks).map((stock) => {
         const quote = liveQuotes[stock.code];
         if (!quote) return stock;
         return {
@@ -1370,21 +1400,80 @@ export default function DashboardPageV6() {
           changeAmount: quote.changeAmount,
         };
       }),
-    [mockStocks, apiStocks, liveQuotes]
+    [knownStocks, liveQuotes]
   );
+
+  // 오늘의 이슈 종목 (뉴스 기준, 1분마다 다시). 홈 TOP 7 과 종목 탐색 기본 목록
+  const issues = useApi(
+    (signal) => stockApi.issues({ limit: ISSUE_LIMIT }, { signal }),
+    [],
+    { refreshMs: 60_000 }
+  );
+  const issueItems = useMemo(() => issues.data?.items || [], [issues.data]);
+  // 현재가는 TOP 7 만 받음 (KIS 초당 호출 한도)
+  const issueTopCodes = issueItems.slice(0, 7).map((it) => it.stockCode).join(',');
+  useEffect(() => {
+    rememberStocks(
+      issueItems.map((it) => ({
+        ...toUiStock(it),
+        todayMatchedCount: it.articleCount,
+        issueRank: it.rank,
+        lastMatchedAt: toDisplayTime(it.lastPublishedAt) || '-',
+        analysisReady: true,
+      }))
+    );
+  }, [issueItems, rememberStocks]);
+
+  // 종목 사전 기본 정보(이름·시장·업종)만 채움. 다른 칸(오늘 글 수 등)은 건드리지 않음
+  const basicInfo = (item) => ({
+    code: item.stockCode,
+    name: item.stockName,
+    market: item.market,
+    sector: item.sector,
+  });
+
+  // 고른 종목의 시장·업종을 아직 모르면 종목 하나 조회로 받음 (글의 연결 종목은 이름만 알고 있음)
+  const selectedKnown = knownStocks[selectedStockCode];
+  useEffect(() => {
+    if (!selectedStockCode || selectedKnown?.market) return undefined;
+    const controller = new AbortController();
+    stockApi
+      .get(selectedStockCode, { signal: controller.signal })
+      .then((res) =>
+        rememberStocks([selectedKnown ? basicInfo(res) : toUiStock(res)])
+      )
+      .catch((err) => {
+        if (err.name !== 'AbortError') console.error('종목 조회 실패:', err);
+      });
+    return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedStockCode, selectedKnown?.market, rememberStocks]);
 
   // 💡 selectedStock 변수 정의 (allStocks가 정의된 이후 안전하게 선언)
   const stockByCode = (code) => allStocks.find((s) => s.code === code);
-  const selectedStock = stockByCode(selectedStockCode) || allStocks[0];
+  // 종목 정보를 받기 전에는 코드만 있는 빈 종목 (화면이 깨지지 않게, 값은 지어내지 않음)
+  const selectedStock =
+    stockByCode(selectedStockCode) ||
+    toUiStock({ stockCode: selectedStockCode, stockName: selectedStockCode });
 
   const [allArticles, setAllArticles] = useState([]);
+  // 받은 글을 기존 목록에 합침 (같은 글은 새 값으로). 홈·종목·관심 종목 화면이 같은 목록을 나눠 씀
+  const mergeArticles = useCallback((articles) => {
+    setAllArticles((prev) => {
+      const merged = new Map(prev.map((article) => [String(article.id), article]));
+      articles.forEach((article) => merged.set(String(article.id), article));
+      return [...merged.values()];
+    });
+  }, []);
+  // 새로고침 버튼을 누르면 1 씩 늘려 홈 글 목록을 다시 받음
+  const [articlesTick, setArticlesTick] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
     articleApi
       .list({ page: 1, size: 100 }, { signal: controller.signal })
       .then((res) => {
-        setAllArticles((res.items || []).map(toUiArticle));
+        mergeArticles((res.items || []).map(toUiArticle));
       })
       .catch((err) => {
         if (err.name !== 'AbortError') {
@@ -1392,10 +1481,17 @@ export default function DashboardPageV6() {
         }
       });
     return () => controller.abort();
-  }, []);
+  }, [articlesTick, mergeArticles]);
 
-  const initialSummaries = useMemo(() => normalizeSummaries(STOCK_SUMMARIES_DATA), []);
-  const initialTrends = useMemo(() => normalizeMentionTrends(MENTION_TRENDS_DATA), []);
+  // 글에 연결된 종목도 이름을 알게 됨 → 종목 칩을 눌렀을 때 바로 이름이 보임
+  useEffect(() => {
+    rememberStocks(
+      allArticles.flatMap((art) =>
+        (art.relatedStocks || []).map((r) => toUiStock({ stockCode: r.code, stockName: r.name }))
+      ),
+      { onlyNew: true }
+    );
+  }, [allArticles, rememberStocks]);
 
   const [navCollapsed, setNavCollapsed] = useState(() => {
     try {
@@ -1412,7 +1508,10 @@ export default function DashboardPageV6() {
   const [watchlistCodes, setWatchlistCodes] = useState([]);
 
   useEffect(() => {
-    const codes = [...new Set([selectedStockCode, ...watchlistCodes].filter(Boolean))];
+    // 고른 종목·관심 종목·이슈 TOP 7 의 현재가 (시세가 꺼진 서버면 503 → 그냥 비워 둠)
+    const codes = [
+      ...new Set([selectedStockCode, ...watchlistCodes, ...issueTopCodes.split(',')].filter(Boolean)),
+    ];
     let cancelled = false;
 
     Promise.allSettled(
@@ -1431,7 +1530,7 @@ export default function DashboardPageV6() {
     return () => {
       cancelled = true;
     };
-  }, [selectedStockCode, watchlistCodes]);
+  }, [selectedStockCode, watchlistCodes, issueTopCodes]);
 
   const [selectedArticleId, setSelectedArticleId] = useState(null);
   const [articleDetails, setArticleDetails] = useState({});
@@ -1571,12 +1670,37 @@ export default function DashboardPageV6() {
   const [findPwUsername, setFindPwUsername] = useState('');
   const [findPwEmail, setFindPwEmail] = useState('');
 
-  const [sysStatus, setSysStatus] = useState(INITIAL_SYSTEM_STATUS);
-  const [summariesByStock, setSummariesByStock] = useState(initialSummaries);
+  // 데이터 상태: 마지막 뉴스·SNS 수집, 요약 시각 (GET /api/status, 1분마다)
+  const status = useApi((signal) => statusApi.get({ signal }), [], { refreshMs: 60_000 });
+  const sysStatus = {
+    lastUpdated: {
+      quote: toDisplayTime(status.data?.lastSuccessAt) || '-',
+      newsSns: toDisplayTime(status.data?.newsCollectedAt) || '-',
+      summary: toDisplayTime(status.data?.summaryGeneratedAt) || '-',
+    },
+  };
+
+  // 종목 종합 요약·감성 비율 { 종목코드: 화면 요약 } (GET /api/stocks/{code}/summary)
+  const [summariesByStock, setSummariesByStock] = useState({});
   const [regenerating, setRegenerating] = useState(false);
+  useEffect(() => {
+    if (!selectedStockCode) return undefined;
+    const controller = new AbortController();
+    stockApi
+      .summary(selectedStockCode, {}, { signal: controller.signal })
+      .then((res) =>
+        setSummariesByStock((prev) => ({ ...prev, [selectedStockCode]: toUiSummary(res) }))
+      )
+      .catch((err) => {
+        if (err.name !== 'AbortError') console.error('종목 요약 조회 실패:', err);
+      });
+    return () => controller.abort();
+  }, [selectedStockCode]);
 
   const [user, setUser] = useState(null);
   useEffect(() => {
+    // 저장된 로그인 토큰이 없으면 물어볼 필요가 없음 (로그인 전 401 요청 방지)
+    if (!tokenStore.get()) return undefined;
     let cancelled = false;
     authApi.me()
       .then((res) => {
@@ -1608,9 +1732,23 @@ export default function DashboardPageV6() {
   const [authError, setAuthError] = useState('');
   const [toast, setToast] = useState(null);
 
-  const [commentsByStock, setCommentsByStock] = useState(() =>
-    normalizeComments(INITIAL_STOCK_COMMENTS)
-  );
+  // 종목별 토론 의견 { 종목코드: [의견] } (게시판 API). 화면은 댓글형, 서버는 게시판: 의견 하나 = 게시판 글 하나
+  const [commentsByStock, setCommentsByStock] = useState({});
+  const loadComments = useCallback((code) => {
+    if (!code) return;
+    boardApi
+      .posts(code, { size: 50 })
+      .then((res) =>
+        setCommentsByStock((prev) => ({
+          ...prev,
+          [code]: (res.items || []).map((it) => toUiBoardComment(it, code)),
+        }))
+      )
+      .catch(() => setCommentsByStock((prev) => ({ ...prev, [code]: prev[code] || [] })));
+  }, []);
+  useEffect(() => {
+    loadComments(selectedStockCode);
+  }, [selectedStockCode, loadComments]);
 
   const mainRef = useRef(null);
   const triggerToast = (msg) => setToast({ id: Date.now(), text: msg });
@@ -1718,8 +1856,16 @@ export default function DashboardPageV6() {
     watchlistApi.list()
       .then((res) => {
         if (cancelled) return;
-        const codes = (res.items || []).map((item) => item.stockCode);
-        setWatchlistCodes(codes);
+        const items = res.items || [];
+        rememberStocks(
+          items.map((it) => ({
+            ...toUiStock(it),
+            todayMatchedCount: it.todayArticleCount,
+            todayArticleCount: it.todayArticleCount,
+            lastMatchedAt: toDisplayTime(it.lastMatchedAt) || '-',
+          }))
+        );
+        setWatchlistCodes(items.map((item) => item.stockCode));
       })
       .catch((error) => {
         if (cancelled) return;
@@ -1729,7 +1875,7 @@ export default function DashboardPageV6() {
     return () => {
       cancelled = true;
     };
-  }, [user]);
+  }, [user, rememberStocks]);
 
   useEffect(() => {
     if (!toast) return undefined;
@@ -1837,10 +1983,28 @@ export default function DashboardPageV6() {
     const q = searchQuery.trim();
     if (!q) return undefined;
     const controller = new AbortController();
+    // 통합 검색 API 한 번으로 종목(이름·코드·별칭·테마) 5개 + 글(제목·요약·키워드) 5개
     const timer = setTimeout(() => {
-      stockApi
-        .search(q, { size: 5 }, { signal: controller.signal })
-        .then((res) => setRemoteStockResult({ q, items: res.items }))
+      searchApi
+        .all(
+          q,
+          {
+            period: PERIOD_PARAM[searchPeriod],
+            source: searchSource === 'ALL' ? undefined : searchSource,
+            size: 5,
+          },
+          { signal: controller.signal }
+        )
+        .then((res) => {
+          rememberStocks((res.stocks?.items || []).map(basicInfo));
+          setRemoteStockResult({
+            q,
+            period: searchPeriod,
+            source: searchSource,
+            items: res.stocks?.items || [],
+            articles: (res.articles?.items || []).map(toUiArticle),
+          });
+        })
         .catch((err) => {
           if (err.name !== 'AbortError') setRemoteStockResult(null);
         });
@@ -1849,7 +2013,8 @@ export default function DashboardPageV6() {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [searchQuery]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery, searchPeriod, searchSource]);
 
   const integratedSearchResults = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -1875,69 +2040,68 @@ export default function DashboardPageV6() {
       })
       : allStocks.filter((st) => matchStockByQuery(st, q)).slice(0, 5);
 
-    const matchedArticles = allArticles
-      .filter((art) => {
-        if (searchSource !== 'ALL' && art.sourceType !== searchSource) return false;
-        if (searchPeriod !== 'ALL' && art.daysAgo > Number(searchPeriod)) return false;
-
-        const inTitle = art.title.toLowerCase().includes(q);
-        const inSummary = art.summary.some((line) => line.toLowerCase().includes(q));
-        const inKeywords = art.keywords.some((kw) => kw.toLowerCase().includes(q));
-        const inRelatedStock = art.relatedStocks.some((rel) => {
-          const st = stockByCode(rel.code);
-          return (
-            rel.name.toLowerCase().includes(q) ||
-            rel.code.includes(q) ||
-            st?.aliases.some((al) => al.toLowerCase().includes(q))
-          );
-        });
-        return inTitle || inSummary || inKeywords || inRelatedStock;
-      })
-      .slice(0, 5);
+    // 글은 서버 검색 결과 (전체 글 대상). 검색어·기간·출처가 바뀐 직후 응답 전에는 비워 둠
+    const remoteFresh =
+      remote && remoteStockResult.period === searchPeriod && remoteStockResult.source === searchSource;
+    const matchedArticles = remoteFresh ? remoteStockResult.articles : [];
 
     return { matchedStocks, matchedArticles };
-  }, [searchQuery, searchPeriod, searchSource, allStocks, allArticles, remoteStockResult, liveQuotes]);
+  }, [searchQuery, searchPeriod, searchSource, allStocks, remoteStockResult, liveQuotes]);
 
+  // 관심 종목 추가 후보: 검색어가 있으면 종목 검색 API, 없으면 오늘의 이슈 종목
+  const watchAddSearch = useApi(
+    (signal) => stockApi.search(watchAddQuery.trim(), { size: 8 }, { signal }),
+    [watchAddQuery],
+    { enabled: Boolean(watchAddQuery.trim()) }
+  );
   const watchAddCandidates = useMemo(() => {
-    const q = watchAddQuery.trim().toLowerCase();
-    if (!q) return allStocks.slice(0, 8);
-    return allStocks.filter((s) => matchStockByQuery(s, q)).slice(0, 8);
-  }, [watchAddQuery, allStocks]);
+    if (!watchAddQuery.trim()) {
+      return issueItems.slice(0, 8).map((it) => stockByCode(it.stockCode) || toUiStock(it));
+    }
+    return (watchAddSearch.data?.items || []).map(
+      (it) => stockByCode(it.stockCode) || toUiStock(it)
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watchAddQuery, watchAddSearch.data, issueItems, allStocks]);
 
-  const notReadySummary = {
-    updatedAt: '-',
-    headline: `${selectedStock.name} AI 요약 준비 중`,
-    summary: '이 종목은 아직 AI 요약이 연결되지 않았습니다.',
-    newsSummary: '',
-    snsSummary: '',
-    sentimentRatio: selectedStock.sentimentRatio,
-  };
-  const currentSummary =
-    summariesByStock[selectedStockCode] ||
-    (selectedStock.analysisReady === false ? notReadySummary : null) ||
-    summariesByStock.default || {
-      updatedAt: sysStatus.lastUpdated.summary,
-      headline: `${selectedStock.name} 당일 매칭 뉴스·SNS 종합 요약`,
-      summary: selectedStock.summary,
-      newsSummary: selectedStock.newsSummary,
-      snsSummary: selectedStock.snsSummary,
-      sentimentRatio: selectedStock.sentimentRatio,
+  // 서버 요약을 화면 칸으로. 아직 받기 전이거나 오늘 요약이 없으면 "준비 중"을 그대로 알림 (요약을 지어내지 않음)
+  const loadedSummary = summariesByStock[selectedStockCode];
+  const currentSummary = loadedSummary?.ready
+    ? {
+      ...loadedSummary,
+      headline: `${selectedStock.name} 오늘의 AI 종합 요약`,
+      summary: loadedSummary.newsSummary || loadedSummary.snsSummary,
+    }
+    : {
+      updatedAt: '-',
+      headline: `${selectedStock.name} AI 요약 준비 중`,
+      summary: loadedSummary
+        ? '오늘 이 종목에 연결된 기사로 만든 AI 요약이 아직 없습니다.'
+        : 'AI 요약을 불러오는 중입니다.',
+      newsSummary: '',
+      snsSummary: '',
+      sentimentRatio: loadedSummary?.sentimentRatio ?? null,
     };
 
   const trendSeries = mentionSeries;
 
+  // 오늘 뉴스·SNS 글 수: 언급량 API(오늘, 1시간 단위)를 더함. 그래프 기간을 바꿔도 이 숫자는 오늘 기준
+  const todayMentions = useApi(
+    (signal) => stockApi.mentions(selectedStockCode, 'today', { signal }),
+    [selectedStockCode],
+    { enabled: Boolean(selectedStockCode) }
+  );
   const todayCounts = useMemo(
     () =>
-      (currentTrendToday() || []).reduce(
-        (acc, pt) => ({ news: acc.news + (pt.news || 0), sns: acc.sns + (pt.sns || 0) }),
+      (todayMentions.data?.items || []).reduce(
+        (acc, pt) => ({
+          news: acc.news + Number(pt.newsCount || 0),
+          sns: acc.sns + Number(pt.snsCount || 0),
+        }),
         { news: 0, sns: 0 }
       ),
-    [selectedStockCode]
+    [todayMentions.data]
   );
-
-  function currentTrendToday() {
-    return initialTrends[selectedStockCode]?.today || initialTrends.default?.today || [];
-  }
 
   const homeFeedArticles = useMemo(() => {
     const relevanceOf = (art) =>
@@ -2038,6 +2202,19 @@ export default function DashboardPageV6() {
     articleSort,
   ]);
 
+  // 관심 종목 화면: 관심 종목 글 모아 보기 API (최근 100건) → 공용 글 목록에 합침
+  useEffect(() => {
+    if (activeNav !== 'watchlist' || !user || watchlistCodes.length === 0) return undefined;
+    const controller = new AbortController();
+    watchlistApi
+      .articles({ page: 1, size: 100 }, { signal: controller.signal })
+      .then((res) => mergeArticles((res.items || []).map(toUiArticle)))
+      .catch((err) => {
+        if (err.name !== 'AbortError') console.error('관심 종목 글 조회 실패:', err);
+      });
+    return () => controller.abort();
+  }, [activeNav, user, watchlistCodes, mergeArticles]);
+
   const watchlistFeedArticles = useMemo(() => {
     const relevanceOf = (art) =>
       Math.max(
@@ -2068,29 +2245,46 @@ export default function DashboardPageV6() {
     articleSort,
   ]);
 
+  // 종목 탐색: 검색어가 있으면 종목 검색 API(2,655종목 전체), 없으면 오늘의 이슈 종목
+  const stockListSearch = useApi(
+    (signal) => stockApi.search(stockListQuery.trim(), { size: 30 }, { signal }),
+    [stockListQuery],
+    { enabled: Boolean(stockListQuery.trim()) }
+  );
+  useEffect(() => {
+    rememberStocks((stockListSearch.data?.items || []).map(toUiStock), { onlyNew: true });
+  }, [stockListSearch.data, rememberStocks]);
+
   const filteredStockList = useMemo(() => {
-    const q = stockListQuery.trim().toLowerCase();
-    return allStocks
+    const q = stockListQuery.trim();
+    const codes = q
+      ? (stockListSearch.data?.items || []).map((it) => it.stockCode)
+      : issueItems.map((it) => it.stockCode);
+    return codes
+      .map(stockByCode)
+      .filter(Boolean)
       .filter((st) => (stockListMarket === 'ALL' ? true : st.market === stockListMarket))
-      .filter((st) => (!q ? true : matchStockByQuery(st, q)))
       .sort((a, b) => {
         if (stockListSort === 'up') return (b.changeRate ?? -999) - (a.changeRate ?? -999);
         if (stockListSort === 'down') return (a.changeRate ?? 999) - (b.changeRate ?? 999);
         if (stockListSort === 'name') return a.name.localeCompare(b.name, 'ko');
-        return b.todayMatchedCount - a.todayMatchedCount;
+        return (b.todayMatchedCount || 0) - (a.todayMatchedCount || 0);
       });
-  }, [allStocks, stockListQuery, stockListMarket, stockListSort]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allStocks, stockListQuery, stockListSearch.data, issueItems, stockListMarket, stockListSort]);
 
+  // 홈 오늘의 이슈 종목 TOP 7 (서버 순위). 급상승·급하락은 그중 현재가를 받은 종목을 등락률로 다시 정렬
   const homeRankedStocks = useMemo(() => {
-    const list = [...allStocks];
+    const list = issueItems.map((it) => stockByCode(it.stockCode)).filter(Boolean);
     if (homeRankFilter === 'up') {
       return list.sort((a, b) => (b.changeRate ?? -999) - (a.changeRate ?? -999)).slice(0, 7);
     }
     if (homeRankFilter === 'down') {
       return list.sort((a, b) => (a.changeRate ?? 999) - (b.changeRate ?? 999)).slice(0, 7);
     }
-    return list.sort((a, b) => b.todayMatchedCount - a.todayMatchedCount).slice(0, 7);
-  }, [allStocks, homeRankFilter]);
+    return list.slice(0, 7);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allStocks, issueItems, homeRankFilter]);
 
   const currentComments = commentsByStock[selectedStockCode] || [];
 
@@ -2101,37 +2295,37 @@ export default function DashboardPageV6() {
     setShowAuthModal(true);
   };
 
+  // 새로고침: 데이터 상태·이슈 순위·글 목록을 서버에서 다시 받음 (시각을 화면이 지어내지 않음)
   const handleRefreshData = () => {
-    const nowStr = nowTimeShort();
-    setSysStatus((prev) => ({
-      ...prev,
-      streamStatus: 'CONNECTED',
-      analysisStatus: 'COMPLETED',
-      lastUpdated: {
-        quote: nowStr,
-        newsSns: nowStr,
-        summary: nowStr,
-      },
-    }));
-    triggerToast(`🔄 시세·뉴스 및 AI 매칭 데이터가 최신 상태로 갱신되었습니다 (${nowStr})`);
+    status.reload();
+    issues.reload();
+    setArticlesTick((t) => t + 1);
+    triggerToast(`🔄 최신 데이터를 다시 불러왔습니다 (${nowTimeShort()})`);
   };
 
-  const handleRegenerateSummary = () => {
+  // 종합 요약 다시 생성 (로그인 필요). AI 서버가 같은 종목은 10분에 1번만 새로 만들고, 그 사이엔 저장본을 돌려줌
+  const handleRegenerateSummary = async () => {
     if (regenerating) return;
+    if (!user) {
+      requireLogin('🔒 AI 요약 다시 생성은 로그인이 필요합니다.');
+      return;
+    }
+    const code = selectedStockCode;
     setRegenerating(true);
-    setTimeout(() => {
-      const nowStr = nowTimeShort();
-      setSummariesByStock((prev) => ({
-        ...prev,
-        [selectedStockCode]: {
-          ...(prev[selectedStockCode] || currentSummary),
-          updatedAt: nowStr,
-          generatedAt: nowStr,
-        },
-      }));
+    try {
+      const res = await stockApi.regenerate(code);
+      setSummariesByStock((prev) => ({ ...prev, [code]: toUiSummary(res.summary) }));
+      triggerToast(
+        res.regenerated
+          ? '🤖 AI 요약을 새로 만들었습니다.'
+          : 'ℹ️ 최근 10분 안에 만든 요약이 있어 그대로 보여 드립니다.'
+      );
+    } catch (error) {
+      console.error('요약 다시 생성 실패:', error);
+      triggerToast('AI 요약 다시 생성에 실패했습니다. 잠시 뒤 다시 시도해 주세요.');
+    } finally {
       setRegenerating(false);
-      triggerToast(`🤖 AI 요약 및 감성 분석이 최신 상태로 재생성되었습니다 (${nowStr})`);
-    }, 500);
+    }
   };
 
   const handleAddWatchlist = async (code, candidate = null) => {
@@ -2149,6 +2343,7 @@ export default function DashboardPageV6() {
 
     try {
       await watchlistApi.add(code);
+      rememberStocks([stock], { onlyNew: true });
       setWatchlistCodes((prev) =>
         prev.includes(code) ? prev : [code, ...prev]
       );
@@ -2205,7 +2400,7 @@ export default function DashboardPageV6() {
       );
       return;
     }
-    handleAddWatchlist(target.code).then((added) => {
+    handleAddWatchlist(target.code, target).then((added) => {
       if (added) setWatchAddQuery('');
     });
   };
@@ -2292,23 +2487,26 @@ export default function DashboardPageV6() {
     triggerToast('로그아웃되었습니다.');
   };
 
+  // 게시판 오류 안내 (401 로그인 만료, 403 본인 글 아님 등은 서버 메시지를 그대로)
+  const handleBoardError = (err, action) => {
+    console.error(`종목토론 ${action} 실패:`, err);
+    if (err?.status === 401) {
+      requireLogin('🔒 로그인이 만료되었습니다. 다시 로그인해 주세요.');
+      return;
+    }
+    triggerToast(err?.message ? `${action}하지 못했습니다: ${err.message}` : `${action}하지 못했습니다.`);
+  };
+
   const handleAddCommentForStock = (stockCode, content) => {
     const targetCode = stockCode || selectedStockCode;
-    const newComment = {
-      commentId: Date.now(),
-      id: Date.now(),
-      stockCode: targetCode,
-      author: user.username,
-      content,
-      createdAt: nowIsoSeoul(),
-      likes: 0,
-      likedByMe: false,
-    };
-    setCommentsByStock((prev) => ({
-      ...prev,
-      [targetCode]: [newComment, ...(prev[targetCode] || [])],
-    }));
-    triggerToast('💬 실시간 종목토론 의견이 등록되었습니다.');
+    // 화면은 댓글형, 서버는 게시판: 의견 하나 = 게시판 글 하나 (제목·본문에 같은 내용)
+    boardApi
+      .write(targetCode, content, content)
+      .then(() => {
+        loadComments(targetCode);
+        triggerToast('💬 종목토론 의견이 등록되었습니다.');
+      })
+      .catch((err) => handleBoardError(err, '의견을 등록'));
   };
 
   const handleToggleLikeForStock = (stockCode, commentId) => {
@@ -2317,30 +2515,36 @@ export default function DashboardPageV6() {
       return;
     }
     const targetCode = stockCode || selectedStockCode;
-    setCommentsByStock((prev) => ({
-      ...prev,
-      [targetCode]: (prev[targetCode] || []).map((c) => {
-        const cid = c.commentId ?? c.id;
-        if (cid !== commentId) return c;
-        const nextLiked = !c.likedByMe;
-        return {
-          ...c,
-          likedByMe: nextLiked,
-          likes: nextLiked ? (c.likes || 0) + 1 : Math.max(0, (c.likes || 0) - 1),
-        };
-      }),
-    }));
+    // 공감 토글 결과(liked, likeCount)는 서버 답 그대로 (화면이 짐작하지 않음)
+    boardApi
+      .toggleLike(commentId)
+      .then((res) =>
+        setCommentsByStock((prev) => ({
+          ...prev,
+          [targetCode]: (prev[targetCode] || []).map((c) =>
+            (c.commentId ?? c.id) === commentId
+              ? { ...c, likedByMe: res.liked, likes: res.likeCount }
+              : c
+          ),
+        }))
+      )
+      .catch((err) => handleBoardError(err, '공감'));
   };
 
   const handleDeleteCommentForStock = (stockCode, commentId) => {
     const targetCode = stockCode || selectedStockCode;
-    setCommentsByStock((prev) => ({
-      ...prev,
-      [targetCode]: (prev[targetCode] || []).filter(
-        (c) => (c.commentId ?? c.id) !== commentId
-      ),
-    }));
-    triggerToast('🗑️ 의견이 삭제되었습니다.');
+    boardApi
+      .removePost(commentId)
+      .then(() => {
+        setCommentsByStock((prev) => ({
+          ...prev,
+          [targetCode]: (prev[targetCode] || []).filter(
+            (c) => (c.commentId ?? c.id) !== commentId
+          ),
+        }));
+        triggerToast('🗑️ 의견이 삭제되었습니다.');
+      })
+      .catch((err) => handleBoardError(err, '의견을 삭제'));
   };
 
   const activeNavItem = NAV_ITEMS.find((n) => n.key === activeNav) || NAV_ITEMS[0];
@@ -2371,6 +2575,7 @@ export default function DashboardPageV6() {
     onDeleteCommentForStock: handleDeleteCommentForStock,
     onToggleLikeForStock: handleToggleLikeForStock,
     onRequireLogin: requireLogin,
+    onNeedComments: loadComments,
   };
 
   const renderSearchAutocomplete = () => {
@@ -3198,9 +3403,13 @@ export default function DashboardPageV6() {
                         <strong>{st.todayMatchedCount}건</strong>
                       </td>
                       <td className="num-col">
-                        <span className="trend-badge trend-up num">
-                          긍정 {st.sentimentRatio.positive}%
-                        </span>
+                        {summariesByStock[st.code]?.sentimentCount > 0 ? (
+                          <span className="trend-badge trend-up num">
+                            긍정 {summariesByStock[st.code].sentimentRatio.positive}%
+                          </span>
+                        ) : (
+                          <span className="num" title="종목을 누르면 오늘 감성 비율을 볼 수 있어요">-</span>
+                        )}
                       </td>
                       <td className="num-col">
                         <button
@@ -3694,9 +3903,13 @@ export default function DashboardPageV6() {
                         <strong>{st.todayMatchedCount}건</strong>
                       </td>
                       <td className="num-col">
-                        <span className="trend-badge trend-up num">
-                          긍정 {st.sentimentRatio.positive}%
-                        </span>
+                        {summariesByStock[st.code]?.sentimentCount > 0 ? (
+                          <span className="trend-badge trend-up num">
+                            긍정 {summariesByStock[st.code].sentimentRatio.positive}%
+                          </span>
+                        ) : (
+                          <span className="num" title="종목을 누르면 오늘 감성 비율을 볼 수 있어요">-</span>
+                        )}
                       </td>
                       <td className="num-col">
                         <button
