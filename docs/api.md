@@ -64,8 +64,9 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 - 오늘(한국 시간 **0시 ~ 지금**) 작성된 글에 **많이 나온 종목** 순. 글 수가 같으면 평균 관련도가 높은 순
 - `source`: `NEWS` / `SNS` (**없으면 `NEWS`**), `limit`: 1~50 (기본 10). 페이지 없음
   - 기본이 뉴스만인 이유: AI가 SNS를 "최근 뉴스가 많은 종목"만 골라 모으므로, 섞어서 세면 같은 종목을 두 번 세게 됨. SNS 순위는 `source=SNS`로 따로
-- 한 건: `{ rank, stockCode, stockName, articleCount, avgRelevance, lastPublishedAt }`
-  - `articleCount`: 오늘 이 종목이 나온 글 수, `avgRelevance`: 평균 관련도 %(없으면 `null`), `lastPublishedAt`: 가장 최근 글 시각
+- 한 건: `{ rank, stockCode, stockName, articleCount, eventCount, avgRelevance, lastPublishedAt }`
+  - `articleCount`: 오늘 이 종목이 나온 글 수(보도량, **순위 기준**), `avgRelevance`: 평균 관련도 %(없으면 `null`), `lastPublishedAt`: 가장 최근 글 시각
+  - `eventCount` (2026-11-09): **같은 소식 묶음을 1건으로 센 소식 수**. 예: 같은 실적 기사를 3곳이 쓰고 다른 소식이 1건이면 `articleCount` 4, `eventCount` 2. 화면은 "글 4건 · 소식 2건"처럼 정보로 보여 주면 됨. 묶음은 AI가 5분마다 저장(같은 종목 + 24시간 안 + 제목이 비슷함, V13). 묶음이 아직 없으면 `articleCount`와 같음
 - 오늘 글이 없으면 `items: []`. 0시가 막 지나면 비어 있을 수 있음
 
 **오늘의 종합 요약** (종목별 조회 화면 가운데)
@@ -76,7 +77,9 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
   "newsSummary": "고대역폭 메모리 공급 계약으로 …", "snsSummary": "반도체 업황 회복을 기대하는 …",
   "generatedAt": "2026-11-02T11:10:28+09:00",
   "sentiment": { "articleCount": 2, "positiveCount": 1, "negativeCount": 0, "neutralCount": 1,
-                 "positive": 50, "negative": 0, "neutral": 50 }
+                 "positive": 50, "negative": 0, "neutral": 50 },
+  "sentimentByEvent": { "articleCount": 2, "positiveCount": 1, "negativeCount": 0, "neutralCount": 1,
+                        "positive": 50, "negative": 0, "neutral": 50 }
 }
 ```
 
@@ -84,6 +87,7 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 - `generatedAt`: **뉴스 요약**을 만든 시각. 뉴스 요약이 없으면(SNS 반응 요약만 있어도) `null`. 데이터 상태(`/api/status`)의 `summaryGeneratedAt`도 뉴스 요약 기준
 - `sentiment`: 오늘(한국 시간 0시~지금) 이 종목이 나온 글을 **지금** 센 것 (이 종목에 대한 감성 기준). 감성을 판단하지 않은 연결(`null`, 제목만 연결한 기사)은 세지 않음. `positive`·`negative`·`neutral`은 % 정수이고 **합이 항상 100**. 오늘 글이 없으면 모두 0
   - 기본은 **뉴스·SNS 합계** (요구사항 F-08). `source=NEWS` / `source=SNS`를 붙이면 그 출처 글만 셈 (요약 문장은 그대로)
+- `sentimentByEvent` (2026-11-09): 같은 소식 묶음을 **1표**로 센 감성 비율 (모양은 `sentiment`와 같고, 안의 `articleCount`·`…Count`는 **글 수가 아니라 소식 수**). 같은 호재 소식을 7곳이 쓰면 `sentiment`는 호재 7표, `sentimentByEvent`는 1표. 한 묶음 안에서 기사마다 감성이 다르면 각 감성에 1표씩. 출처 조건(`source`)도 똑같이 적용
 - 없는 종목은 404 `STOCK_NOT_FOUND`
 
 **언급량 추이** (종목별 조회 화면 그래프)

@@ -176,6 +176,62 @@ class StockApiTest extends ApiTestSupport {
                 .andExpect(jsonPath("$.sentiment.neutral").value(100));
     }
 
+    /** AI 의 step7_group.save_groups() 가 하는 일: 묶음의 대표 기사 번호를 (기사, 종목) 줄에 넣음 */
+    private void group(long representative, String stockCode, long... articleIds) {
+        for (long id : articleIds) {
+            jdbc.update("UPDATE article_stock SET group_article_id = ? WHERE article_id = ? AND stock_code = ?",
+                    representative, id, stockCode);
+        }
+    }
+
+    @Test
+    void 이슈_순위는_글_수로_정렬하고_같은_소식_묶음은_사건_수로_따로_센다() throws Exception {
+        // 기아: 같은 실적 소식 3건(한 묶음) + 다른 소식 1건 → 글 4건, 소식 2건
+        long first = insertArticle("기아 3분기 영업익", "NEWS", "DONE", today(1));
+        long second = insertArticle("기아, 3분기 영업이익 발표", "NEWS", "DONE", today(2));
+        long third = insertArticle("[종합] 기아 3분기 영업익", "NEWS", "DONE", today(3));
+        long other = insertArticle("기아 신차 공개", "NEWS", "DONE", today(4));
+        for (long id : new long[] {first, second, third, other}) {
+            link(id, KIA, 0.9);
+        }
+        group(first, KIA, first, second, third);
+        // 네이버: 묶음 없는 글 3건 → 글 3건, 소식 3건
+        for (int i = 1; i <= 3; i++) {
+            link(insertArticle("네이버 소식" + i, "NEWS", "DONE", today(10 + i)), NAVER, 0.9);
+        }
+
+        mvc.perform(get("/api/stocks/issues"))
+                .andExpect(jsonPath("$.items[0].stockCode").value(KIA))   // 순위는 글 수(보도량) 그대로
+                .andExpect(jsonPath("$.items[0].articleCount").value(4))
+                .andExpect(jsonPath("$.items[0].eventCount").value(2))
+                .andExpect(jsonPath("$.items[1].stockCode").value(NAVER))
+                .andExpect(jsonPath("$.items[1].articleCount").value(3))
+                .andExpect(jsonPath("$.items[1].eventCount").value(3));
+    }
+
+    @Test
+    void 감성_비율은_글_단위와_같은_소식_1표_단위를_같이_준다() throws Exception {
+        // 같은 호재 소식 3건(한 묶음) + 악재 소식 1건: 글 단위는 호재 3 : 악재 1, 소식 단위는 1 : 1
+        long first = insertArticle("호재 소식", "NEWS", "DONE", today(1));
+        long second = insertArticle("호재 소식 받아 쓰기", "NEWS", "DONE", today(2));
+        long third = insertArticle("호재 소식 종합", "NEWS", "DONE", today(3));
+        for (long id : new long[] {first, second, third}) {
+            link(id, KIA, "POSITIVE", null, true);
+        }
+        group(first, KIA, first, second, third);
+        link(insertArticle("악재 소식", "NEWS", "DONE", today(4)), KIA, "NEGATIVE", null, true);
+
+        mvc.perform(get("/api/stocks/{code}/summary", KIA))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.sentiment.articleCount").value(4))
+                .andExpect(jsonPath("$.sentiment.positive").value(75))
+                .andExpect(jsonPath("$.sentiment.negative").value(25))
+                .andExpect(jsonPath("$.sentimentByEvent.articleCount").value(2))
+                .andExpect(jsonPath("$.sentimentByEvent.positiveCount").value(1))
+                .andExpect(jsonPath("$.sentimentByEvent.positive").value(50))
+                .andExpect(jsonPath("$.sentimentByEvent.negative").value(50));
+    }
+
     @Test
     void 감성을_판단하지_않은_연결은_감성_비율에서_빠진다() throws Exception {
         // V12: AI 활용 금지 언론사 기사는 제목만으로 연결하고 감성은 NULL (중립으로 세면 비율이 왜곡됨)
