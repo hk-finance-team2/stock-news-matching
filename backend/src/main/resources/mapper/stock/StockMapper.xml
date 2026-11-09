@@ -132,6 +132,7 @@
             <arg column="stock_code" javaType="String"/>
             <arg column="stock_name" javaType="String"/>
             <arg column="article_count" javaType="_long"/>
+            <arg column="event_count" javaType="_long"/>
             <arg column="avg_relevance" javaType="java.math.BigDecimal"/>
             <arg column="last_published_at" javaType="java.time.LocalDateTime"/>
         </constructor>
@@ -142,11 +143,14 @@
         ① from(오늘 0시) 이후 분석이 끝난 글만 남기고  ② 종목별로 묶어서(GROUP BY)
         ③ 몇 개 글에 나왔는지 세고(COUNT)  ④ 많은 순 → 평균 관련도 높은 순 → 이름순  ⑤ 위에서 limit개
         article_stock은 (글, 종목)이 한 줄뿐이라 COUNT(*) = 그 종목이 나온 글 수
+        event_count = 같은 소식 묶음은 1건으로 센 수 (V13): 묶음 대표 번호가 있으면 그 번호, 없으면 자기 번호를 겹치지 않게 셈
+        순위는 글 수(보도량) 그대로. 사건 수는 정보로 같이 줌 (보도량은 주가 반응 크기와 관계가 확인되지 않아 점수로 바꾸지 않음)
         AVG는 관련도가 빈(NULL) 줄은 빼고 계산, 전부 비면 NULL → DESC 정렬에서 맨 뒤
     -->
     <select id="findIssues" resultMap="stockIssueRow">
         SELECT s.stock_code, i.stock_name,
                COUNT(*)            AS article_count,
+               COUNT(DISTINCT COALESCE(s.group_article_id, s.article_id)) AS event_count,
                AVG(s.relevance)    AS avg_relevance,
                MAX(a.published_at) AS last_published_at
         FROM article_stock s
@@ -174,6 +178,7 @@
         <constructor>
             <arg column="sentiment" javaType="String"/>
             <arg column="article_count" javaType="_long"/>
+            <arg column="event_count" javaType="_long"/>
         </constructor>
     </resultMap>
 
@@ -190,9 +195,12 @@
         sourceType이 있으면 그 출처(NEWS/SNS) 글만, 없으면 둘 다 (요구사항 기본)
         결과 예: POSITIVE 1, NEUTRAL 1 (0건인 감성은 줄이 안 나옴)
         감성이 NULL(판단 안 함: AI 활용 금지 언론사 기사를 제목만으로 연결한 것)인 줄은 세지 않음
+        event_count = 같은 소식 묶음은 1표 (V13). 한 묶음 안에서 기사마다 감성이 다르면 각 감성에 1표씩
+        (호재 실적 기사 7건이 호재 7표가 되는 치우침을 줄임)
     -->
     <select id="countSentiments" resultMap="sentimentCountRow">
-        SELECT s.sentiment, COUNT(*) AS article_count
+        SELECT s.sentiment, COUNT(*) AS article_count,
+               COUNT(DISTINCT COALESCE(s.group_article_id, s.article_id)) AS event_count
         FROM article_stock s
         JOIN article a ON a.article_id = s.article_id
         WHERE s.stock_code = #{stockCode}

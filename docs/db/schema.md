@@ -152,6 +152,7 @@ erDiagram
         VARCHAR(500) reason
         VARCHAR(10) match_type
         DECIMAL(3_2) relevance
+        BIGINT group_article_id
     }
     collect_run {
         BIGINT run_id PK
@@ -396,9 +397,11 @@ erDiagram
 | 8 | relevance | DECIMAL(3,2) | CHECK | N | | [확장] 관련도 0.00~1.00. 화면 %는 백엔드가 변환 (F-05) |
 | 9 | evidence | VARCHAR(1000) | | N | | [확장] 근거가 된 원문 문장 (F-06). 원문 그대로라 공개 레포용 데이터 파일(`R__ai_data.sql`)에는 넣지 않음 (2026-11-05) |
 | 10 | matched_keywords | VARCHAR(300) | | N | | [확장] 매칭에 쓰인 키워드 (쉼표 구분) |
+| 11 | group_article_id | BIGINT | IDX | N | | (V13) 같은 소식 묶음의 대표 기사 번호. AI(`step7_group.save_groups`)가 5분마다 최근 72시간을 다시 묶어 씀. 묶이지 않으면 `NULL`. 백엔드는 `COALESCE(group_article_id, article_id)`로 소식 수를 셈 |
 
 - PK `(article_id, stock_code)`: 같은 기사에 같은 종목은 한 번만
 - IDX `idx_article_stock_stock (stock_code)`: 종목별 기사 목록
+- IDX `idx_article_stock_group (stock_code, group_article_id)` (V13): 종목별 소식 수 세기
 - **`stock_info`에 없는 종목은 저장할 수 없음** → 종목 사전을 먼저 채워야 함
 - CHECK: `sentiment`·`match_type` 허용 값, `relevance BETWEEN 0 AND 1`
 
@@ -505,3 +508,5 @@ KIS 시세는 재배포 금지라 이 표의 데이터는 Git·외부에 내보�
 | 2026-11-02 | R__ 4개 | 별칭 496개(헷갈림은 후보마다 한 줄), 테마 37개·연결 1,114개(업종·이름 규칙 포함), 그룹 84개·연결 374개, 문맥 키워드 122개 |
 | 2026-11-03 | V10 | quote_snapshot, quote_tick, quote_quarantine (실시간 시세 확장 ①②, KIS를 켠 서버만 채움) |
 | 2026-11-04 | V11 | quote_tick 다시 보기 인덱스 `idx_quote_tick_replay` (쿼리 테스트 QT-57에서 찾은 느린 쿼리) |
+| 2026-11-05 | V12 | article_stock.sentiment 에 `NULL`(판단 안 함) 허용 (AI 활용 금지 언론사 제목만 연결) |
+| 2026-11-09 | V13 | article_stock.group_article_id + IDX `idx_article_stock_group`: 같은 소식 묶음 (그동안 칸이 없어 AI 묶기 결과가 저장되지 않았음) |

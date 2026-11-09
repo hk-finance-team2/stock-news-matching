@@ -84,10 +84,15 @@ public class StockService {
         LocalDate today = LocalDate.now(TimeUtils.KST);
 
         StockDailySummaryRow summary = stockMapper.findDailySummary(stockCode, today).orElse(null);
-        Map<String, Long> counts = stockMapper.countSentiments(stockCode, today.atStartOfDay(), sourceType).stream()
+        List<SentimentCountRow> rows = stockMapper.countSentiments(stockCode, today.atStartOfDay(), sourceType);
+        Map<String, Long> counts = rows.stream()
                 .collect(Collectors.toMap(SentimentCountRow::sentiment, SentimentCountRow::articleCount));
+        // 같은 소식 묶음을 1표로 (V13). 같은 호재 소식을 여러 언론사가 써서 비율이 치우치는 것을 같이 보여 줌
+        Map<String, Long> eventCounts = rows.stream()
+                .collect(Collectors.toMap(SentimentCountRow::sentiment, SentimentCountRow::eventCount));
 
-        return StockSummaryResponse.of(stock, today, summary, SentimentRatioResponse.from(counts));
+        return StockSummaryResponse.of(stock, today, summary, SentimentRatioResponse.from(counts),
+                SentimentRatioResponse.from(eventCounts));
     }
 
     /**
