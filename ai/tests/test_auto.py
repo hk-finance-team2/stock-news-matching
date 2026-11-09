@@ -31,15 +31,20 @@ def test_loop_daily_once_per_hour():
         pass
 
     # 1번째: 하루 요약 포함·성공 / 2번째: 같은 시라 제외, 실패해도 안 멈춤 / 3번째: 건너뜀(False) / 그다음 멈춤
-    with mock.patch.object(loop, "get_engine"), mock.patch.object(loop, "run_locked") as sns_run, mock.patch.object(loop, "run", side_effect=[True, RuntimeError("실패"), False]) as run, \
-            mock.patch.object(loop.time, "sleep", side_effect=[None, None, Stop]):
-        try:
-            loop.main()
-            raise AssertionError("멈춰야 함")
-        except Stop:
-            pass
-    assert [c.kwargs["daily"] for c in run.call_args_list] == [True, False, False]
-    assert sns_run.call_count == 1, "SNS 는 시간당 1번, 뉴스와 따로"
+    # SNS 스위치: 기본(없음)은 꺼짐 → SNS 안 돎, true 면 시간당 1번 (2026-11-09 1차에서 SNS 뺌)
+    for env, sns_calls in [({}, 0), ({"SNS_ENABLED": "false"}, 0), ({"SNS_ENABLED": "true"}, 1)]:
+        with mock.patch.dict(os.environ, env), mock.patch.object(loop, "get_engine"), mock.patch.object(loop, "run_locked") as sns_run, \
+                mock.patch.object(loop, "run", side_effect=[True, RuntimeError("실패"), False]) as run, \
+                mock.patch.object(loop.time, "sleep", side_effect=[None, None, Stop]):
+            if "SNS_ENABLED" not in env:
+                os.environ.pop("SNS_ENABLED", None)
+            try:
+                loop.main()
+                raise AssertionError("멈춰야 함")
+            except Stop:
+                pass
+        assert [c.kwargs["daily"] for c in run.call_args_list] == [True, False, False]
+        assert sns_run.call_count == sns_calls, f"SNS 스위치 {env}: {sns_calls}번이어야 함"
 
 
 
