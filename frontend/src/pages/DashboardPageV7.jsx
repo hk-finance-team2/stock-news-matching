@@ -1587,7 +1587,7 @@ export default function DashboardPageV7() {
       const next = !prev;
       try {
         localStorage.setItem('theme_mode', next ? 'dark' : 'light');
-      } catch {}
+      } catch { }
       return next;
     });
   };
