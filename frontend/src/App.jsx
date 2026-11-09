@@ -7,7 +7,7 @@
 // - V5 (다크모드 백화 수정·필터 정리):     import DashboardPage from './pages/DashboardPageV5';
 // - V6 (레이아웃 전면 개선·홈 통합 툴바):  import DashboardPage from './pages/DashboardPageV6';
 // ============================================================================
-import DashboardPage from './pages/DashboardPageV6';
+import DashboardPage from './pages/DashboardPageV7';
 
 export default function App() {
   return <DashboardPage />;
