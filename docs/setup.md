@@ -193,8 +193,8 @@ cd backend
 | `docker compose --profile full up -d --build` | + 프론트 화면(`frontend`) → **http://localhost:5173** | 시연 PC (한 줄로 전부) |
 | `docker compose --profile full down` | 전부 끄기 (DB 데이터는 남음) | |
 
-- **`--profile ai`·`full`은 아무나 켜지 않습니다.** 켜 두는 동안 OpenAI 비용이 들고(SNS 포함 하루 약 $1 추정), PC마다 따로 모으면 팀원끼리 데이터가 달라집니다. 수집 데이터는 데이터 담당이 PR로 올립니다(2절).
-- **SNS(네이버 블로그·카페)**는 `.env`에 `NAVER_CLIENT_ID`·`NAVER_CLIENT_SECRET`(NAVER API HUB에서 받은 Client ID·Secret)이 있을 때만 **1시간마다** 모읍니다. 없으면 건너뛰고 뉴스는 그대로. 1시간을 기다리지 않고 바로 시험: `docker compose exec ai python -m hk_llm.steps.sns 3` (종목 3개, LLM 비용 1센트 미만)
+- **`--profile ai`·`full`은 아무나 켜지 않습니다.** 켜 두는 동안 OpenAI 비용이 들고(하루 약 $1 추정, SNS 를 켰을 때 기준), PC마다 따로 모으면 팀원끼리 데이터가 달라집니다. 수집 데이터는 데이터 담당이 PR로 올립니다(2절).
+- **SNS(네이버 블로그·카페)는 1차에서 뺐습니다 (2026-11-09).** 기본 `SNS_ENABLED=false`라 모으지 않고, 이미 모은 SNS 글은 7일 뒤 지워집니다. 이유: 카페는 작성 날짜가 오지 않고, 블로그는 뉴스와 많이 겹치며, 기사 댓글·커뮤니티는 robots.txt가 막음 (ai/README.md). 다시 켜려면 `.env`에 `SNS_ENABLED=true`와 `NAVER_CLIENT_ID`·`NAVER_CLIENT_SECRET`을 넣으면 1시간마다 모읍니다
 - `full`의 프론트는 **완성본(빌드한 화면)**을 nginx가 보여 주고, `/api` 요청은 백엔드 상자로 넘깁니다(`frontend/nginx.conf`). 화면 코드를 고치면서 볼 때는 11절 `npm run dev`(같은 5173 포트라 `full`과 동시에 켜지 않기).
 - 끌 때도 같은 `--profile`을 붙여야 합니다. `docker compose down`만 하면 AI·프론트 상자는 남습니다.
 - 상자마다 `restart: unless-stopped`라서, 꺼지면 Docker가 다시 켜 줍니다. PC를 다시 켜도 Docker Desktop만 켜지면 직전 상태로 돌아옵니다.
@@ -354,7 +354,7 @@ pip install -r requirements.txt
 | `DB_*` | 항상 |
 | `OPENAI_API_KEY` | 요약 |
 | `DART_API_KEY` | 공시 |
-| `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET` | SNS |
+| `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET` | SNS (1차에서 뺌, `SNS_ENABLED=true` 일 때만) |
 | `AI_INTERNAL_TOKEN` | "다시 생성" AI 서버 |
 | `LLM_DAILY_USD` | 선택. LLM 하루 비용 상한(달러, 추정치 기준), 없으면 2 |
 
