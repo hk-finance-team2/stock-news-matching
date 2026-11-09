@@ -17,6 +17,8 @@ export const stockApi = {
   /** 오늘의 종합 요약·감성 비율 (요약이 아직 없으면 newsSummary·snsSummary 가 null) */
   summary: (stockCode, { source } = {}, options) =>
     apiGet(`/api/stocks/${stockCode}/summary`, { source }, options),
+  /** 종합 요약 다시 생성 (로그인 필요). AI 서버가 같은 종목은 10분에 1번만 새로 만듦 → { regenerated, summary } */
+  regenerate: (stockCode) => apiPost(`/api/stocks/${stockCode}/summary`),
   /** 언급량 추이. period: today | 7d | 30d → { unit, items: [{ time, newsCount, snsCount, totalCount }] } */
   mentions: (stockCode, period = 'today', options) =>
     apiGet(`/api/stocks/${stockCode}/mentions`, { period }, options),
@@ -75,23 +77,42 @@ export const statusApi = {
   get: (options) => apiGet('/api/status', undefined, options),
 };
 
+/**
+ * 429 QUOTE_BUSY(KIS 초당 한도에 걸림)면 잠깐 쉬고 한 번만 다시 부름 (QA: 홈에서 가끔 현재가가 빈 칸으로 남던 것)
+ * 백엔드도 KIS에 두 번 다시 묻고 나서야 429를 주므로, 여기서는 한 번이면 충분. 그사이 화면이 바뀌어 취소되면 바로 멈춤
+ */
+const BUSY_RETRY_MS = 1500;
+async function retryIfBusy(call, signal) {
+  try {
+    return await call();
+  } catch (err) {
+    if (err?.status !== 429 || err.code !== 'QUOTE_BUSY' || signal?.aborted) throw err;
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(resolve, BUSY_RETRY_MS);
+      signal?.addEventListener(
+        'abort',
+        () => {
+          clearTimeout(timer);
+          reject(new DOMException('Aborted', 'AbortError'));
+        },
+        { once: true }
+      );
+    });
+    return call();
+  }
+}
+
 /** 시세 (서버에서 KIS_ENABLED=true 일 때만, 아니면 503 QUOTE_DISABLED → "시세 준비 중") */
-// export const quoteApi = {
-//   get: (stockCode, options) => apiGet(`/api/quotes/${stockCode}`, undefined, options),
-//   /** 최대 10종목 */
-//   many: (codes, options) => apiGet('/api/quotes', { codes: codes.join(',') }, options),
-// };
 export const quoteApi = {
-  // 종목 현재가 조회
   get: (stockCode, options) =>
-    apiGet(`/api/quotes/${stockCode}`, undefined, options),
-
-  // 여러 종목 현재가 조회 (최대 10개)
+    retryIfBusy(() => apiGet(`/api/quotes/${stockCode}`, undefined, options), options?.signal),
+  /** 최대 10종목 */
   many: (codes, options) =>
-    apiGet('/api/quotes', { codes: codes.join(',') }, options),
-
-  // 주식 차트 조회
-  // unit: 1m, 5m, 10m, 30m, day, week, month, year
-  chart: (stockCode, unit = 'day', options) =>
-    apiGet(`/api/quotes/${stockCode}/chart`, { unit }, options),
+    retryIfBusy(() => apiGet('/api/quotes', { codes: codes.join(',') }, options), options?.signal),
+  /**
+   * 봉 차트. unit: 1m | 5m | 10m | 30m | day | week | month | year → { unit, date, items: [{ time, open, high, low, close, volume }] }
+   * date: 분봉의 그날 (없으면 오늘). to: 일·주·월봉을 그 날짜(포함)까지 거꾸로 100개 (과거 이어 받기)
+   */
+  chart: (stockCode, unit = 'day', { date, to } = {}, options) =>
+    retryIfBusy(() => apiGet(`/api/quotes/${stockCode}/chart`, { unit, date, to }, options), options?.signal),
 };
