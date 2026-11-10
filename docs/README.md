@@ -6,6 +6,7 @@
 
 | 하고 싶은 것 | 문서 |
 |---|---|
+| **V1 프로토타입을 처음부터 끝까지 둘러보기 (여기서 시작)** | [v1-prototype.md](v1-prototype.md) |
 | Git 처음 쓰기 (레포 받기, 브랜치, PR) | [git-guide.md](git-guide.md) |
 | 내 PC에서 DB·백엔드 켜기, 내 파트에서 쓰는 법 | [setup.md](setup.md) |
 | 시연 날 준비·확인·문제 해결 | [demo-checklist.md](demo-checklist.md) |

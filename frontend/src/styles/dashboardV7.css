@@ -4098,3 +4098,215 @@ textarea:focus-visible,
 .app-shell.dark-mode .skeleton-line {
     background: #2d3748;
 }
+
+/* --------------------------------------------------------------------------
+   V7 실제 API 연결 (2026-11-10): "판단은 투자자, 화면은 보수적으로 정보만"
+   기사 내용 감성(판단 보류), AI 안내, 역할(주인공/함께 언급), 정보 표시, 공시, 아래 안내
+   -------------------------------------------------------------------------- */
+
+/* 판단 보류: 감성을 판단하지 않은 글 (중립과 구별) */
+.trend-badge.trend-hold {
+    background-color: transparent;
+    color: var(--text-muted);
+    border: 1px dashed var(--line-soft);
+    font-weight: 600;
+}
+
+/* 감성·요약 옆 짧은 안내 */
+.ai-note {
+    display: inline-block;
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.4;
+}
+
+/* 정보 표시 (주가 움직임 뒤 기사 등): 판단이 아니라 사실이라 색을 넣지 않음 */
+.info-badge {
+    display: inline-flex;
+    align-items: center;
+    font-size: 10.5px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 4px;
+    color: var(--text-sub);
+    background-color: var(--surface-muted);
+    border: 1px solid var(--line-soft);
+    white-space: nowrap;
+    cursor: help;
+}
+
+.context-note {
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--text-sub);
+}
+
+/* 공시 출처 표시 */
+.source-pill.disclosure {
+    background-color: #fef3c7;
+    color: #92400e;
+}
+
+/* 역할 배지 */
+.role-badge {
+    display: inline-flex;
+    align-items: center;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 1px 7px;
+    border-radius: 99px;
+    white-space: nowrap;
+}
+
+.role-badge.main {
+    background-color: var(--primary-soft);
+    color: var(--primary-color);
+}
+
+.role-badge.mentioned {
+    background-color: var(--surface-muted);
+    color: var(--text-muted);
+    font-weight: 600;
+}
+
+.evidence-role {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* 글 카드의 종목 칩: 주인공 표시, 함께 언급은 흐리게 */
+.matched-stock-tag .chip-role {
+    margin-left: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--primary-color);
+}
+
+.matched-stock-tag.mentioned {
+    color: var(--text-muted);
+    font-weight: 500;
+    border-style: dashed;
+}
+
+.mention-toggle-btn {
+    border: none;
+    background: none;
+    padding: 2px 4px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    cursor: pointer;
+}
+
+.mention-toggle-btn:hover {
+    color: var(--primary-color);
+    text-decoration: underline;
+}
+
+.mention-toggle-btn.block {
+    align-self: flex-start;
+    margin: 6px 0 2px;
+    font-size: 12px;
+}
+
+.stock-table tr.mentioned-row td {
+    color: var(--text-muted);
+}
+
+.evidence-card.mentioned {
+    opacity: 0.85;
+}
+
+/* 근거 문장의 사실 종류: 일어난 일 / 회사 계획 / 전망 / 소문 */
+.fact-type-label {
+    display: inline-flex;
+    margin: 0 2px 0 6px;
+    font-size: 10.5px;
+    font-weight: 700;
+    padding: 0 6px;
+    border-radius: 4px;
+    color: var(--text-sub);
+    background-color: var(--surface-muted);
+    vertical-align: 1px;
+}
+
+/* AI 요약이 없는 글 */
+.summary-missing {
+    font-size: 13px;
+    color: var(--text-sub);
+    padding: 4px 0;
+}
+
+/* 판단 보류 칩 */
+.sentiment-chip-btn.sent-chip-none .chip-dot-icon {
+    color: transparent;
+    -webkit-text-stroke: 1px #94a3b8;
+}
+
+.more-link2.sentiment-chip-btn.active.sent-chip-none {
+    background-color: var(--surface-muted);
+    color: var(--text-sub);
+    border-color: #94a3b8;
+    border-style: dashed;
+    font-weight: 700;
+}
+
+/* 같은 소식을 1건으로 센 비율 */
+.event-ratio-line {
+    font-size: 12px;
+    color: var(--text-sub);
+}
+
+/* 뉴스 요약 칸 하나만 (SNS 반응 요약은 1차에서 뺌) */
+.summary-compare-grid.single {
+    grid-template-columns: 1fr;
+}
+
+.watchlist-detail-card {
+    margin-top: 12px;
+}
+
+/* 모든 화면 아래 안내 */
+.app-disclaimer-footer {
+    margin: 24px auto 8px;
+    padding: 14px 16px;
+    max-width: 1100px;
+    border-top: 1px solid var(--line-soft);
+    font-size: 11.5px;
+    line-height: 1.6;
+    color: var(--text-muted);
+    text-align: center;
+}
+
+.app-shell.dark-mode .source-pill.disclosure {
+    background-color: rgba(245, 158, 11, 0.18);
+    color: #fbbf24;
+}
+
+.app-shell.dark-mode .trend-neutral {
+    background-color: #2d3748;
+    color: #e2e8f0;
+}
+
+.app-shell.dark-mode .fact-type-label,
+.app-shell.dark-mode .info-badge {
+    background-color: #1e293b;
+    color: #cbd5e1;
+    border-color: #2d3748;
+}
+
+/* 다크 모드 AI 요약 카드 (밝은 바탕에 흰 글자로 요약이 안 보이던 것) */
+.app-shell.dark-mode .ai-card {
+    background-color: #182235;
+    border-color: #3730a3;
+}
+
+.app-shell.dark-mode .ai-card-badge {
+    color: #a5b4fc;
+}
+
+.app-shell.dark-mode .ai-card-body,
+.app-shell.dark-mode .summary-lines li {
+    color: #e2e8f0;
+}
