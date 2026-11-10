@@ -6,9 +6,10 @@
     시간·LLM 비용이 들고 LLM 답이 실행마다 달라 데이터가 PC 마다 달라짐 → 한 명이 만들고 모두 같은 데이터
     백엔드는 모두 켜므로, Flyway 가 켤 때 넣게 함 (파이썬 없이 git pull + 백엔드 재시작이면 끝)
 
-넣는 것: 화면에 나오는 기사(DONE)의 제목·요약·키워드·감성·원문 링크 등, 종목 연결, 종목별 하루 요약, 마지막 수집 기록
+넣는 것: 화면에 나오는 기사(DONE)의 제목·요약·키워드·감성·원문 링크 등, 종목 연결(사실 종류·같은 소식 묶음 포함), 종목별 하루 요약, 마지막 수집 기록
 빼는 것: 기사 본문(저작권, 7일 뒤 삭제 약속), RSS 짧은 설명문, AI 내부용 회사 목록, 연결 못 한 기사, 예시 기사, KIS 시세
 - 기사 번호(article_id)는 PC 마다 달라서 기사 주소(url_key)로 넣고 종목 연결도 주소로 찾아 붙임
+- 같은 소식 묶음(V13 group_article_id)도 번호 대신 묶음 대표 기사의 주소(group_url_key)로 내보내고 받는 PC 가 주소로 번호를 찾음
 - 다시 실행해도 안전: 같은 주소의 기사는 갱신(본문 칸은 건드리지 않음), 그 기사의 종목 연결은 지우고 다시 넣음
 """
 from datetime import date, datetime
@@ -27,7 +28,8 @@ CHUNK = 300  # INSERT 한 문장에 넣는 줄 수
 ARTICLE_COLS = ("url_key", "url", "press", "title", "reporter", "published_at", "collected_at", "status", "summary",
                 "model", "summarized_at", "source_type", "channel", "collect_mode", "keywords", "sentiment")
 # evidence(근거 문장)는 기사 원문 문장 그대로라 공개 레포에 올리지 않음 (2026-11-05). 팀원 PC 에서는 근거 칸이 비어 보임
-LINK_COLS = ("url_key", "stock_code", "is_main", "sentiment", "reason", "match_type", "relevance", "matched_keywords")
+LINK_COLS = ("url_key", "stock_code", "is_main", "sentiment", "reason", "match_type", "relevance", "matched_keywords",
+             "fact_type", "group_url_key")  # fact_type: V14 사실 종류(분류 값, 원문 아님), group_url_key: 묶음 대표 기사 주소
 SUMMARY_COLS = ("stock_code", "summary_date", "news_summary", "sns_summary", "pos_count", "neg_count", "neu_count",
                 "generated_at")
 RUN_COLS = ("started_at", "finished_at", "status", "collected_count", "summarized_count", "channel")
@@ -68,8 +70,9 @@ def build(engine):
         arts = [dict(r._mapping) for r in conn.execute(text(
             f"SELECT {', '.join('a.' + c for c in ARTICLE_COLS)} FROM article a WHERE {WHERE} ORDER BY a.published_at, a.url_key"))]
         links = [dict(r._mapping) for r in conn.execute(text(
-            f"""SELECT a.url_key, {', '.join('s.' + c for c in LINK_COLS[1:])} FROM article_stock s
-                JOIN article a USING (article_id) WHERE {WHERE} ORDER BY a.url_key, s.stock_code"""))]
+            f"""SELECT a.url_key, {', '.join('s.' + c for c in LINK_COLS[1:-1])}, g.url_key AS group_url_key FROM article_stock s
+                JOIN article a USING (article_id) LEFT JOIN article g ON g.article_id = s.group_article_id
+                WHERE {WHERE} ORDER BY a.url_key, s.stock_code"""))]
         sums = [dict(r._mapping) for r in conn.execute(text(
             f"SELECT {', '.join(SUMMARY_COLS)} FROM stock_daily_summary WHERE news_summary NOT LIKE '[예시]%' "
             "ORDER BY summary_date, stock_code"))]
@@ -112,7 +115,7 @@ def build(engine):
 
 HEADER = """-- AI 수집·분석 결과 (본문 없음) — 팀원이 같은 진짜 데이터로 화면·API 를 보게 함
 -- 만든 곳: 백엔드1 PC 의 DB, {at:%Y-%m-%d %H:%M} (python -m hk_llm.export_data). 이 파일은 손으로 고치지 않음
--- 기사 {n_art}건 (뉴스·공시, DONE 만), 종목 연결 {n_link}개, 종목별 하루 요약 {n_sum}개
+-- 기사 {n_art}건 (뉴스·공시, DONE 만), 종목 연결 {n_link}개(사실 종류·같은 소식 묶음 포함), 종목별 하루 요약 {n_sum}개
 -- 빠진 것: 기사 본문(저작권, 7일 뒤 삭제), 근거 문장(원문 문장 그대로), RSS 설명문, AI 내부 회사 목록, 연결 못 한 기사, 예시 기사, KIS 시세
 -- 반복 지시서(R__): 이 파일이 바뀌면 백엔드를 켤 때 다시 실행됨. 다시 실행해도 안전 (기사 주소 기준 갱신)
 -- 끄려면 .env 의 FLYWAY_LOCATIONS 에서 classpath:db/ai-data 를 빼기 (docs/setup.md 2절)
@@ -128,6 +131,8 @@ CREATE TEMPORARY TABLE tmp_ai_link (
     match_type       VARCHAR(10)   NULL,
     relevance        DECIMAL(3, 2) NULL,
     matched_keywords VARCHAR(300)  NULL,
+    fact_type        VARCHAR(10)   NULL,
+    group_url_key    VARCHAR(500)  NULL COLLATE utf8mb4_bin,
     KEY (url_key)
 ) DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;  -- 다른 표와 같은 비교 규칙 (안 적으면 MariaDB 11.8 기본값이라 종목코드 비교에서 오류)
 """
@@ -144,13 +149,21 @@ DELETE s FROM article_stock s
     LEFT JOIN tmp_ai_link t ON t.url_key = a.url_key AND t.stock_code = s.stock_code
 WHERE t.url_key IS NULL;
 
-INSERT INTO article_stock (article_id, stock_code, is_main, sentiment, reason, match_type, relevance, matched_keywords)
-SELECT a.article_id, t.stock_code, t.is_main, t.sentiment, t.reason, t.match_type, t.relevance, t.matched_keywords
+INSERT INTO article_stock (article_id, stock_code, is_main, sentiment, reason, match_type, relevance, matched_keywords, fact_type)
+SELECT a.article_id, t.stock_code, t.is_main, t.sentiment, t.reason, t.match_type, t.relevance, t.matched_keywords, t.fact_type
 FROM tmp_ai_link t
     JOIN article a ON a.url_key = t.url_key
     JOIN stock_info i ON i.stock_code = t.stock_code
 ON DUPLICATE KEY UPDATE is_main = VALUES(is_main), sentiment = VALUES(sentiment), reason = VALUES(reason),
-    match_type = VALUES(match_type), relevance = VALUES(relevance), matched_keywords = VALUES(matched_keywords);
+    match_type = VALUES(match_type), relevance = VALUES(relevance), matched_keywords = VALUES(matched_keywords),
+    fact_type = VALUES(fact_type);
+
+-- 같은 소식 묶음 (V13): 대표 기사 주소 → 이 PC 의 기사 번호. 묶이지 않은 연결은 NULL
+UPDATE article_stock s
+    JOIN article a ON a.article_id = s.article_id
+    JOIN tmp_ai_link t ON t.url_key = a.url_key AND t.stock_code = s.stock_code
+    LEFT JOIN article g ON g.url_key = t.group_url_key
+SET s.group_article_id = g.article_id;
 
 DROP TEMPORARY TABLE tmp_ai_link_key;
 DROP TEMPORARY TABLE tmp_ai_link;
