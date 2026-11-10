@@ -28,6 +28,9 @@
             <arg column="evidence" javaType="String"/>
             <arg column="matched_keywords" javaType="String"/>
             <arg column="fact_type" javaType="String"/>
+            <arg column="same_news_count" javaType="Integer"/>
+            <arg column="first_article_id" javaType="Long"/>
+            <arg column="first_press" javaType="String"/>
         </constructor>
     </resultMap>
 
@@ -132,10 +135,28 @@
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
-    <!-- 기사 여러 개의 관련 종목을 SQL 한 번에 (상세는 기사 1개만 넣어서 씀). 기사 안에서는 관련도 높은 순 (없는 건 뒤로), 대표 종목 먼저 -->
+    <!--
+        기사 여러 개의 관련 종목을 SQL 한 번에 (상세는 기사 1개만 넣어서 씀). 기사 안에서는 관련도 높은 순 (없는 건 뒤로), 대표 종목 먼저
+        같은 소식 묶음 (V13, 2026-11-10): 같은 종목·같은 묶음의 화면에 나가는(DONE) 기사 수와, 그중 가장 먼저 "발행"된 기사(첫 보도).
+        묶음 대표(group_article_id)는 먼저 "저장"된 기사라 발행 순서와 다를 수 있어서 발행 시각으로 따로 찾음. 묶이지 않으면 셋 다 NULL
+    -->
     <select id="findStocksByArticleIds" resultMap="articleStockRow">
         SELECT s.article_id, s.stock_code, i.stock_name, s.is_main, s.sentiment, s.match_type, s.relevance,
-               s.reason, s.evidence, s.matched_keywords, s.fact_type
+               s.reason, s.evidence, s.matched_keywords, s.fact_type,
+               CASE WHEN s.group_article_id IS NULL THEN NULL ELSE
+                   (SELECT COUNT(*) FROM article_stock g JOIN article ga ON ga.article_id = g.article_id
+                    WHERE g.stock_code = s.stock_code AND g.group_article_id = s.group_article_id AND ga.status = 'DONE')
+               END AS same_news_count,
+               CASE WHEN s.group_article_id IS NULL THEN NULL ELSE
+                   (SELECT ga.article_id FROM article_stock g JOIN article ga ON ga.article_id = g.article_id
+                    WHERE g.stock_code = s.stock_code AND g.group_article_id = s.group_article_id AND ga.status = 'DONE'
+                    ORDER BY ga.published_at, ga.article_id LIMIT 1)
+               END AS first_article_id,
+               CASE WHEN s.group_article_id IS NULL THEN NULL ELSE
+                   (SELECT ga.press FROM article_stock g JOIN article ga ON ga.article_id = g.article_id
+                    WHERE g.stock_code = s.stock_code AND g.group_article_id = s.group_article_id AND ga.status = 'DONE'
+                    ORDER BY ga.published_at, ga.article_id LIMIT 1)
+               END AS first_press
         FROM article_stock s
         JOIN stock_info i ON i.stock_code = s.stock_code
         WHERE s.article_id IN
