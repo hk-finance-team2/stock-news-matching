@@ -12,6 +12,7 @@ from urllib.parse import urlsplit
 import defusedxml.ElementTree as ET  # 외부 XML 이라 안전한 파서 (XXE·엔티티 폭탄 방지)
 import requests
 
+from hk_llm.core.press_policy import excluded_presses
 from hk_llm.core.resilience import breaker
 from hk_llm.core.util import get_logger, retry
 from hk_llm.core.config import KST, USER_AGENT
@@ -86,7 +87,10 @@ def fetch_feed(url, press):
 def fetch_all():
     """피드 하나가 실패해도 나머지는 계속. 실패한 피드는 로그만 남긴다."""
     articles, failed = [], []
+    excluded = excluded_presses()  # 제외(EXCLUDED) 언론사는 RSS 도 요청하지 않음 (press_policy)
     for press, urls in FEEDS.items():
+        if press in excluded:
+            continue
         for url in urls:
             host = urlsplit(url).netloc
             if not breaker.allow(host):  # 이 사이트가 계속 실패해서 쉬는 중 (resilience.py) → 실패로 남겨 수집 점검이 셈

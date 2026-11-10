@@ -13,6 +13,7 @@ from sqlalchemy import text
 from hk_llm.core.config import KST
 from hk_llm.steps.dart import collect_disclosures, summarize_disclosures
 from hk_llm.core.notify import report_health
+from hk_llm.core.press_policy import issues as policy_issues
 from hk_llm.core.resilience import breaker
 from hk_llm.steps.health import check as health_check
 from hk_llm.core.db import get_engine, to_db
@@ -72,6 +73,7 @@ def _run(engine, limit, daily):
             log.exception("수집 점검 실패")
             issues = []
         issues += breaker.issues()  # 차단기로 쉬고 있는 출처(사이트·DART)와 이유 → 같은 Slack 알림으로 (resilience.py)
+        issues += policy_issues()  # 언론사 방침이 자동·사람 손으로 바뀐 것 (press_policy.py) → 사람이 POLICY 에 반영할 때까지 알림
         if issues:
             log.warning("수집 점검: %s", " / ".join(issues))
         report_health(issues)  # Slack 알림: 새로 생긴·사라진 문제만 (웹훅이 없으면 아무것도 안 함)

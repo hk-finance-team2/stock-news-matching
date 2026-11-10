@@ -21,7 +21,8 @@ from sqlalchemy import bindparam, text
 
 from hk_llm.core.config import KST, USER_AGENT
 from hk_llm.core.db import get_engine
-from hk_llm.core.press_policy import title_only_presses
+from hk_llm.core.press_policy import TITLE_ONLY, report_page_notice, restrict, title_only_presses
+from hk_llm.steps.rights import page_reservation, site_reservation
 from hk_llm.steps.robots import allowed, crawl_delay, reachable
 from hk_llm.core.resilience import breaker
 from hk_llm.core.util import get_logger, retry
@@ -119,7 +120,7 @@ def fetch_bodies(engine=None, limit=BATCH):
     engine = engine or get_engine()
     with engine.connect() as conn:
         # 본문을 쓰지 않는 언론사(press_policy TITLE_ONLY)는 요청 자체를 안 보냄 → title_only.py 가 제목으로 처리
-        rows = conn.execute(text("""SELECT article_id, url, retry_count FROM article
+        rows = conn.execute(text("""SELECT article_id, url, press, retry_count FROM article
                                     WHERE status = 'LISTED' AND source_type = 'NEWS' AND published_at >= :since
                                       AND press NOT IN :skip
                                     ORDER BY article_id DESC LIMIT :n""").bindparams(bindparam("skip", expanding=True)),
@@ -146,12 +147,25 @@ def fetch_bodies(engine=None, limit=BATCH):
             _update(engine, r.article_id, status="LISTED", error="사이트가 잠시 쉬는 중 (차단기, 다음 실행에서 다시)")
             done["RETRY"] += 1
             continue
+        why = site_reservation(r.url)  # 사이트 전체 AI 입력 거부 표시 (robots Content-Signal·tdmrep.json, 하루 1번) → 언론사를 제목만으로
+        if why:
+            restrict(r.press, TITLE_ONLY, why)
+            _update(engine, r.article_id, status="SKIPPED", error=f"AI 이용 거부 표시 → 제목만: {why}")
+            done["SKIPPED"] += 1
+            continue
         wait = last_hit.get(host, 0) + min(crawl_delay(r.url), MAX_DELAY) - time.monotonic()
         if wait > 0:
             time.sleep(wait)
         try:
             last_hit[host] = time.monotonic()
-            html = _get(r.url).content
+            res = _get(r.url)
+            html = res.content
+            why = page_reservation(html, res.headers)  # 기사 끝 "AI 학습·활용 금지" 고지·TDMRep 표시 (rights.py)
+            if why:  # 이 기사는 본문을 저장하지 않음. 서로 다른 기사 2건이면 언론사 전체를 제목만으로
+                report_page_notice(r.press, r.article_id, why)
+                _update(engine, r.article_id, status="SKIPPED", error=f"AI 이용 거부 고지 → 본문 안 씀: {why}")
+                done["SKIPPED"] += 1
+                continue
             body = extract(html, r.url)
             if body is None and PAYWALL in html:
                 _update(engine, r.article_id, status="SKIPPED", error="유료 기사 (본문 안 줌)")
