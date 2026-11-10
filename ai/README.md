@@ -103,6 +103,9 @@ pip install -r requirements.txt
 | 오늘 종목별 요약 (2건 이상인 종목만 비용) | `python -m hk_llm.steps.step8_daily --run` |
 | 1~3단계 시험 | `python -m hk_llm.run --check` |
 | RSS 만 받아 보기 | `python -m hk_llm.steps.step1_rss` |
+| 쉬고 있는 출처(차단기) 보기·직접 멈춤·다시 열기 ([수집 장애 대응](docs/수집-장애-대응.md)) | `python -m hk_llm.core.resilience` · `… open DART 60 이유` · `… close DART` |
+| 언론사별 방침 보기·빼기·되돌리기 | `python -m hk_llm.core.press_policy` · `… exclude 연합뉴스 이유` · `… reset 연합뉴스` |
+| 본문 쓰는 언론사의 AI 이용 거부 표시 지금 확인 | `python -m hk_llm.steps.rights` |
 
 - 가짜 데이터로 하는 시험은 `tests/`, 각 파일 맨 아래 `if __name__ == "__main__":` 은 실제 기사·API 로 돌리는 부분
 - `data/`·`logs/` 는 Git 에 올리지 않는다 (팀 규칙)
