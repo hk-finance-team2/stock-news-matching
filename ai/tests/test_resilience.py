@@ -222,7 +222,7 @@ def test_body_fetch_pauses_site_after_repeated_failures():
     updates = []
     with mock.patch.object(s4, "breaker", b), mock.patch.object(s4, "reachable", return_value=True), \
             mock.patch.object(s4, "allowed", return_value=True), mock.patch.object(s4, "crawl_delay", return_value=0), \
-            mock.patch.object(s4, "title_only_presses", return_value=[]), \
+            mock.patch.object(s4, "title_only_presses", return_value=[]), mock.patch.object(s4, "site_reservation", return_value=None), \
             mock.patch.object(s4, "_get", side_effect=_http_error(403)) as get, \
             mock.patch.object(s4, "_update", side_effect=lambda *a, **k: updates.append(k)):
         s4.fetch_bodies(engine)

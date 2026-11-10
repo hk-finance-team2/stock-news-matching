@@ -15,6 +15,9 @@ notify.STATE_FILE = pathlib.Path(tempfile.mkdtemp()) / "health_state.json"  # �
 from hk_llm.core import resilience  # noqa: E402
 
 resilience.breaker.path = pathlib.Path(tempfile.mkdtemp()) / "breaker_state.json"  # 차단기 상태도 (시험이 진짜 수집을 쉬게 하지 않게)
+from hk_llm.core import press_policy  # noqa: E402
+
+press_policy.OVERRIDE_FILE = pathlib.Path(tempfile.mkdtemp()) / "press_override.json"  # 언론사 방침 바꿈도 (진짜 방침을 안 바꾸게)
 
 # python -m tests offline: DB·인터넷이 필요한 시험을 뺌 (CI 용)
 NEEDS_NETWORK = {"test_step3_save", "test_sns_db", "test_robots"}
