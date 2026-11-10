@@ -25,15 +25,21 @@ public record ArticleDetailResponse(
         String model,
         OffsetDateTime summarizedAt,
         List<ArticleStockDetailResponse> stocks,
-        List<RelatedSnsResponse> relatedSns
+        List<RelatedSnsResponse> relatedSns,
+        boolean priceMoveTitle,
+        String disclosureType,
+        boolean contextDependent
 ) {
 
+    /** priceMoveTitle·disclosureType·contextDependent 는 목록(ArticleResponse)과 같은 뜻 (ArticleLabels) */
     public static ArticleDetailResponse from(ArticleDetailRow row, List<ArticleStockDetailResponse> stocks,
                                              List<RelatedSnsResponse> relatedSns) {
+        String disclosureType = ArticleLabels.disclosureType(row.channel(), row.title());
         return new ArticleDetailResponse(row.articleId(), row.sourceType(), row.channel(), row.title(),
                 row.press(), row.reporter(), TimeUtils.toKst(row.publishedAt()), row.summary(),
                 splitKeywords(row.keywords()), row.sentiment(), row.url(), row.model(),
-                TimeUtils.toKst(row.summarizedAt()), stocks, relatedSns);
+                TimeUtils.toKst(row.summarizedAt()), stocks, relatedSns,
+                ArticleLabels.priceMoveTitle(row.title()), disclosureType, ArticleLabels.contextDependent(disclosureType));
     }
 
     /** DB의 "유가,중동, 정유" -> ["유가", "중동", "정유"]. 비어 있으면 빈 목록 */

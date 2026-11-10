@@ -238,6 +238,7 @@ curl.exe http://localhost:8080/api/stocks
 | `Cannot find a Java installation ... languageVersion=21` | `gradlew`로 켰는데 PC에 Java 21이 없음 | Java 21 설치(1-3), 또는 4-1 Docker로 켜기 |
 | Docker로 켠 백엔드에 새 기능이 없음 | `git pull` 후 상자를 다시 안 만듦 | `docker compose up -d --build` |
 | DB를 켤 때 3308 포트 오류 (`port is already allocated`, `ports are not available` 등) | 다른 프로그램이 3308을 씀 | `.env`의 `DB_PORT`를 다른 번호로 바꾸고 백엔드도 같은 값 사용 |
+| PC를 다시 켠 뒤 `./gradlew test`·DB 클라이언트가 `Could not connect to localhost:3308 : unexpected end of stream` (상자 안의 백엔드는 정상) | 재부팅 뒤 Docker의 포트 연결이 제대로 안 잡히거나, WSL 중계 프로그램(`wslrelay`)이 3308을 먼저 잡음 (2026-11-10 겪음) | `docker compose restart db` (몇 초간 끊겼다 자동으로 다시 붙음) |
 | `Validate failed: Migrations have failed validation` | 이미 실행된 V 파일 내용이 바뀜 | V 파일을 원래대로 되돌리고 새 V 파일로 추가. 내 PC에서만 실험 중이면 아래 "DB 초기화" |
 | `Access denied for user` | `.env` 비밀번호를 DB를 만든 뒤에 바꿈 | 아래 "DB 초기화" |
 | 터미널 `curl`로 한글 검색어(`?q=삼성`)를 보내면 500, 서버 로그에 `Character decoding failed` | Windows 터미널이 한글을 UTF-8이 아닌 다른 방식(CP949)으로 바꿔 보냄. 코드 문제 아님 | Swagger나 브라우저로 시험 (항상 UTF-8). 터미널이면 미리 인코딩한 주소 사용: `?q=%EC%82%BC%EC%84%B1` |
