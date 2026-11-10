@@ -27,6 +27,7 @@
             <arg column="reason" javaType="String"/>
             <arg column="evidence" javaType="String"/>
             <arg column="matched_keywords" javaType="String"/>
+            <arg column="fact_type" javaType="String"/>
         </constructor>
     </resultMap>
 
@@ -134,7 +135,7 @@
     <!-- 기사 여러 개의 관련 종목을 SQL 한 번에 (상세는 기사 1개만 넣어서 씀). 기사 안에서는 관련도 높은 순 (없는 건 뒤로), 대표 종목 먼저 -->
     <select id="findStocksByArticleIds" resultMap="articleStockRow">
         SELECT s.article_id, s.stock_code, i.stock_name, s.is_main, s.sentiment, s.match_type, s.relevance,
-               s.reason, s.evidence, s.matched_keywords
+               s.reason, s.evidence, s.matched_keywords, s.fact_type
         FROM article_stock s
         JOIN stock_info i ON i.stock_code = s.stock_code
         WHERE s.article_id IN

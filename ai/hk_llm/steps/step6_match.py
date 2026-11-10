@@ -103,6 +103,7 @@ def lookup(names, name):
 
 LINK_ROLES = ("SUBJECT", "PARTY", "COMPARISON")  # 연결하는 역할 (라벨 기준 v2.1). LISTED 나열·SOURCE 출처·GROUP 그룹은 연결 안 함
 UNCERTAIN_FACTS = ("FORECAST", "RUMOR")  # 근거가 이것뿐이면 감성 판단 보류
+FACT_TYPES = ("FACT", "PLAN", "FORECAST", "RUMOR")  # article_stock.fact_type (V14) 에 넣는 값. 그 밖(빈 값·이상한 값)은 NULL
 
 
 def normalize(c):
@@ -338,9 +339,18 @@ def evidence(body, item, names, title=None):
     return best[:EVIDENCE_MAX] if best else picked  # 이름 있는 문장이 하나도 없으면 LLM 이 고른 문장이라도
 
 
+def has_fact_type(engine):
+    """article_stock.fact_type 칸(V14)이 있나. 백엔드보다 AI 가 먼저 켜진 PC 에서도 매칭이 실패하지 않게 (없으면 빼고 넣음)"""
+    sql = text("""SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE()
+                  AND table_name = 'article_stock' AND column_name = 'fact_type'""")
+    with engine.connect() as conn:
+        return bool(conn.execute(sql).scalar())
+
+
 def match_articles(engine=None, statuses=("SUMMARIZED",)):
     engine = engine or get_engine()
     dictionary = load_dictionary(engine)
+    fact_col = has_fact_type(engine)  # V14: 근거 문장의 사실 종류(FACT/PLAN/FORECAST/RUMOR)를 화면에 보여 주려고 저장
     sql = text("SELECT article_id, title, body, keywords, companies, published_at FROM article WHERE status IN :st AND companies IS NOT NULL"
                ).bindparams(bindparam("st", expanding=True))
     with engine.connect() as conn:
@@ -358,13 +368,14 @@ def match_articles(engine=None, statuses=("SUMMARIZED",)):
             conn.execute(text("DELETE FROM article_stock WHERE article_id = :id"), {"id": r.article_id})
             for item in found:
                 code, c, sc, name = item
-                conn.execute(text("""INSERT INTO article_stock (article_id, stock_code, is_main, sentiment, reason,
-                                         match_type, relevance, evidence, matched_keywords)
-                                     VALUES (:id, :code, :main, :sent, :reason, 'DIRECT', :rel, :ev, :kw)"""),
+                fact = c.get("fact_type") if c.get("fact_type") in FACT_TYPES else None
+                conn.execute(text(f"""INSERT INTO article_stock (article_id, stock_code, is_main, sentiment, reason,
+                                         match_type, relevance, evidence, matched_keywords{', fact_type' if fact_col else ''})
+                                     VALUES (:id, :code, :main, :sent, :reason, 'DIRECT', :rel, :ev, :kw{', :fact' if fact_col else ''})"""),
                              {"id": r.article_id, "code": code, "main": c["is_main"], "sent": c["sentiment"],
                               "reason": reason_text(c)[:500], "rel": relevance(r.title, r.body, item, keywords, dictionary),
                               "ev": evidence(r.body, item, dictionary[0], r.title) if r.body else old.get(code),
-                              "kw": name[:300]})
+                              "kw": name[:300], "fact": fact})
             conn.execute(text("UPDATE article SET status = :st WHERE article_id = :id"),
                          {"st": "DONE" if found else "NO_STOCK", "id": r.article_id})
         done, no_stock = done + bool(found), no_stock + (not found)

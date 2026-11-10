@@ -44,6 +44,47 @@ class ArticleApiTest extends ApiTestSupport {
     }
 
     @Test
+    void 정보_표시_주가_뒤_기사_역할_등급_사실_종류() throws Exception {
+        long moved = insertArticle("[특징주] 기아, 신차 기대에 5% 급등", "NEWS", "DONE", today(2));
+        long plain = insertArticle("기아, 새 전기차 공개", "NEWS", "DONE", today(1));
+        link(moved, KIA, "POSITIVE", new BigDecimal("0.90"), true);
+        link(plain, KIA, "POSITIVE", new BigDecimal("0.90"), true);
+        link(plain, NAVER, "NEUTRAL", new BigDecimal("0.30"), false);
+        jdbc.update("UPDATE article_stock SET fact_type = 'FACT' WHERE article_id = ? AND stock_code = ?", plain, KIA);
+
+        mvc.perform(get("/api/articles"))
+                .andExpect(jsonPath("$.items[0].priceMoveTitle").value(true))   // 주가가 움직인 뒤 쓴 제목
+                .andExpect(jsonPath("$.items[0].disclosureType").value(nullValue()))   // 뉴스는 공시 유형 없음
+                .andExpect(jsonPath("$.items[1].priceMoveTitle").value(false))
+                .andExpect(jsonPath("$.items[1].stocks[0].role").value("MAIN"))
+                .andExpect(jsonPath("$.items[1].stocks[0].factType").value("FACT"))
+                .andExpect(jsonPath("$.items[1].stocks[1].role").value("MENTIONED"))
+                .andExpect(jsonPath("$.items[1].stocks[1].factType").value(nullValue()));   // AI 가 아직 안 채우면 null
+        mvc.perform(get("/api/articles/{id}", plain))
+                .andExpect(jsonPath("$.priceMoveTitle").value(false))
+                .andExpect(jsonPath("$.stocks[0].role").value("MAIN"))
+                .andExpect(jsonPath("$.stocks[0].factType").value("FACT"));
+    }
+
+    @Test
+    void 공시는_유형_이름과_해석이_갈리는_유형인지를_준다() throws Exception {
+        long buyback = insertArticle("기아 자기주식취득결정", "NEWS", "DONE", today(2));
+        long earnings = insertArticle("기아 영업(잠정)실적(공정공시)", "NEWS", "DONE", today(1));
+        jdbc.update("UPDATE article SET channel = 'DART' WHERE article_id IN (?, ?)", buyback, earnings);
+        link(buyback, KIA, 0.9);
+        link(earnings, KIA, 0.9);
+
+        mvc.perform(get("/api/articles"))
+                .andExpect(jsonPath("$.items[0].disclosureType").value("자기주식 취득"))
+                .andExpect(jsonPath("$.items[0].contextDependent").value(true))   // 목적에 따라 반응이 갈림 (보상 목적이면 −)
+                .andExpect(jsonPath("$.items[1].disclosureType").value("잠정실적"))
+                .andExpect(jsonPath("$.items[1].contextDependent").value(false));
+        mvc.perform(get("/api/articles/{id}", buyback))
+                .andExpect(jsonPath("$.disclosureType").value("자기주식 취득"))
+                .andExpect(jsonPath("$.contextDependent").value(true));
+    }
+
+    @Test
     void 관련_종목_칩은_관련도_높은_순이고_퍼센트로_나온다() throws Exception {
         long id = insertArticle("두 종목 글", "NEWS", "DONE", today(1));
         link(id, NAVER, 0.60);

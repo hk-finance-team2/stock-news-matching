@@ -16,6 +16,7 @@ public record ArticleStockRow(
         BigDecimal relevance,
         String reason,
         String evidence,
-        String matchedKeywords
+        String matchedKeywords,
+        String factType
 ) {
 }
