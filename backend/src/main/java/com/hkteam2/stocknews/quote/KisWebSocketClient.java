@@ -41,6 +41,12 @@ import jakarta.annotation.PreDestroy;
  *   구독 응답(JSON) → 성공·실패 로그
  * 끊기면 1·2·4·8…초(최대 60초) 뒤 다시 접속하고 구독도 다시 등록
  *
+ * 반쯤 죽은 연결 감시 (2026-11-10): 끊김 신호(onClose·onError) 없이 KIS가 조용히 보내기를 멈추는 경우가 있음
+ *   (11/10 13:06 끊김 1006 → 다시 접속·구독 성공 → 13:07:48 이후 2시간 넘게 메시지 0, 상태는 "연결됨").
+ *   장중(평일 09:00~15:30)에 구독 종목이 있는데 STALE_AFTER 동안 아무 메시지(체결·PINGPONG)도 없으면 끊고 다시 접속.
+ *   장중 고정 생중계 종목(기본 삼성전자)은 초마다 체결이 와서 정상 연결이면 60초 무소식이 거의 없음.
+ *   근거: 하트비트 시간 초과로 죽은 연결을 찾는 방식 (RFC 6455 §5.5.2 Ping/Pong 은 연결이 살아 있는지 확인하는 용도)
+ *
  * JDK 기본 웹소켓(java.net.http.WebSocket) 사용 → 라이브러리 추가 없음
  * 접속키·키는 로그에 찍지 않음
  */
@@ -53,6 +59,9 @@ public class KisWebSocketClient {
     private static final Pattern MSG1 = Pattern.compile("\"msg1\"\\s*:\\s*\"([^\"]*)\"");
     private static final Pattern TR_KEY = Pattern.compile("\"tr_key\"\\s*:\\s*\"([^\"]*)\"");
     private static final int MAX_RAW = 5000;
+    static final Duration STALE_AFTER = Duration.ofSeconds(60);
+    private static final java.time.LocalTime MARKET_OPEN = java.time.LocalTime.of(9, 0);
+    private static final java.time.LocalTime MARKET_CLOSE = java.time.LocalTime.of(15, 30);
 
     private final KisProperties props;
     private final KisTokenManager tokens;
@@ -100,6 +109,42 @@ public class KisWebSocketClient {
     public void start() {
         running = true;
         scheduler.execute(this::connect);
+        scheduler.scheduleWithFixedDelay(this::checkStale, 30, 30, TimeUnit.SECONDS);
+    }
+
+    /** 30초마다: 반쯤 죽은 연결이면 끊고 다시 접속 (위 설명) */
+    private void checkStale() {
+        try {
+            LocalDateTime now = LocalDateTime.now(TimeUtils.KST);
+            if (running && stale(now, connectedAt, lastMessageAt, !subscribed.isEmpty())) {
+                log.warn("KIS 웹소켓 {}초 넘게 메시지 없음 (반쯤 죽은 연결) → 끊고 다시 접속", STALE_AFTER.toSeconds());
+                WebSocket ws = socket;
+                if (ws != null) {
+                    ws.abort();
+                }
+                scheduleReconnect();
+            }
+        } catch (RuntimeException e) {
+            log.warn("웹소켓 감시 실패: {}", e.getMessage());   // 감시가 실패해도 다음 30초에 다시
+        }
+    }
+
+    /**
+     * 장중이고 구독 중인데, 접속 뒤로 STALE_AFTER 넘게 아무 메시지도 없으면 true.
+     * 장 밖(주말·밤)은 체결이 없어 조용한 게 정상 → 보지 않음. 공휴일은 따지지 않음 (휴장일 장중엔 1분마다 다시 접속해 볼 뿐)
+     */
+    static boolean stale(LocalDateTime now, LocalDateTime connectedAt, LocalDateTime lastMessageAt, boolean subscribing) {
+        if (connectedAt == null || !subscribing) {
+            return false;
+        }
+        java.time.DayOfWeek day = now.getDayOfWeek();
+        java.time.LocalTime time = now.toLocalTime();
+        if (day == java.time.DayOfWeek.SATURDAY || day == java.time.DayOfWeek.SUNDAY
+                || time.isBefore(MARKET_OPEN) || time.isAfter(MARKET_CLOSE)) {
+            return false;
+        }
+        LocalDateTime since = lastMessageAt == null || lastMessageAt.isBefore(connectedAt) ? connectedAt : lastMessageAt;
+        return Duration.between(since, now).compareTo(STALE_AFTER) > 0;
     }
 
     @PreDestroy
