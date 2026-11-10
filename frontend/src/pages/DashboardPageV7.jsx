@@ -21,6 +21,7 @@ import {
   SENTIMENT_NONE_LABEL,
 } from '../api/adapters';
 import { useApi } from '../hooks/useApi';
+import { useQuoteStream } from '../hooks/useQuoteStream';
 import '../styles/dashboardV7.css';
 
 // 1계층: 왼쪽 사이드바 네비게이션 메뉴 (장소 이동 전용)
@@ -207,6 +208,21 @@ function RatePill({ rate, size = 'md' }) {
 }
 
 // [V7] C2: 가격/등락률 전용 렌더링 헬퍼 (목업 숫자 73,200원 등 배제)
+/**
+ * 시세 기준 문구: 가장 최근 시세 시각 + 장중이면 "실시간"/"장중", 아니면 "장 마감".
+ * 장 시간은 한국 시간 평일 09:00~15:30 으로만 봄 (공휴일은 따지지 않음). 시세가 하나도 없으면 '' (KIS 꺼진 PC)
+ */
+function quoteBasisText(quotes) {
+  const shown = quotes.filter((q) => q?.fetchedAt);
+  if (shown.length === 0) return '';
+  const last = shown.map((q) => String(q.fetchedAt)).sort().at(-1);
+  const hhmm = last.slice(11, 16); // 서버 시각은 +09:00 (docs/api.md)
+  const kstDay = new Date(Date.parse(last) + 9 * 3600 * 1000).getUTCDay(); // 0 일요일 ~ 6 토요일
+  const open = kstDay >= 1 && kstDay <= 5 && hhmm >= '09:00' && hhmm <= '15:30';
+  if (!open) return `${hhmm} 기준 · 장 마감 (마지막 체결가)`;
+  return `${hhmm} 기준 · ${shown.some((q) => q.live) ? '실시간' : '장중 (몇 초마다 갱신)'}`;
+}
+
 function QuotePrice({ price, className = '' }) {
   if (price === null || price === undefined || Number.isNaN(Number(price))) {
     return <span className={`num quote-pending-text ${className}`}>-</span>;
@@ -862,6 +878,16 @@ function ArticleDetail({
   const mentionedRelated = sortedRelatedStocks.filter((r) => r.role !== 'MAIN');
   const [showMentioned, setShowMentioned] = useState(false);
 
+  // 연결 종목의 오늘 시세를 기사를 열어 둔 동안 실시간으로 (주인공 먼저 5종목, 나머지는 처음 불러온 값).
+  // "기사 때문에 몇 % 올랐다"가 아니라 "이 종목의 지금" — 기사 뒤 주가 반응은 붙이지 않기로 함 (docs/decisions.md 2026-11-10)
+  const [streamQuotes, setStreamQuotes] = useState({});
+  useQuoteStream(
+    sortedRelatedStocks.map((r) => r.code),
+    (q) => setStreamQuotes((prev) => ({ ...prev, [q.stockCode]: q }))
+  );
+  const quoteOf = (code) => streamQuotes[code] || liveQuotes[code];
+  const quoteBasis = quoteBasisText(sortedRelatedStocks.map((r) => quoteOf(r.code)));
+
   const [commentTargetCode, setCommentTargetCode] = useState(
     preferredStockCode || sortedRelatedStocks[0]?.code || '005930'
   );
@@ -1003,14 +1029,14 @@ function ArticleDetail({
                   <th>종목명 (클릭 시 이동)</th>
                   <th>역할</th>
                   <th className="num-col">현재가</th>
-                  <th className="num-col">등락률</th>
+                  <th className="num-col">오늘 등락률</th>
                 </tr>
               </thead>
               <tbody>
                 {sortedRelatedStocks
                   .filter((rel) => showMentioned || rel.role === 'MAIN')
                   .map((rel) => {
-                    const quote = liveQuotes[rel.code];
+                    const quote = quoteOf(rel.code);
                     return (
                       <tr
                         key={rel.code}
@@ -1036,6 +1062,11 @@ function ArticleDetail({
                   })}
               </tbody>
             </table>
+            {quoteBasis && (
+              <div className="context-note quote-basis-note">
+                🕒 {quoteBasis} · 어제 종가 대비 이 종목의 현재 값입니다. 기사 때문에 움직였다는 뜻이 아닙니다.
+              </div>
+            )}
 
             {mentionedRelated.length > 0 && (
               <button

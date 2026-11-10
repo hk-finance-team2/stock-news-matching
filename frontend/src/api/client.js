@@ -8,6 +8,11 @@
 const BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 const TOKEN_KEY = 'snm_access_token';
 
+/** 전체 주소 (fetch 가 아닌 EventSource 처럼 주소만 필요한 곳) */
+export function apiUrl(path) {
+  return `${BASE_URL}${path}`;
+}
+
 /** API 실패. code는 백엔드 오류 코드(예: STOCK_NOT_FOUND), message는 화면에 그대로 보여 줘도 되는 문장 */
 export class ApiError extends Error {
   constructor(status, code, message) {

@@ -2,7 +2,7 @@
 // 응답은 백엔드 모양 그대로 돌려줌. 화면 모양으로 바꾸는 일은 adapters.js
 // 모든 함수의 마지막 인자 options 에 { signal } 을 넣으면 요청을 취소할 수 있음 (검색어가 바뀔 때 등)
 
-import { apiDelete, apiGet, apiPost, tokenStore } from './client';
+import { apiDelete, apiGet, apiPost, apiUrl, tokenStore } from './client';
 
 export { ApiError, tokenStore } from './client';
 
@@ -115,4 +115,6 @@ export const quoteApi = {
    */
   chart: (stockCode, unit = 'day', { date, to } = {}, options) =>
     retryIfBusy(() => apiGet(`/api/quotes/${stockCode}/chart`, { unit, date, to }, options), options?.signal),
+  /** 실시간 방송(SSE) 주소. 최대 5종목 (docs/api.md 시세). 듣는 쪽은 hooks/useQuoteStream.js */
+  streamUrl: (codes) => apiUrl(`/api/quotes/stream?codes=${encodeURIComponent(codes.join(','))}`),
 };
