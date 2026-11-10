@@ -12,6 +12,9 @@ public record ArticleStockDetailResponse(
         boolean isMain,
         String role,
         String factType,
+        Integer sameNewsCount,
+        String firstReportPress,
+        boolean firstReport,
         String reason,
         String evidence,
         List<String> matchedKeywords
@@ -21,6 +24,7 @@ public record ArticleStockDetailResponse(
         return new ArticleStockDetailResponse(row.stockCode(), row.stockName(), row.matchType(),
                 ArticleStockResponse.toPercent(row.relevance()), row.sentiment(), row.main(),
                 ArticleLabels.role(row.main()), row.factType(),
+                row.sameNewsCount(), row.firstPress(), row.firstReport(),
                 row.reason(), row.evidence(), ArticleDetailResponse.splitKeywords(row.matchedKeywords()));
     }
 }

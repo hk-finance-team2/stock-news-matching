@@ -85,6 +85,53 @@ class ArticleApiTest extends ApiTestSupport {
     }
 
     @Test
+    void 공시는_의무_자율_공정공시와_정정_공시인지를_준다() throws Exception {
+        long voluntary = insertArticle("기아 단일판매ㆍ공급계약체결(자율공시)", "NEWS", "DONE", today(4));
+        long fair = insertArticle("기아 영업(잠정)실적(공정공시)", "NEWS", "DONE", today(3));
+        long corrected = insertArticle("기아 [기재정정]주요사항보고서(유상증자결정)", "NEWS", "DONE", today(2));
+        long news = insertArticle("기아 신차 공개", "NEWS", "DONE", today(1));
+        jdbc.update("UPDATE article SET channel = 'DART' WHERE article_id IN (?, ?, ?)", voluntary, fair, corrected);
+        for (long id : new long[] {voluntary, fair, corrected, news}) {
+            link(id, KIA, 0.9);
+        }
+
+        mvc.perform(get("/api/articles"))
+                .andExpect(jsonPath("$.items[0].disclosureKind").value("VOLUNTARY"))
+                .andExpect(jsonPath("$.items[0].disclosureCorrection").value(false))
+                .andExpect(jsonPath("$.items[1].disclosureKind").value("FAIR"))
+                .andExpect(jsonPath("$.items[2].disclosureKind").value("MANDATORY"))
+                .andExpect(jsonPath("$.items[2].disclosureCorrection").value(true))   // 이미 낸 공시를 고쳐 다시 낸 것
+                .andExpect(jsonPath("$.items[3].disclosureKind").value(nullValue()))   // 뉴스
+                .andExpect(jsonPath("$.items[3].disclosureCorrection").value(false));
+    }
+
+    @Test
+    void 같은_소식_묶음이면_기사_수와_발행이_가장_빠른_첫_보도를_준다() throws Exception {
+        // 대표(group_article_id)는 먼저 저장된 기사(stored)지만 첫 보도는 발행이 더 이른 기사(early)
+        long stored = insertArticle("기아 3분기 영업익 발표", "NEWS", "DONE", today(20));
+        long early = insertArticle("[속보] 기아 3분기 영업익", "NEWS", "DONE", today(10));
+        long alone = insertArticle("기아 신차 공개", "NEWS", "DONE", today(30));
+        jdbc.update("UPDATE article SET press = '연합뉴스' WHERE article_id = ?", early);
+        for (long id : new long[] {stored, early, alone}) {
+            link(id, KIA, 0.9);
+        }
+        jdbc.update("UPDATE article_stock SET group_article_id = ? WHERE article_id IN (?, ?) AND stock_code = ?",
+                stored, stored, early, KIA);
+
+        mvc.perform(get("/api/articles"))
+                .andExpect(jsonPath("$.items[0].title").value("기아 신차 공개"))
+                .andExpect(jsonPath("$.items[0].stocks[0].sameNewsCount").value(nullValue()))   // 묶이지 않음
+                .andExpect(jsonPath("$.items[0].stocks[0].firstReport").value(false))
+                .andExpect(jsonPath("$.items[1].stocks[0].sameNewsCount").value(2))
+                .andExpect(jsonPath("$.items[1].stocks[0].firstReportPress").value("연합뉴스"))
+                .andExpect(jsonPath("$.items[1].stocks[0].firstReport").value(false))
+                .andExpect(jsonPath("$.items[2].stocks[0].firstReport").value(true));
+        mvc.perform(get("/api/articles/{id}", early))
+                .andExpect(jsonPath("$.stocks[0].sameNewsCount").value(2))
+                .andExpect(jsonPath("$.stocks[0].firstReport").value(true));
+    }
+
+    @Test
     void 관련_종목_칩은_관련도_높은_순이고_퍼센트로_나온다() throws Exception {
         long id = insertArticle("두 종목 글", "NEWS", "DONE", today(1));
         link(id, NAVER, 0.60);

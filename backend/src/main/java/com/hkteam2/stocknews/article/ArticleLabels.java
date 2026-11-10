@@ -80,6 +80,28 @@ final class ArticleLabels {
         return disclosureType != null && CONTEXT_DEPENDENT.contains(disclosureType);
     }
 
+    /**
+     * 공시의 의무/자율 (2026-11-10, 멘토 피드백 "필수 공시와 선택 공시를 다르게 다뤄라").
+     * DART 보고서 이름에 적힌 표시로만 나눔: "(자율공시)" → VOLUNTARY, "(공정공시)" → FAIR, 그 밖 → MANDATORY
+     * (주요사항보고서·수시공시. 거래소 공시 해설서: 수시공시는 "공시하여야 한다", 자율공시는 "공시할 수 있다").
+     * 공정공시는 기업이 중요정보를 특정인에게 먼저 줄 때 시장에 먼저 공시하는 의무 제도(잠정실적 등).
+     * 근거: 같은 공급계약도 의무공시와 자율공시는 주가 반응 모양이 다름 (경영연구 32(4), 2017). 공시가 아니면 null
+     */
+    static String disclosureKind(String channel, String title) {
+        if (!"DART".equals(channel) || title == null) {
+            return null;
+        }
+        if (title.contains("자율공시")) {
+            return "VOLUNTARY";
+        }
+        return title.contains("공정공시") ? "FAIR" : "MANDATORY";
+    }
+
+    /** 이미 낸 공시를 고쳐 다시 낸 정정 공시인가 ("[기재정정]" 등). 화면에서 공시의 33% (11/10) — 새 소식이 아님을 알려 줌 */
+    static boolean disclosureCorrection(String channel, String title) {
+        return "DART".equals(channel) && title != null && title.contains("정정");
+    }
+
     /** 주인공(is_main) = MAIN, 아니면 MENTIONED. 측정(11/10): 주인공 표시 연결은 연습 문제 147개 모두 맞음, 틀린 연결은 전부 MENTIONED */
     static String role(boolean main) {
         return main ? "MAIN" : "MENTIONED";
