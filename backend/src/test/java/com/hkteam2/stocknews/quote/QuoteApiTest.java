@@ -27,6 +27,16 @@ class QuoteApiTest extends ApiTestSupport {
     }
 
     @Test
+    void 방송을_브라우저처럼_요청해도_오류는_JSON으로() throws Exception {
+        // 브라우저 EventSource 는 Accept: text/event-stream 을 보냄. 오류 응답(JSON)이 그 Accept 와 안 맞아
+        // "No acceptable representation" 로 오류 처리 자체가 실패하던 것 (2026-11-10, KIS 꺼진 PC 에서 기사를 열 때마다)
+        mvc.perform(get("/api/quotes/stream").param("codes", "005930")
+                        .accept(org.springframework.http.MediaType.TEXT_EVENT_STREAM))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("QUOTE_DISABLED"));
+    }
+
+    @Test
     void 요청_값이_틀리면_400_없는_종목은_404() throws Exception {
         for (String url : new String[] {"/api/quotes/005930/big-moves?period=2y", "/api/quotes/005930/big-moves?threshold=2",
                 "/api/quotes/005930/big-moves?threshold=31"}) {

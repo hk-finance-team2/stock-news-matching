@@ -2,6 +2,7 @@ package com.hkteam2.stocknews.common.error;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
@@ -37,6 +38,7 @@ public class GlobalExceptionHandler {
         FieldError fieldError = e.getBindingResult().getFieldError();
         String message = fieldError != null ? fieldError.getDefaultMessage() : ErrorCode.INVALID_REQUEST.getMessage();
         return ResponseEntity.status(ErrorCode.INVALID_REQUEST.getStatus())
+                .contentType(MediaType.APPLICATION_JSON)
                 .body(new ErrorResponse(ErrorCode.INVALID_REQUEST.name(), message));
     }
 
@@ -70,7 +72,11 @@ public class GlobalExceptionHandler {
         return false;
     }
 
+    /**
+     * 오류 응답은 항상 JSON 이라고 못 박음: 실시간 방송(SSE)을 브라우저가 Accept: text/event-stream 으로 부르면
+     * 형식을 고르는 단계에서 JSON 을 못 내보내 오류 처리 자체가 실패했음 (2026-11-10). 형식을 정해 두면 그 단계를 건너뜀
+     */
     private ResponseEntity<ErrorResponse> toResponse(ErrorCode errorCode) {
-        return ResponseEntity.status(errorCode.getStatus()).body(ErrorResponse.of(errorCode));
+        return ResponseEntity.status(errorCode.getStatus()).contentType(MediaType.APPLICATION_JSON).body(ErrorResponse.of(errorCode));
     }
 }
