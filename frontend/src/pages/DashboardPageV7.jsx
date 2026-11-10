@@ -1571,9 +1571,10 @@ export default function DashboardPageV7() {
     const controller = new AbortController();
     stockApi
       .get(selectedStockCode, { signal: controller.signal })
-      .then((res) =>
-        rememberStocks([selectedKnown ? basicInfo(res) : toUiStock(res)])
-      )
+      // 기본 정보만 넣음. 예전엔 처음 보는 종목이면 toUiStock(오늘 글 수 0 등 기본값 포함)을 넣었는데,
+      // 이슈 순위가 먼저 와서 글 수를 채운 뒤 이 응답이 오면 0 으로 덮어씀 → 홈 TOP 7 에 "삼성전자 글 0건" (2026-11-10 QA)
+      // 처음 보는 종목의 기본값은 rememberStocks 가 알아서 채움
+      .then((res) => rememberStocks([basicInfo(res)]))
       .catch((err) => {
         if (err.name !== 'AbortError') console.error('종목 조회 실패:', err);
       });
