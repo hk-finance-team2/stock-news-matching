@@ -7,10 +7,12 @@ import html
 import re
 from datetime import datetime
 from email.utils import parsedate_to_datetime
+from urllib.parse import urlsplit
 
 import defusedxml.ElementTree as ET  # 외부 XML 이라 안전한 파서 (XXE·엔티티 폭탄 방지)
 import requests
 
+from hk_llm.core.resilience import breaker
 from hk_llm.core.util import get_logger, retry
 from hk_llm.core.config import KST, USER_AGENT
 from hk_llm.core.models import Article
@@ -86,11 +88,17 @@ def fetch_all():
     articles, failed = [], []
     for press, urls in FEEDS.items():
         for url in urls:
+            host = urlsplit(url).netloc
+            if not breaker.allow(host):  # 이 사이트가 계속 실패해서 쉬는 중 (resilience.py) → 실패로 남겨 수집 점검이 셈
+                failed.append(f"{url} (차단기: 잠시 쉬는 중)")
+                continue
             try:
                 got = fetch_feed(url, press)
+                breaker.success(host)
                 log.info("%s %s → %d건", press, url, len(got))
                 articles += got
             except Exception as e:
+                breaker.failure_from(host, e)
                 log.error("RSS 실패 %s: %s", url, e)
                 # 이유도 남김: 11/04~05 전자신문 피드가 287번 실패했는데 이유가 로그에만 있어 컨테이너가 꺼지며 사라짐 (수집 점검)
                 failed.append(f"{url} ({type(e).__name__}: {str(e)[:80]})")

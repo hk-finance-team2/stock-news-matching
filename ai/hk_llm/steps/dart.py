@@ -13,6 +13,7 @@
 import io
 import os
 import re
+import time
 import zipfile
 from datetime import datetime, timedelta
 
@@ -25,6 +26,7 @@ from sqlalchemy import bindparam, text
 
 from hk_llm.core.config import KST
 from hk_llm.core.db import get_engine, to_db
+from hk_llm.core.resilience import breaker, next_midnight_kst
 from hk_llm.steps.step2_dedup import url_key
 from hk_llm.steps.step5_summary import MAX_CHARS, MAX_TRIES, MODEL, STOP_ERRORS, Sentiment, _strip_tag, llm_call
 from hk_llm.core.util import get_logger
@@ -47,6 +49,35 @@ class NotReady(Exception):
     """목록에는 떴지만 원문 파일이 아직 없음 (DART status 014). 실패가 아니라 다음 실행에서 다시"""
 
 
+class DartError(RuntimeError):
+    """DART 가 돌려준 오류 코드 (opendart.fss.or.kr 개발가이드 '메시지 설명', 2026-11-10 확인)"""
+
+    def __init__(self, code, message):
+        super().__init__(f"DART 오류 {code}: {message}")
+        self.code = code
+
+
+# 오류 코드별 대응 (차단기 키 'DART'). 다시 해도 소용없는 오류에 매번 요청하지 않음
+DART_LIMIT = "020"  # 요청 제한 초과 (개인 키 하루 20,000건) → 한도는 날짜 단위라 다음 날 0시까지 쉼
+DART_KEY_PROBLEM = {"010", "011", "012", "901"}  # 미등록 키·사용 중지 키·접근 불가 IP·개인정보 보유기간 만료 → 사람이 고쳐야 함
+DART_DOWN = {"800", "900"}  # 시스템 점검·정의되지 않은 오류 → 일시적. 바로 쉬고 나중에 시험
+KEY_PROBLEM_PAUSE = 6 * 3600  # 키 문제는 고칠 때까지 오래 쉼 (사람이 고치면 resilience close DART)
+
+
+def record_dart_failure(e, now=None):
+    """DART 실패를 차단기에 기록. 오류 코드마다 다르게"""
+    code = getattr(e, "code", None)
+    now = now or time.time()
+    if code == DART_LIMIT:
+        breaker.open_until("DART", next_midnight_kst(), "하루 요청 한도 초과(020)")
+    elif code in DART_KEY_PROBLEM:
+        breaker.open_until("DART", now + KEY_PROBLEM_PAUSE, f"인증키·IP 문제({code}) — 사람이 확인 필요")
+    elif code in DART_DOWN:
+        breaker.failure("DART", f"DART 점검·오류({code})", now=now, immediate=True)
+    else:  # 네트워크 실패, HTTP 오류, 잘못된 요청(021·100·101)
+        breaker.failure("DART", str(e)[:60], now=now)
+
+
 def important(report_nm):
     return bool(TAKE.search(report_nm)) and not SKIP.search(report_nm)
 
@@ -64,7 +95,7 @@ def _get_page(key, cls, begin, end, page):
     if data.get("status") == "013":  # 조회 결과 없음
         return [], 1
     if data.get("status") != "000":
-        raise RuntimeError(f"DART 오류 {data.get('status')}: {data.get('message')}")
+        raise DartError(data.get("status"), data.get("message"))
     return data["list"], int(data["total_page"])
 
 
@@ -92,10 +123,19 @@ def collect_disclosures(engine=None, key=None):
     if not key:
         log.warning("DART_API_KEY 없음: 공시 수집 건너뜀")
         return 0
+    if not breaker.allow("DART"):  # 한도 초과·키 문제·점검으로 쉬는 중 (이유는 수집 점검 알림에 나감)
+        log.warning("DART 쉬는 중: 공시 수집 건너뜀")
+        return 0
     engine = engine or get_engine()
     now = datetime.now(KST)
-    new = save_disclosures(engine, fetch_disclosures(key, now.date()), now)
-    return new
+    try:
+        rows = fetch_disclosures(key, now.date())
+    except Exception as e:
+        record_dart_failure(e)
+        raise
+    breaker.success("DART")
+    # 쉬다 돌아와도 놓친 공시는 없음: 목록을 '어제~오늘' 날짜로 조회하므로 다음 실행이 그사이 공시를 다 받음 (하루 넘게 쉬면 backfill_disclosures)
+    return save_disclosures(engine, rows, now)
 
 
 def backfill_disclosures(start, end, engine=None, key=None, days=7):
@@ -209,6 +249,8 @@ def summarize_disclosures(engine=None, limit=50, key=None):
     """어제 이후 공시 중 아직 요약 안 된 것. 실패해도 제목으로 이미 화면에 나가므로 재시도 횟수만 올림"""
     key = key or os.environ.get("DART_API_KEY")
     if not key:
+        return 0
+    if not breaker.allow("DART"):  # 원문 받기도 같은 키·한도를 씀 → 쉬는 중이면 다음에
         return 0
     engine = engine or get_engine()
     since = datetime.now(KST).date() - timedelta(days=1)

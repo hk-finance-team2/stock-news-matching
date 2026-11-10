@@ -23,6 +23,7 @@ from hk_llm.core.config import KST, USER_AGENT
 from hk_llm.core.db import get_engine
 from hk_llm.core.press_policy import title_only_presses
 from hk_llm.steps.robots import allowed, crawl_delay, reachable
+from hk_llm.core.resilience import breaker
 from hk_llm.core.util import get_logger, retry
 
 # 언론사가 적어서 범용 추출기 대신 사이트별 본문 칸을 직접 지정 (2026-11-02 기사 페이지 확인)
@@ -141,6 +142,10 @@ def fetch_bodies(engine=None, limit=BATCH):
             done["SKIPPED"] += 1
             continue
         host = urlsplit(r.url).netloc
+        if not breaker.allow(host):  # 이 사이트가 계속 실패해서 쉬는 중 (resilience.py). 재시도 횟수는 안 올림
+            _update(engine, r.article_id, status="LISTED", error="사이트가 잠시 쉬는 중 (차단기, 다음 실행에서 다시)")
+            done["RETRY"] += 1
+            continue
         wait = last_hit.get(host, 0) + min(crawl_delay(r.url), MAX_DELAY) - time.monotonic()
         if wait > 0:
             time.sleep(wait)
@@ -152,13 +157,15 @@ def fetch_bodies(engine=None, limit=BATCH):
                 _update(engine, r.article_id, status="SKIPPED", error="유료 기사 (본문 안 줌)")
                 done["SKIPPED"] += 1
                 continue
-            if body is not None and len(body) < MIN_LEN:  # 페이지는 왔는데 본문이 짧음 → 다시 해도 같음
+            if body is None:  # 페이지 구조가 바뀐 것일 수 있음 → 실패로 세서 연속이면 차단기가 열림
+                raise ValueError("본문 칸 못 찾음")
+            breaker.success(host)  # 본문 칸이 있는 정상 페이지 (짧은 본문이어도 사이트 문제는 아님)
+            if len(body) < MIN_LEN:  # 페이지는 왔는데 본문이 짧음 → 다시 해도 같음
                 _update(engine, r.article_id, status="SKIPPED", error=f"본문 없음 ({len(body)}자)")
                 done["SKIPPED"] += 1
                 continue
-            if body is None:
-                raise ValueError("본문 칸 못 찾음")
         except Exception as e:
+            breaker.failure_from(host, e)  # 429·503 은 바로, 그 밖(403·구조 변경 등)은 연속 3번이면 이 사이트를 쉼
             tries = r.retry_count + 1
             status = "FAILED" if tries >= MAX_TRIES else "LISTED"
             _update(engine, r.article_id, status=status, error=str(e), tries=tries)

@@ -36,7 +36,8 @@ def _parser(origin, day):
         raise RobotsUnavailable(origin) from e
     if res.ok:
         rp.parse(res.text.splitlines())
-    elif res.status_code >= 500:
+    elif res.status_code >= 500 or res.status_code == 429:
+        # 5xx: 전체 금지로 봄 (RFC 9309 §2.3.1.4). 429(요청 과다)는 "파일 없음"이 아니라 "지금 그만" → 4xx 허용 규칙에서 뺌 (Google robots.txt 문서와 같게)
         raise RobotsUnavailable(origin)
     else:
         rp.allow_all = True  # 4xx: robots.txt 없음 = 제한 없음 (RFC 9309)

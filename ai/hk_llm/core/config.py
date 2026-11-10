@@ -12,7 +12,8 @@ LOG_DIR = BASE_DIR / "logs"  # Git 제외
 # 한국은 서머타임 없음. ZoneInfo("Asia/Seoul") 은 Windows 에서 tzdata 패키지가 필요해서 고정 +9 사용
 KST = timezone(timedelta(hours=9), "KST")
 
-USER_AGENT = "hk-llm-news-bot/0.1 (academy student project)"
+# 수집 봇 이름에 목적·연락처 (RFC 9309 §2.2.1 목적, RFC 9110 §10.1.2 연락처). 개인 이메일 대신 공개 레포 주소
+USER_AGENT = "hk-llm-news-bot/0.1 (academy student project; +https://github.com/hk-finance-team2/stock-news-matching)"
 
 load_dotenv(BASE_DIR.parent.parent / ".env")  # 레포 최상위 .env 하나를 팀이 같이 씀
 
