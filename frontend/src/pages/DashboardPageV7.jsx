@@ -1549,6 +1549,8 @@ export default function DashboardPageV7() {
         todayMatchedCount: it.articleCount,
         // 같은 소식 묶음을 1건으로 센 소식 수 (없는 서버면 null → 화면에 안 보임)
         todayEventCount: it.eventCount ?? null,
+        // 오늘 공시 수 (2026-11-10: 순위 점수에서는 빠지고 배지로만). 없는 서버면 null → 안 보임
+        todayDisclosureCount: it.disclosureCount ?? null,
         issueRank: it.rank,
         lastMatchedAt: toDisplayTime(it.lastPublishedAt) || '-',
         analysisReady: true,
@@ -3160,7 +3162,12 @@ export default function DashboardPageV7() {
                             <td className="num-col num">
                               <strong>글 {st.todayMatchedCount}건</strong>
                               {st.todayEventCount != null && (
-                                <div className="stock-meta num">소식 {st.todayEventCount}건</div>
+                                <div className="stock-meta num">
+                                  소식 {st.todayEventCount}건
+                                  {st.todayDisclosureCount > 0 && (
+                                    <span title="오늘 공시 수 (순위는 뉴스 기사 수로만 매김)"> · 공시 {st.todayDisclosureCount}</span>
+                                  )}
+                                </div>
                               )}
                             </td>
                           </tr>
@@ -3492,7 +3499,12 @@ export default function DashboardPageV7() {
                       <td className="num-col num">
                         <strong>글 {st.todayMatchedCount}건</strong>
                         {st.todayEventCount != null && (
-                          <div className="stock-meta num">소식 {st.todayEventCount}건</div>
+                          <div className="stock-meta num">
+                            소식 {st.todayEventCount}건
+                            {st.todayDisclosureCount > 0 && (
+                              <span title="오늘 공시 수 (순위는 뉴스 기사 수로만 매김)"> · 공시 {st.todayDisclosureCount}</span>
+                            )}
+                          </div>
                         )}
                       </td>
                       <td className="num-col">
