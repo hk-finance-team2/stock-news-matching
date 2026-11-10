@@ -14,6 +14,8 @@ export const SENTIMENT_LABEL = Object.freeze({ POSITIVE: '긍정', NEGATIVE: '�
 export const SENTIMENT_NONE_LABEL = '판단 보류';
 export const ROLE_LABEL = Object.freeze({ MAIN: '주인공', MENTIONED: '함께 언급' });
 export const FACT_TYPE_LABEL = Object.freeze({ FACT: '일어난 일', PLAN: '회사 계획', FORECAST: '전망', RUMOR: '소문' });
+// 공시의 의무/자율 (보고서 이름의 "(자율공시)"·"(공정공시)" 표시로 나눔. 그 밖은 주요사항보고서·수시공시 = 의무)
+export const DISCLOSURE_KIND_LABEL = Object.freeze({ MANDATORY: '의무', VOLUNTARY: '자율', FAIR: '공정공시' });
 
 /** { articleCount, positive, neutral, negative } → 화면 비율. 센 글이 없으면 0 */
 function toRatio(s) {
@@ -91,6 +93,10 @@ export function toUiArticle(item) {
         roleLabel: ROLE_LABEL[role],
         factType,
         factTypeLabel: factType ? FACT_TYPE_LABEL[factType] : '',
+        // 같은 소식 묶음 (V13): 이 종목에서 같은 소식으로 묶인 기사 수(묶이지 않았으면 null), 첫 보도 언론사, 이 기사가 첫 보도인가
+        sameNewsCount: Number.isInteger(s.sameNewsCount) ? s.sameNewsCount : null,
+        firstReportPress: s.firstReportPress || '',
+        firstReport: s.firstReport === true,
         matchedKeywords: s.matchedKeywords || [],
         // 목록 API에는 없고 상세 API(articleApi.get)에만 있음. 없으면 빈 값 (가짜 문장을 채우지 않음)
         reason: s.reason || '',
@@ -116,6 +122,14 @@ export function toUiArticle(item) {
     isDisclosure,
     disclosureType: isDisclosure ? item.disclosureType || null : null,
     contextDependent: Boolean(item.contextDependent),
+    // 공시의 의무/자율: MANDATORY 의무 · VOLUNTARY 자율 · FAIR 공정공시 (보고서 이름의 표시로 나눔), 정정 공시인가
+    disclosureKind: isDisclosure ? item.disclosureKind || null : null,
+    disclosureKindLabel: isDisclosure ? DISCLOSURE_KIND_LABEL[item.disclosureKind] || '' : '',
+    disclosureCorrection: item.disclosureCorrection === true,
+    // 같은 소식: 주인공 종목(없으면 첫 종목) 기준으로 묶음 크기·첫 보도
+    sameNewsCount: main && Number.isInteger(main.sameNewsCount) ? main.sameNewsCount : null,
+    firstReportPress: main?.firstReportPress || '',
+    firstReport: main?.firstReport === true,
     // 제목이 주가가 이미 움직인 뒤 쓴 기사인가 (특징주·급등 …). 칸이 없는 서버면 false → 표시 안 함
     priceMoveTitle: item.priceMoveTitle === true,
     press: item.press || '',

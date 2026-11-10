@@ -124,6 +124,8 @@ const sortArticles = (list, sort, codes) =>
 
 const AI_NOTE_TEXT = 'AI가 기사 내용으로 판단 · 주가 예측 아님 · 틀릴 수 있음';
 const PRICE_MOVE_TIP = '제목이 주가가 이미 움직인 뒤 쓴 기사입니다(이미 반영됐을 수 있음)';
+const CORRECTION_TIP = '이미 낸 공시를 고쳐 다시 낸 정정 공시입니다(새 소식이 아닐 수 있음)';
+const SAME_NEWS_TIP = '같은 종목·24시간 안·제목이 비슷한 기사를 같은 소식으로 묶은 수입니다(묶음은 틀릴 수 있음)';
 
 const COMMENT_TAGS = {
   summary: { label: '뉴스', className: 'tag-news' },
@@ -253,6 +255,18 @@ function ArticleInfoBadges({ article, withNote = false }) {
           주가 움직임 뒤 기사
         </span>
       )}
+      {article.disclosureCorrection && (
+        <span className="info-badge" title={CORRECTION_TIP} aria-label={CORRECTION_TIP}>
+          정정 공시
+        </span>
+      )}
+      {article.sameNewsCount >= 2 && (
+        <span className="info-badge" title={SAME_NEWS_TIP} aria-label={SAME_NEWS_TIP}>
+          {article.firstReport
+            ? `첫 보도 · 같은 소식 ${article.sameNewsCount}건`
+            : `같은 소식 ${article.sameNewsCount}건${article.firstReportPress ? ` · 첫 보도 ${article.firstReportPress}` : ''}`}
+        </span>
+      )}
       {withNote && article.contextDependent && (
         <span className="info-badge">목적·방식에 따라 해석이 달라지는 공시입니다</span>
       )}
@@ -260,10 +274,13 @@ function ArticleInfoBadges({ article, withNote = false }) {
   );
 }
 
-// 출처 표시: 공시면 "공시 · 유형", 아니면 뉴스 (예전 SNS 글이 남아 있으면 SNS)
+// 출처 표시: 공시면 "공시(의무/자율/공정공시) · 유형", 아니면 뉴스 (예전 SNS 글이 남아 있으면 SNS)
 const sourceLabelOf = (art, { long = false } = {}) => {
   if (art.sourceType === 'SNS') return long ? 'SNS 게시글' : 'SNS';
-  if (art.isDisclosure) return art.disclosureType ? `공시 · ${art.disclosureType}` : '공시';
+  if (art.isDisclosure) {
+    const head = art.disclosureKindLabel ? `공시(${art.disclosureKindLabel})` : '공시';
+    return art.disclosureType ? `${head} · ${art.disclosureType}` : head;
+  }
   return long ? '뉴스 기사' : '뉴스';
 };
 
