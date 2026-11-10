@@ -247,3 +247,19 @@ def test_title_only():
     assert decide("키움증권, 반도체 업종 목표가 상향", names, blocked) == [], "증권사 의견 기사인데 대상이 사전에 없으면 연결 없음"
     assert decide("키움증권, 3분기 영업익 증가", names, blocked) == [("K", "키움증권", True, 0.65)], "증권사 자기 실적은 남음"
     assert decide("유로존 PMI 예비치 하회(상보)", names, blocked) == [], "연합 '(상보)' 표시는 종목 아님"
+
+
+def test_rematch_skips_articles_without_body():
+    """규칙을 바꾼 뒤 다시 매칭(DONE·NO_STOCK)할 때 본문이 지워진 기사는 대상에서 빼서 예전 결과를 그대로 둠 (2026-11-10 지승현 지적).
+    처음 매칭(SUMMARIZED)은 본문이 없어도 그대로 함"""
+    from unittest import mock
+
+    from hk_llm.steps import step6_match as s6
+
+    engine = mock.MagicMock()
+    conn = engine.connect.return_value.__enter__.return_value
+    conn.execute.return_value.all.return_value = []
+    with mock.patch.object(s6, "load_dictionary", return_value=({}, {}, {})), mock.patch.object(s6, "has_fact_type", return_value=True):
+        s6.match_articles(engine, statuses=("SUMMARIZED", "DONE", "NO_STOCK"))
+    sql = " ".join(str(conn.execute.call_args_list[0].args[0]).split())
+    assert "status = 'SUMMARIZED' OR (body IS NOT NULL AND body <> '')" in sql, sql
