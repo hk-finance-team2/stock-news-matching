@@ -51,6 +51,14 @@ class WatchlistApiTest extends ApiTestSupport {
     }
 
     @Test
+    void 영문이_섞인_새_종목코드도_추가된다() throws Exception {
+        // 코스닥 신규 상장 일부는 "0001A0"처럼 영문이 섞임 (종목 사전 68개). 전에는 "숫자 6자리" 검사로 400 (2026-11-10 QA)
+        String code = jdbc.queryForObject("SELECT stock_code FROM stock_info WHERE stock_code REGEXP '[A-Z]' ORDER BY stock_code LIMIT 1",
+                String.class);
+        add(tokenOf("zzwatch09"), code).andExpect(status().isCreated());
+    }
+
+    @Test
     void 같은_종목은_409_없는_종목은_404_형식이_틀리면_400() throws Exception {
         String token = tokenOf("zzwatch02");
         add(token, KIA);

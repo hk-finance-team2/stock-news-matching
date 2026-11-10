@@ -6,6 +6,9 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
+import org.springframework.web.HttpMediaTypeNotAcceptableException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -40,6 +43,22 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(ErrorCode.INVALID_REQUEST.getStatus())
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(new ErrorResponse(ErrorCode.INVALID_REQUEST.name(), message));
+    }
+
+    /** 요청 방식·형식이 안 맞음 (2026-11-10 QA: 전에는 500 + ERROR 로그) — 405 없는 방식(PUT 등), 415 JSON 아닌 본문, 406 JSON 아닌 응답 요청 */
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ErrorResponse> handleMethod(HttpRequestMethodNotSupportedException e) {
+        return toResponse(ErrorCode.METHOD_NOT_ALLOWED);
+    }
+
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<ErrorResponse> handleMediaType(HttpMediaTypeNotSupportedException e) {
+        return toResponse(ErrorCode.UNSUPPORTED_MEDIA_TYPE);
+    }
+
+    @ExceptionHandler(HttpMediaTypeNotAcceptableException.class)
+    public ResponseEntity<ErrorResponse> handleNotAcceptable(HttpMediaTypeNotAcceptableException e) {
+        return toResponse(ErrorCode.NOT_ACCEPTABLE);
     }
 
     /** 없는 주소 */

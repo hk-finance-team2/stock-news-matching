@@ -12,7 +12,7 @@
 |---|---|---|
 | JSON 필드 이름 | camelCase | `stockCode`, `createdAt` |
 | 시각 | 한국 시간, 시간대 포함 | `"2026-10-30T14:39:39+09:00"` |
-| 종목코드 | 6자리 **문자열** (앞자리 0 유지) | `"005930"` |
+| 종목코드 | 6자리 **문자열** (앞자리 0 유지). 코스닥 신규 상장 일부는 영문 대문자가 섞임 (예: `"0001A0"`, 종목 사전 68개) | `"005930"` |
 | 목록 응답 | `{ "items": [...], "totalCount": 전체 개수 }` | |
 | 페이지 요청 | `page`는 **1부터**, `size`는 1~100 (기본 20) | `?page=2&size=20` |
 | 실패 응답 | `{ "code": "...", "message": "..." }` + HTTP 상태 | `{ "code": "STOCK_NOT_FOUND", "message": "종목을 찾을 수 없습니다." }` |
@@ -309,12 +309,15 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 | HTTP | code | 언제 |
 |---|---|---|
 | 400 | `INVALID_REQUEST` | 입력 규칙 위반, 깨진 JSON (`message`에 어긴 규칙) |
-| 400 | `INVALID_PAGE` | page·size 범위 밖 |
+| 400 | `INVALID_PAGE` | page·size 범위 밖 | 아주 큰 page 는 오류 없이 빈 `items`
 | 401 | `UNAUTHORIZED` | 로그인 필요한 API에 토큰 없음·만료·위조 |
 | 401 | `INVALID_CREDENTIALS` | 로그인 실패 (아이디 또는 비밀번호 틀림) |
 | 403 | `FORBIDDEN` | 권한 없음 |
 | 403 | `NOT_POST_OWNER` / `NOT_COMMENT_OWNER` | 남의 글·댓글 삭제 |
 | 404 | `NOT_FOUND` | 없는 주소 |
+| 405 | `METHOD_NOT_ALLOWED` | 그 주소에 없는 요청 방식 (예: `PUT /api/articles`) |
+| 406 | `NOT_ACCEPTABLE` | JSON 이 아닌 응답을 요청 (`Accept: application/xml` 등) |
+| 415 | `UNSUPPORTED_MEDIA_TYPE` | 본문이 JSON 이 아님 (`Content-Type` 을 `application/json` 으로) |
 | 404 | `STOCK_NOT_FOUND` / `ARTICLE_NOT_FOUND` / `POST_NOT_FOUND` / `COMMENT_NOT_FOUND` / `WATCHLIST_NOT_FOUND` | 없는 종목·글·댓글·관심 종목 |
 | 409 | `DUPLICATE_LOGIN_ID` | 이미 있는 아이디로 가입 |
 | 409 | `ALREADY_IN_WATCHLIST` | 이미 관심 종목에 있음 |

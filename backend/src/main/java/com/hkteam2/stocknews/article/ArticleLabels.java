@@ -24,6 +24,9 @@ final class ArticleLabels {
 
     /** 공시 유형: 제목(회사명 + 보고서명) 낱말 → 화면 이름. 위에서부터 먼저 맞는 것. AI dart.py 의 고르는 낱말과 같은 범위 */
     private static final List<String[]> DISCLOSURE_TYPES = List.of(
+            // 해지·철회·해제·취소를 먼저: 낱말만 보면 "자기주식취득신탁계약해지"가 "자기주식 취득", "거래정지해제"가
+            // "상장폐지·관리종목·거래정지"로 뜻이 반대가 됨 (2026-11-10 QA, DART 7,138건 중 최대 약 270건)
+            new String[] {"해지|철회|해제|취소", "해지·철회·해제"},
             new String[] {"영업\\(잠정\\)실적|잠정실적", "잠정실적"},
             new String[] {"자기주식\\s*취득|자기주식취득", "자기주식 취득"},
             new String[] {"자기주식\\s*처분|자기주식처분", "자기주식 처분"},
@@ -99,7 +102,9 @@ final class ArticleLabels {
 
     /** 이미 낸 공시를 고쳐 다시 낸 정정 공시인가 ("[기재정정]" 등). 화면에서 공시의 33% (11/10) — 새 소식이 아님을 알려 줌 */
     static boolean disclosureCorrection(String channel, String title) {
-        return "DART".equals(channel) && title != null && title.contains("정정");
+        // 금감원이 정정을 요구·명령한 것("정정신고서제출요구", "정정명령부과")은 회사가 고친 공시가 아님 (2026-11-10 QA)
+        return "DART".equals(channel) && title != null && title.contains("정정")
+                && !title.contains("제출요구") && !title.contains("정정명령");
     }
 
     /** 주인공(is_main) = MAIN, 아니면 MENTIONED. 측정(11/10): 주인공 표시 연결은 연습 문제 147개 모두 맞음, 틀린 연결은 전부 MENTIONED */

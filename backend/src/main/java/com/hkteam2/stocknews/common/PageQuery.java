@@ -25,6 +25,7 @@ public record PageQuery(int page, int size) {
 
     /** SQL OFFSET: 앞에서 건너뛸 개수 */
     public int offset() {
-        return (page - 1) * size;
+        // 아주 큰 page 는 int 를 넘어 음수 OFFSET 이 되어 SQL 오류(500)였음 → 끝까지 건너뛴 빈 결과로 (2026-11-10 QA)
+        return (int) Math.min(Integer.MAX_VALUE, (long) (page - 1) * size);
     }
 }
