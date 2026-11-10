@@ -263,3 +263,23 @@ def test_rematch_skips_articles_without_body():
         s6.match_articles(engine, statuses=("SUMMARIZED", "DONE", "NO_STOCK"))
     sql = " ".join(str(conn.execute.call_args_list[0].args[0]).split())
     assert "status = 'SUMMARIZED' OR (body IS NOT NULL AND body <> '')" in sql, sql
+
+
+def test_step7_group_uses_summary():
+    """제목 글자가 별로 안 겹쳐도 요약이 같은 소식이면 묶음 (2026-11-10: 제목만 → 제목+요약). 요약이 없으면 제목만"""
+    from datetime import datetime
+
+    from hk_llm.steps.step7_group import group_articles
+
+    t = datetime(2026, 11, 5, 9)
+    a = {"article_id": 1, "stock_code": "035720", "stock_name": "카카오", "published_at": t,
+         "title": "카카오, 3Q 영업익 2천392억…자사주 1천500억 매입(종합2보)",
+         "summary": "카카오가 3분기 영업이익 2천392억원을 기록했다. 플랫폼과 콘텐츠 매출이 늘었고 자사주 1천500억원 매입을 발표했다."}
+    b = {"article_id": 2, "stock_code": "035720", "stock_name": "카카오", "published_at": t,
+         "title": "카카오, 3분기 영업이익 2천403억원…플랫폼 성장 효과(종합)",
+         "summary": "카카오의 3분기 영업이익이 2천403억원으로 집계됐다. 플랫폼 매출이 늘어난 효과이며 자사주 매입도 발표했다."}
+    assert group_articles([a, b]), "요약까지 보면 같은 실적 발표"
+    no_sum = [dict(a, summary=None), dict(b, summary=None)]
+    from hk_llm.steps.step7_group import _text, similarity
+    assert _text(no_sum[0]) == a["title"], "요약이 없으면 제목만"
+    assert similarity(_text(no_sum[0]), _text(no_sum[1]), "카카오") < similarity(_text(a), _text(b), "카카오")

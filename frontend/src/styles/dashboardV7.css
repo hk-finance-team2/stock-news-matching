@@ -393,7 +393,9 @@ textarea:focus-visible,
     top: calc(100% + 8px);
     left: 0;
     right: 0;
-    background: rgba(255, 255, 255, 0.98);
+    /* 테마 색을 따름: 흰색 고정이면 다크 모드에서 글자(밝은색)가 배경에 묻혀 안 보였음 (2026-11-10 QA) */
+    background: var(--card-bg);
+    border: 1px solid var(--line-soft, var(--line-light));
     backdrop-filter: blur(4px);
     -webkit-backdrop-filter: blur(4px);
     border-radius: 14px;

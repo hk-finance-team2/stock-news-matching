@@ -144,6 +144,35 @@ class StockApiTest extends ApiTestSupport {
     }
 
     @Test
+    void 이슈_순위는_뉴스_기사_수로_세고_공시는_따로_센다() throws Exception {
+        // 기아: 뉴스 1건 + 공시 3건 / 네이버: 뉴스 2건 / 셀트리온: 공시만 2건
+        link(insertArticle("기아 신차 공개", "NEWS", "DONE", today(1)), KIA, 0.9);
+        for (int i = 1; i <= 3; i++) {
+            long d = insertArticle("기아 주요사항보고서" + i, "NEWS", "DONE", today(1 + i));
+            jdbc.update("UPDATE article SET channel = 'DART' WHERE article_id = ?", d);
+            link(d, KIA, "NEUTRAL", null, true);
+        }
+        for (int i = 1; i <= 2; i++) {
+            link(insertArticle("네이버 소식" + i, "NEWS", "DONE", today(10 + i)), NAVER, 0.9);
+        }
+        for (int i = 1; i <= 2; i++) {
+            long d = insertArticle("셀트리온 공시" + i, "NEWS", "DONE", today(20 + i));
+            jdbc.update("UPDATE article SET channel = 'DART' WHERE article_id = ?", d);
+            link(d, CELLTRION, "NEUTRAL", null, true);
+        }
+
+        mvc.perform(get("/api/stocks/issues"))
+                .andExpect(jsonPath("$.items", hasSize(2)))   // 공시만 있는 셀트리온은 순위에 없음
+                .andExpect(jsonPath("$.items[0].stockCode").value(NAVER))   // 공시가 많아도 뉴스 수로 순위
+                .andExpect(jsonPath("$.items[0].articleCount").value(2))
+                .andExpect(jsonPath("$.items[0].disclosureCount").value(0))
+                .andExpect(jsonPath("$.items[1].stockCode").value(KIA))
+                .andExpect(jsonPath("$.items[1].articleCount").value(1))
+                .andExpect(jsonPath("$.items[1].eventCount").value(1))
+                .andExpect(jsonPath("$.items[1].disclosureCount").value(3));
+    }
+
+    @Test
     void 이슈_순위_글_수가_같으면_평균_관련도_높은_순() throws Exception {
         link(insertArticle("네이버", "NEWS", "DONE", today(1)), NAVER, 0.95);
         link(insertArticle("기아", "NEWS", "DONE", today(2)), KIA, 0.50);

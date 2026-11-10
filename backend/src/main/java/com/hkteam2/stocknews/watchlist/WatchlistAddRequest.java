@@ -8,7 +8,7 @@ import jakarta.validation.constraints.Pattern;
 public record WatchlistAddRequest(
         @Schema(description = "종목코드 6자리", example = "005930")
         @NotBlank(message = "종목코드를 입력해 주세요.")
-        @Pattern(regexp = "^[0-9]{6}$", message = "종목코드는 숫자 6자리입니다.")
+        @Pattern(regexp = "^[0-9A-Z]{6}$", message = "종목코드는 6자리(숫자·영문 대문자)입니다.")
         String stockCode
 ) {
 }

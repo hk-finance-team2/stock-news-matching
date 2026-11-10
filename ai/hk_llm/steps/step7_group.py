@@ -1,12 +1,15 @@
 """7단계 (17번): 같은 사건을 다룬 비슷한 기사 묶기 → article_stock.group_article_id
 
     from hk_llm.steps.step7_group import group_articles, save_groups
-    groups = group_articles(rows)   # rows: article_id, stock_code, stock_name, title, published_at
+    groups = group_articles(rows)   # rows: article_id, stock_code, stock_name, title, summary(없어도 됨), published_at
     save_groups()                   # 최근 기사를 묶어 저장. 칸이 아직 없으면 아무것도 안 함 (팀공유 6번)
 
-묶는 조건: 같은 종목 + 비슷한 제목 + 가까운 시각. 기사를 버리지 않는다.
-제목 유사도: 괄호·기호·공백과 종목명을 뺀 뒤 글자 2개씩 자른 조각의 겹침 비율 (Jaccard)
-🧪 SIMILAR·WINDOW 는 임시값. 실제 기사가 쌓이면 다시 본다
+묶는 조건: 같은 종목 + 비슷한 제목·요약 + 가까운 시각. 기사를 버리지 않는다.
+유사도: 제목+AI 요약에서 괄호·기호·공백과 종목명을 뺀 뒤 글자 2개씩 자른 조각의 겹침 비율 (Jaccard)
+  - 요약이 없는 기사(제목만 언론사·요약 전)는 제목만으로 비교
+  - 2026-11-10: 제목만 → 제목+요약, 기준 0.10 → 0.09. 같은 종목·24시간 후보 쌍 119개(점수 가린 판정 + 사람 확인 30쌍,
+    판정 기준 v2)에서 정밀도 84.7 → 89.3%, 재현율 72.2 → 81.7% (구간 가중). 5겹 교차 검증 F1 73.9 → 79.7%.
+    표본이 작아 부트스트랩 구간은 0 을 포함 → 둘 다 좋아지고 비용 0 이라 채택, 쌓이면 다시 잼 (백엔드1 로컬 기록 ai-improve/20)
 """
 import re
 from datetime import datetime, timedelta
@@ -19,7 +22,7 @@ from hk_llm.core.util import get_logger
 
 log = get_logger(__name__)
 
-SIMILAR = 0.10  # 실제 기사 실험으로 정함: 0.10 에서 틀린 합침 없음, 0.10 아래로는 다른 소식이 섞임. 틀려도 기사는 안 지워짐
+SIMILAR = 0.09  # 제목+요약 겹침 기준 (위 설명). 틀려도 기사는 안 지워짐
 WINDOW = timedelta(hours=24)
 RECENT = timedelta(hours=72)  # ponytail: 최근 72시간만 다시 묶음. 더 오래된 묶음은 그대로 둠, 사슬이 3일을 넘는 사건은 나뉠 수 있음
 
@@ -33,6 +36,11 @@ def _bigrams(title, stock_name=""):
 def similarity(a, b, stock_name=""):
     x, y = _bigrams(a, stock_name), _bigrams(b, stock_name)
     return len(x & y) / len(x | y) if x and y else 0.0
+
+
+def _text(row):
+    """비교할 글: 제목 + AI 요약 (요약이 없으면 제목만)"""
+    return f"{row['title']} {row.get('summary') or ''}".strip()
 
 
 def group_articles(rows, similar=SIMILAR, window=WINDOW):
@@ -53,7 +61,7 @@ def group_articles(rows, similar=SIMILAR, window=WINDOW):
         for i, a in enumerate(items):  # ponytail: 종목 안에서 모든 쌍 비교. 하루치 기준이라 충분, 많아지면 시각순으로 자르기
             for b in items[i + 1:]:
                 near = abs(a["published_at"] - b["published_at"]) <= window
-                if near and similarity(a["title"], b["title"], a["stock_name"]) >= similar:
+                if near and similarity(_text(a), _text(b), a["stock_name"]) >= similar:
                     parent[find(a["article_id"])] = find(b["article_id"])
         found = {}
         for r in items:
@@ -64,7 +72,7 @@ def group_articles(rows, similar=SIMILAR, window=WINDOW):
 
 
 def load_rows(engine, since=None):
-    sql = text("""SELECT a.article_id, s.stock_code, i.stock_name, a.title, a.published_at
+    sql = text("""SELECT a.article_id, s.stock_code, i.stock_name, a.title, a.summary, a.published_at
                   FROM article a JOIN article_stock s USING (article_id) JOIN stock_info i USING (stock_code)
                   WHERE a.status = 'DONE' AND a.channel IN ('RSS', 'SITEMAP') AND (:since IS NULL OR a.published_at >= :since)""")
     with engine.connect() as conn:

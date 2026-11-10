@@ -61,6 +61,8 @@ export function toUiStock(item) {
     todayArticleCount: 0,
     // 같은 소식 묶음을 1건으로 센 오늘 소식 수 (이슈 순위 eventCount). 모르면 null → 화면에 안 보임
     todayEventCount: null,
+    // 오늘 공시 수 (이슈 순위 disclosureCount, 순위 점수에는 안 들어감). 모르면 null
+    todayDisclosureCount: null,
     lastMatchedAt: '-',
     issueRank: '-',
     sentimentRatio: EMPTY_RATIO,

@@ -133,6 +133,7 @@
             <arg column="stock_name" javaType="String"/>
             <arg column="article_count" javaType="_long"/>
             <arg column="event_count" javaType="_long"/>
+            <arg column="disclosure_count" javaType="_long"/>
             <arg column="avg_relevance" javaType="java.math.BigDecimal"/>
             <arg column="last_published_at" javaType="java.time.LocalDateTime"/>
         </constructor>
@@ -146,13 +147,18 @@
         event_count = 같은 소식 묶음은 1건으로 센 수 (V13): 묶음 대표 번호가 있으면 그 번호, 없으면 자기 번호를 겹치지 않게 셈
         순위는 글 수(보도량) 그대로. 사건 수는 정보로 같이 줌 (보도량은 주가 반응 크기와 관계가 확인되지 않아 점수로 바꾸지 않음)
         AVG는 관련도가 빈(NULL) 줄은 빼고 계산, 전부 비면 NULL → DESC 정렬에서 맨 뒤
+        2026-11-10: 공시(channel DART)는 순위 점수에서 뺌 → article_count·event_count 는 뉴스만, 공시는 disclosure_count 로 따로
+          (이슈 = 관심. 국내외 서비스는 보도량·조회수로 순위를 매기고 공시는 따로 보여 줌. 개인 투자자 관심은 공시보다 언론 보도를 거쳐 생김
+           Ben-Rephael et al. 2022. 언론이 다룬 공시는 그 기사로 이미 셈. 공시만 있는 종목은 순위에서 빠짐. 근거: docs/decisions.md 2026-11-10)
     -->
     <select id="findIssues" resultMap="stockIssueRow">
         SELECT s.stock_code, i.stock_name,
-               COUNT(*)            AS article_count,
-               COUNT(DISTINCT COALESCE(s.group_article_id, s.article_id)) AS event_count,
-               AVG(s.relevance)    AS avg_relevance,
-               MAX(a.published_at) AS last_published_at
+               SUM(a.channel &lt;&gt; 'DART') AS article_count,
+               COUNT(DISTINCT CASE WHEN a.channel &lt;&gt; 'DART'
+                                   THEN COALESCE(s.group_article_id, s.article_id) END) AS event_count,
+               SUM(a.channel = 'DART') AS disclosure_count,
+               AVG(CASE WHEN a.channel &lt;&gt; 'DART' THEN s.relevance END) AS avg_relevance,
+               MAX(CASE WHEN a.channel &lt;&gt; 'DART' THEN a.published_at END) AS last_published_at
         FROM article_stock s
         JOIN article a    ON a.article_id = s.article_id
         JOIN stock_info i ON i.stock_code = s.stock_code
@@ -162,6 +168,7 @@
               AND a.source_type = #{sourceType}
           </if>
         GROUP BY s.stock_code, i.stock_name
+        HAVING article_count &gt; 0
         ORDER BY article_count DESC, avg_relevance DESC, i.stock_name
         LIMIT #{limit}
     </select>
