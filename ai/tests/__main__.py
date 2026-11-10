@@ -12,6 +12,9 @@ os.environ["SLACK_WEBHOOK_URL"] = ""
 from hk_llm.core import notify  # noqa: E402
 
 notify.STATE_FILE = pathlib.Path(tempfile.mkdtemp()) / "health_state.json"  # 알림 상태도 진짜 파일 말고 임시 파일에
+from hk_llm.core import resilience  # noqa: E402
+
+resilience.breaker.path = pathlib.Path(tempfile.mkdtemp()) / "breaker_state.json"  # 차단기 상태도 (시험이 진짜 수집을 쉬게 하지 않게)
 
 # python -m tests offline: DB·인터넷이 필요한 시험을 뺌 (CI 용)
 NEEDS_NETWORK = {"test_step3_save", "test_sns_db", "test_robots"}
