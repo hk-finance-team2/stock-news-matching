@@ -167,9 +167,12 @@ def save_disclosures(engine, rows, now, mode="REALTIME"):
     insert = text("""INSERT INTO article (url_key, url, press, title, description, published_at, status, summary,
                                           sentiment, source_type, channel, collect_mode)
                      VALUES (:url_key, :url, :press, :title, NULL, :at, 'DONE', :title, 'NEUTRAL', 'NEWS', 'DART', :mode)""")
+    # 관련도는 비움(NULL): 관련도 = "이 기사에서 이 종목이 얼마나 중심인가"인데 공시는 회사가 낸 자기 서류라 잴 것이 없음.
+    # 예전엔 1.00 을 넣어서 관련도순 첫 페이지 20건이 전부 공시가 됨 (2026-11-10 지승현 지적, V15 로 기존 값 정리).
+    # 백엔드는 NULL 을 "점수 없음"으로 보고 관련도순 맨 뒤·평균에서 뺌 (docs/api.md)
     link = text("""INSERT INTO article_stock (article_id, stock_code, is_main, sentiment, reason, match_type, relevance,
                                               matched_keywords)
-                   VALUES (:id, :code, TRUE, 'NEUTRAL', :reason, 'DIRECT', 1.00, :name)""")
+                   VALUES (:id, :code, TRUE, 'NEUTRAL', :reason, 'DIRECT', NULL, :name)""")
     new = 0
     with engine.begin() as conn:
         have = set(conn.execute(have_sql, {"k": [r["url_key"] for r in rows]}).scalars())

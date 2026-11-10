@@ -404,6 +404,7 @@ erDiagram
 - IDX `idx_article_stock_stock (stock_code)`: 종목별 기사 목록
 - IDX `idx_article_stock_group (stock_code, group_article_id)` (V13): 종목별 소식 수 세기
 - (V14) `fact_type` VARCHAR(10) NULL, CHECK `FACT`/`PLAN`/`FORECAST`/`RUMOR`: 근거 문장의 사실 종류. AI 매칭 단계(`step6_match`)가 LLM 답에서 꺼내 씀. 이전 연결·제목만 연결·공시 연결은 `NULL`
+- (V15) `relevance`: 공시 연결은 항상 `NULL` ("기사에서 이 종목이 얼마나 중심인가"를 잴 수 없음. 예전 1.00 은 V15 가 비움)
 - **`stock_info`에 없는 종목은 저장할 수 없음** → 종목 사전을 먼저 채워야 함
 - CHECK: `sentiment`·`match_type` 허용 값, `relevance BETWEEN 0 AND 1`
 
@@ -513,3 +514,4 @@ KIS 시세는 재배포 금지라 이 표의 데이터는 Git·외부에 내보�
 | 2026-11-05 | V12 | article_stock.sentiment 에 `NULL`(판단 안 함) 허용 (AI 활용 금지 언론사 제목만 연결) |
 | 2026-11-09 | V13 | article_stock.group_article_id + IDX `idx_article_stock_group`: 같은 소식 묶음 (그동안 칸이 없어 AI 묶기 결과가 저장되지 않았음) |
 | 2026-11-10 | V14 | article_stock.fact_type + CHECK: 근거 문장의 사실 종류 (FACT/PLAN/FORECAST/RUMOR) |
+| 2026-11-10 | V15 | 공시 연결(`channel` DART)의 article_stock.relevance 를 NULL 로 (데이터만, 구조 변경 없음). 관련도는 기사용 점수라 공시는 비움 |
