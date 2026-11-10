@@ -2213,9 +2213,11 @@ export default function DashboardPageV7() {
     }
     : {
       updatedAt: '-',
-      headline: `${selectedStock.name} AI 요약 준비 중`,
+      headline: loadedSummary ? `${selectedStock.name} 오늘 AI 요약 없음` : `${selectedStock.name} AI 요약 불러오는 중`,
+      // "준비 중"이라고만 쓰면 영영 안 생기는 종목도 기다리게 됨 (2026-11-10 QA: 오늘 뉴스 종목 110개 중 22개는
+      // AI 활용 금지 언론사 기사만 있어 요약이 생기지 않음) → 언제 생기고 왜 없을 수 있는지 알려 줌
       summary: loadedSummary
-        ? '오늘 이 종목에 연결된 기사로 만든 AI 요약이 아직 없습니다.'
+        ? '종목 요약은 1시간마다 만듭니다. AI 활용을 금지한 언론사 기사와 공시는 요약에 쓰지 않아서, 그런 글만 있는 종목은 요약이 없을 수 있습니다.'
         : 'AI 요약을 불러오는 중입니다.',
       newsSummary: '',
       snsSummary: '',
