@@ -260,7 +260,7 @@ def summarize_disclosures(engine=None, limit=50, key=None):
     with engine.connect() as conn:
         rows = conn.execute(text("""SELECT article_id, url, title, retry_count FROM article
                                     WHERE channel = 'DART' AND summarized_at IS NULL AND retry_count < :max AND published_at >= :since
-                                    ORDER BY article_id DESC LIMIT :n"""), {"max": MAX_TRIES, "since": since, "n": limit}).all()
+                                    ORDER BY published_at DESC, article_id DESC LIMIT :n"""), {"max": MAX_TRIES, "since": since, "n": limit}).all()
     done = 0
     for r in rows:
         try:

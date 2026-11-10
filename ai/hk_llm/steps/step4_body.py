@@ -120,10 +120,11 @@ def fetch_bodies(engine=None, limit=BATCH):
     engine = engine or get_engine()
     with engine.connect() as conn:
         # 본문을 쓰지 않는 언론사(press_policy TITLE_ONLY)는 요청 자체를 안 보냄 → title_only.py 가 제목으로 처리
+        # 밀렸을 때 실제로 최근에 나온 기사부터 (작성 시각순). 기사 번호순이면 RSS 를 피드 순서대로 저장해서 뒤에 저장된 언론사만 먼저 처리됨 (2026-11-10 지승현 지적)
         rows = conn.execute(text("""SELECT article_id, url, press, retry_count FROM article
                                     WHERE status = 'LISTED' AND source_type = 'NEWS' AND published_at >= :since
                                       AND press NOT IN :skip
-                                    ORDER BY article_id DESC LIMIT :n""").bindparams(bindparam("skip", expanding=True)),
+                                    ORDER BY published_at DESC, article_id DESC LIMIT :n""").bindparams(bindparam("skip", expanding=True)),
                             {"since": since, "n": limit, "skip": title_only_presses()}).all()
     done = {"FETCHED": 0, "SKIPPED": 0, "RETRY": 0, "FAILED": 0}
     last_hit = {}  # 사이트별 마지막 요청 시각
