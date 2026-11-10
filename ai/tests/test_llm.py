@@ -32,8 +32,18 @@ def test_step8_numbers():
     from hk_llm.steps.step8_daily import unknown_numbers
 
     assert unknown_numbers("영업이익 1,200억원, 3분기 12% 증가", "- 영업이익 1200억원, 12% 증가") == []
-    assert unknown_numbers("영업이익 1,500억원", "- 영업이익 1200억원") == ["1,500"]
+    assert unknown_numbers("영업이익 1,500억원", "- 영업이익 1200억원") == ["1,500억"]
     assert unknown_numbers("3분기 실적", "- 실적") == [], "한 자리 수는 안 봄"
+    # 2026-11-10 지승현 지적: 글자 포함 비교라 자료 숫자 안에 들어 있는 다른 숫자가 통과하던 것
+    assert unknown_numbers("수주 50억", "- 수주 1,500억") == ["50억"]
+    assert unknown_numbers("12% 증가", "- 3.12% 증가") == ["12"]
+    assert unknown_numbers("30만 명", "- 130만 명") == ["30만"]
+    # 한글 단위로 쓴 맞는 숫자는 통과 (경계만 맞추면 거절되던 것)
+    assert unknown_numbers("영업이익 9천400억원", "- 영업이익 9천400억원") == []
+    assert unknown_numbers("영업이익 9천400억원", "- 영업이익 9400억원") == []
+    assert unknown_numbers("매출 1조2천억원", "- 매출 1.2조원") == [], "1.2조 = 1조2천억 (예전엔 걸렸음)"
+    assert unknown_numbers("매출 1조 2천억원", "- 매출 1조2000억원") == []
+    assert unknown_numbers("5조 투자", "- 3조 투자") == ["5조"], "한 자리여도 큰 단위가 붙으면 봄"
 
 
 def test_step8_rejected_keeps_summary():

@@ -351,7 +351,12 @@ def match_articles(engine=None, statuses=("SUMMARIZED",)):
     engine = engine or get_engine()
     dictionary = load_dictionary(engine)
     fact_col = has_fact_type(engine)  # V14: 근거 문장의 사실 종류(FACT/PLAN/FORECAST/RUMOR)를 화면에 보여 주려고 저장
-    sql = text("SELECT article_id, title, body, keywords, companies, published_at FROM article WHERE status IN :st AND companies IS NOT NULL"
+    # 이미 매칭한 기사(DONE·NO_STOCK)를 규칙을 바꾼 뒤 다시 매칭할 때, 본문이 7일 지나 지워진 기사는 빼고 예전 결과를 그대로 둠.
+    # 본문이 없으면 on_topic 의 본문 검사(앞 200자·2번 이상 등장)를 못 해서 예전에 걸러진 종목이 되살아남
+    # (2026-11-10 지승현 지적. 로컬 DB 로 재 보니 본문을 지운 채 다시 매칭하면 연결 +423개, NO_STOCK 131건이 화면에 다시 나옴)
+    sql = text("""SELECT article_id, title, body, keywords, companies, published_at FROM article
+                  WHERE status IN :st AND companies IS NOT NULL
+                    AND (status = 'SUMMARIZED' OR (body IS NOT NULL AND body <> ''))"""
                ).bindparams(bindparam("st", expanding=True))
     with engine.connect() as conn:
         rows = conn.execute(sql, {"st": list(statuses)}).all()

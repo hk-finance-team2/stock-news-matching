@@ -143,6 +143,7 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 
 - `stocks`는 관련도 높은 순. `relevance`는 **%(정수)**, `matchType`은 `DIRECT`(직접)·`INDIRECT`(간접)
 - `matchType`·`relevance`는 AI가 아직 안 채웠으면 `null` → 화면에서 칩 모양·% 표시를 생략
+- **공시(`channel` `DART`)의 `relevance`는 항상 `null`** (2026-11-10, V15). 관련도는 "기사에서 이 종목이 얼마나 중심인가"인데 공시는 잴 것이 없음. 관련도순(`sort=relevance`)에서는 점수 없음으로 뉴스 뒤에, `minRelevance`를 주면 공시는 빠짐
 - **정보 표시 칸 (2026-11-10, 판단을 더하지 않고 사실만. 근거: `decisions.md` 2026-11-10)** — 글 목록·글 상세 모두 같음
   - `stocks[].role`: `MAIN`(주인공) / `MENTIONED`(함께 언급). 화면은 관련도 % 대신 이 등급을 보여 주는 쪽을 권장 (주인공 표시 연결은 연습 문제에서 모두 맞았고, 틀린 연결은 전부 `MENTIONED`. 관련도 숫자는 역할을 가리지 못함). `MENTIONED`는 접어 두기 권장
   - `stocks[].factType`: 근거 문장의 사실 종류 `FACT`(일어난 일)·`PLAN`(회사 계획)·`FORECAST`(전망·의견)·`RUMOR`(소문), 없으면 `null` (V14, 11/10 이후 새로 분석한 기사부터 채워짐. 제목만 연결·공시는 `null`)

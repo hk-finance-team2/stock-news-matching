@@ -225,10 +225,11 @@ def summarize_articles(engine=None, limit=BATCH, model=MODEL, since=None):
     engine = engine or get_engine()
     since = since or datetime.now(KST).date() - timedelta(days=1)
     with engine.connect() as conn:
+        # 밀렸을 때 실제로 최근에 나온 기사부터 (작성 시각순). 기사 번호순이면 RSS 를 피드 순서대로 저장해서 뒤에 저장된 언론사만 먼저 처리됨 (2026-11-10 지승현 지적)
         rows = conn.execute(text("""SELECT article_id, title, body, retry_count FROM article
                                     WHERE status = 'FETCHED' AND source_type = 'NEWS' AND published_at >= :since
                                       AND press NOT IN :skip
-                                    ORDER BY article_id DESC LIMIT :n""").bindparams(bindparam("skip", expanding=True)),
+                                    ORDER BY published_at DESC, article_id DESC LIMIT :n""").bindparams(bindparam("skip", expanding=True)),
                             {"since": since, "n": limit, "skip": title_only_presses()}).all()  # AI 활용 금지 언론사는 LLM 에 안 보냄
     done = failed = skipped = 0
     names = None

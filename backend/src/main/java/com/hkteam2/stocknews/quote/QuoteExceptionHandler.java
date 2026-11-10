@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -33,12 +34,14 @@ public class QuoteExceptionHandler {
     @ExceptionHandler(QuoteDisabledException.class)
     public ResponseEntity<ErrorResponse> disabled(QuoteDisabledException e) {
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .contentType(MediaType.APPLICATION_JSON)
                 .body(new ErrorResponse("QUOTE_DISABLED", "이 서버에서는 시세 기능이 꺼져 있습니다. (KIS_ENABLED)"));
     }
 
     @ExceptionHandler(ReplayBusyException.class)
     public ResponseEntity<ErrorResponse> replayBusy(ReplayBusyException e) {
         return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .contentType(MediaType.APPLICATION_JSON)
                 .body(new ErrorResponse("REPLAY_BUSY", "다시 보기가 많이 돌고 있습니다. 잠시 후 다시 시도해 주세요."));
     }
 
@@ -47,9 +50,11 @@ public class QuoteExceptionHandler {
         log.warn("KIS 오류: {}", e.getMessage());
         if ("EGW00201".equals(e.code())) {
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                    .contentType(MediaType.APPLICATION_JSON)
                     .body(new ErrorResponse("QUOTE_BUSY", "시세 요청이 몰렸습니다. 잠시 후 다시 시도해 주세요."));
         }
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                .contentType(MediaType.APPLICATION_JSON)
                 .body(new ErrorResponse("QUOTE_UPSTREAM_ERROR", "시세를 받아 오지 못했습니다. (KIS " + e.code() + ")"));
     }
 
@@ -64,8 +69,14 @@ public class QuoteExceptionHandler {
 
     @ExceptionHandler(RestClientException.class)
     public ResponseEntity<ErrorResponse> unreachable(RestClientException e) {
-        log.warn("KIS 연결 실패: {}", e.getClass().getSimpleName());
+        // 근본 원인까지 남김: 11/10 15:18 에 7초 동안 9건이 실패했는데 예외 이름만 있어 원인(끊김·거부·이름 찾기 등)을 알 수 없었음
+        Throwable root = e;
+        while (root.getCause() != null && root.getCause() != root) {
+            root = root.getCause();
+        }
+        log.warn("KIS 연결 실패: {} ← {}: {}", e.getClass().getSimpleName(), root.getClass().getSimpleName(), root.getMessage());
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                .contentType(MediaType.APPLICATION_JSON)
                 .body(new ErrorResponse("QUOTE_UNREACHABLE", "시세 서버(KIS)에 연결하지 못했습니다."));
     }
 }

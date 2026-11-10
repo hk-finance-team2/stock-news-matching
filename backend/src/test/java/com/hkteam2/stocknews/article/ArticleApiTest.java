@@ -157,6 +157,26 @@ class ArticleApiTest extends ApiTestSupport {
     }
 
     @Test
+    void 공시_연결은_관련도가_비어_있어_관련도순에서_뉴스보다_뒤() throws Exception {
+        // V15: 공시는 "기사에서 이 종목이 얼마나 중심인가"를 잴 수 없어 관련도를 비움 (예전 1.00 이 관련도순 첫 페이지를 다 차지)
+        // 데이터 파일(R__ai_data.sql)이 예전 1.00 을 다시 넣지 않았는지도 여기서 걸림
+        Integer scored = jdbc.queryForObject("""
+                SELECT COUNT(*) FROM article_stock s JOIN article a ON a.article_id = s.article_id
+                WHERE a.channel = 'DART' AND s.relevance IS NOT NULL""", Integer.class);
+        org.assertj.core.api.Assertions.assertThat(scored).isZero();
+
+        long disclosure = insertArticle("기아 단일판매ㆍ공급계약체결", "NEWS", "DONE", today(2));
+        long news = insertArticle("기아, 새 전기차 공개", "NEWS", "DONE", today(1));
+        jdbc.update("UPDATE article SET channel = 'DART' WHERE article_id = ?", disclosure);
+        link(disclosure, KIA, "NEUTRAL", null, true);
+        link(news, KIA, 0.4);
+
+        mvc.perform(get("/api/articles").param("sort", "relevance").param("stockCode", KIA))
+                .andExpect(jsonPath("$.items[*].title", contains("기아, 새 전기차 공개", "기아 단일판매ㆍ공급계약체결")))
+                .andExpect(jsonPath("$.items[1].stocks[0].relevance").value(nullValue()));
+    }
+
+    @Test
     void 출처와_최소_관련도로_거른다() throws Exception {
         long news = insertArticle("뉴스", "NEWS", "DONE", today(1));
         long sns = insertArticle("SNS 글", "SNS", "DONE", today(2));

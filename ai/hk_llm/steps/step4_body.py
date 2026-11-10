@@ -21,8 +21,10 @@ from sqlalchemy import bindparam, text
 
 from hk_llm.core.config import KST, USER_AGENT
 from hk_llm.core.db import get_engine
-from hk_llm.core.press_policy import title_only_presses
+from hk_llm.core.press_policy import TITLE_ONLY, report_page_notice, restrict, title_only_presses
+from hk_llm.steps.rights import page_reservation, site_reservation
 from hk_llm.steps.robots import allowed, crawl_delay, reachable
+from hk_llm.core.resilience import breaker
 from hk_llm.core.util import get_logger, retry
 
 # 언론사가 적어서 범용 추출기 대신 사이트별 본문 칸을 직접 지정 (2026-11-02 기사 페이지 확인)
@@ -118,10 +120,11 @@ def fetch_bodies(engine=None, limit=BATCH):
     engine = engine or get_engine()
     with engine.connect() as conn:
         # 본문을 쓰지 않는 언론사(press_policy TITLE_ONLY)는 요청 자체를 안 보냄 → title_only.py 가 제목으로 처리
-        rows = conn.execute(text("""SELECT article_id, url, retry_count FROM article
+        # 밀렸을 때 실제로 최근에 나온 기사부터 (작성 시각순). 기사 번호순이면 RSS 를 피드 순서대로 저장해서 뒤에 저장된 언론사만 먼저 처리됨 (2026-11-10 지승현 지적)
+        rows = conn.execute(text("""SELECT article_id, url, press, retry_count FROM article
                                     WHERE status = 'LISTED' AND source_type = 'NEWS' AND published_at >= :since
                                       AND press NOT IN :skip
-                                    ORDER BY article_id DESC LIMIT :n""").bindparams(bindparam("skip", expanding=True)),
+                                    ORDER BY published_at DESC, article_id DESC LIMIT :n""").bindparams(bindparam("skip", expanding=True)),
                             {"since": since, "n": limit, "skip": title_only_presses()}).all()
     done = {"FETCHED": 0, "SKIPPED": 0, "RETRY": 0, "FAILED": 0}
     last_hit = {}  # 사이트별 마지막 요청 시각
@@ -141,24 +144,43 @@ def fetch_bodies(engine=None, limit=BATCH):
             done["SKIPPED"] += 1
             continue
         host = urlsplit(r.url).netloc
+        if not breaker.allow(host):  # 이 사이트가 계속 실패해서 쉬는 중 (resilience.py). 재시도 횟수는 안 올림
+            _update(engine, r.article_id, status="LISTED", error="사이트가 잠시 쉬는 중 (차단기, 다음 실행에서 다시)")
+            done["RETRY"] += 1
+            continue
+        why = site_reservation(r.url)  # 사이트 전체 AI 입력 거부 표시 (robots Content-Signal·tdmrep.json, 하루 1번) → 언론사를 제목만으로
+        if why:
+            restrict(r.press, TITLE_ONLY, why)
+            _update(engine, r.article_id, status="SKIPPED", error=f"AI 이용 거부 표시 → 제목만: {why}")
+            done["SKIPPED"] += 1
+            continue
         wait = last_hit.get(host, 0) + min(crawl_delay(r.url), MAX_DELAY) - time.monotonic()
         if wait > 0:
             time.sleep(wait)
         try:
             last_hit[host] = time.monotonic()
-            html = _get(r.url).content
+            res = _get(r.url)
+            html = res.content
+            why = page_reservation(html, res.headers)  # 기사 끝 "AI 학습·활용 금지" 고지·TDMRep 표시 (rights.py)
+            if why:  # 이 기사는 본문을 저장하지 않음. 서로 다른 기사 2건이면 언론사 전체를 제목만으로
+                report_page_notice(r.press, r.article_id, why)
+                _update(engine, r.article_id, status="SKIPPED", error=f"AI 이용 거부 고지 → 본문 안 씀: {why}")
+                done["SKIPPED"] += 1
+                continue
             body = extract(html, r.url)
             if body is None and PAYWALL in html:
                 _update(engine, r.article_id, status="SKIPPED", error="유료 기사 (본문 안 줌)")
                 done["SKIPPED"] += 1
                 continue
-            if body is not None and len(body) < MIN_LEN:  # 페이지는 왔는데 본문이 짧음 → 다시 해도 같음
+            if body is None:  # 페이지 구조가 바뀐 것일 수 있음 → 실패로 세서 연속이면 차단기가 열림
+                raise ValueError("본문 칸 못 찾음")
+            breaker.success(host)  # 본문 칸이 있는 정상 페이지 (짧은 본문이어도 사이트 문제는 아님)
+            if len(body) < MIN_LEN:  # 페이지는 왔는데 본문이 짧음 → 다시 해도 같음
                 _update(engine, r.article_id, status="SKIPPED", error=f"본문 없음 ({len(body)}자)")
                 done["SKIPPED"] += 1
                 continue
-            if body is None:
-                raise ValueError("본문 칸 못 찾음")
         except Exception as e:
+            breaker.failure_from(host, e)  # 429·503 은 바로, 그 밖(403·구조 변경 등)은 연속 3번이면 이 사이트를 쉼
             tries = r.retry_count + 1
             status = "FAILED" if tries >= MAX_TRIES else "LISTED"
             _update(engine, r.article_id, status=status, error=str(e), tries=tries)

@@ -62,10 +62,45 @@ class RejectedAnswer(ValueError):
     """LLM 답이 자료와 안 맞아 저장하지 않음"""
 
 
+# 숫자 하나 = 숫자와 한글 단위가 이어진 덩어리 ("1,500억", "9천400억", "1조 2천억", "3.12", "130만")
+NUMBER = re.compile(r"(?<![\d.])\d[\d,]*(?:\.\d+)?(?:\s?[조억만천백](?:\s?\d[\d,]*(?:\.\d+)?)?)*")
+BIG_UNITS = {"조": 10 ** 12, "억": 10 ** 8, "만": 10 ** 4}
+SMALL_UNITS = {"천": 1000, "백": 100}
+
+
+def number_value(expr):
+    """한글 단위를 풀어 값으로: "9천400억" → 9400×10⁸, "1조2천억" = "1.2조" → 1.2×10¹², "1,500" → 1500"""
+    total = group = 0.0
+    num = None
+    for tok in re.findall(r"\d[\d,]*(?:\.\d+)?|[조억만천백]", expr):
+        if tok[0].isdigit():
+            num = float(tok.replace(",", ""))
+        elif tok in SMALL_UNITS:
+            group += (1 if num is None else num) * SMALL_UNITS[tok]
+            num = None
+        else:
+            group += 0 if num is None else num
+            total += (group or 1) * BIG_UNITS[tok]
+            group, num = 0.0, None
+    return total + group + (0 if num is None else num)
+
+
 def unknown_numbers(answer, source):
-    """답에 있는데 자료에 없는 숫자. ponytail: 한 자리 수(3분기 등)는 안 봄. 1.2조를 1조2천억으로 바꿔 써도 걸림 → 기존 요약을 유지"""
-    source = source.replace(",", "")
-    return [n for n in re.findall(r"\d[\d,]*(?:\.\d+)?", answer) if len(n.replace(",", "")) >= 2 and n.replace(",", "") not in source]
+    """답에 있는데 자료에 없는 숫자 (값으로 비교, 2026-11-10).
+    예전엔 글자 포함으로 비교해서 답 "50억"이 자료 "1,500억"의 "50" 덕에 통과했음 (지승현 지적). 경계만 맞추면 "9천400억"처럼
+    한글 단위로 쓴 맞는 숫자까지 거절되므로, 단위를 풀어 값으로 맞춤. 한 자리 수(3분기 등)는 단위가 없으면 안 봄.
+    한계: 원·달러·% 같은 단위 종류는 안 따짐 (값만 같으면 같은 숫자로 봄)"""
+    have = [number_value(m.group(0)) for m in NUMBER.finditer(source)]
+    wrong = []
+    for m in NUMBER.finditer(answer):
+        expr = m.group(0).strip()
+        digits = re.sub(r"\D", "", expr)
+        if len(digits) < 2 and not any(u in expr for u in BIG_UNITS):
+            continue
+        value = number_value(expr)
+        if not any(abs(value - h) <= 1e-9 * max(1.0, abs(h)) for h in have):
+            wrong.append(expr)
+    return wrong
 
 
 def combine(stock_name, lines, llm=None):
