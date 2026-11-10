@@ -49,8 +49,25 @@ public class GlobalExceptionHandler {
     /** 예상하지 못한 오류. 원인은 로그에만 남기고 사용자에게는 일반 메시지 */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleUnexpected(Exception e) {
+        if (clientGone(e)) {
+            // 브라우저가 먼저 연결을 끊음 (실시간 방송 화면을 닫음, 응답 중 새로 고침 등). 오류가 아니고 응답도 보낼 곳이 없음
+            // (2026-11-10: 화면을 닫을 때마다 "처리하지 못한 예외 … Broken pipe" ERROR 가 쌓여 진짜 오류를 가렸음)
+            log.debug("브라우저가 먼저 연결을 끊음: {}", e.getMessage());
+            return null;
+        }
         log.error("처리하지 못한 예외", e);
         return toResponse(ErrorCode.INTERNAL_ERROR);
+    }
+
+    /** 원인을 따라가 보면 "응답을 더 쓸 수 없음"(Spring AsyncRequestNotUsableException)이나 연결 끊김(ClientAbortException)인가 */
+    static boolean clientGone(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof org.springframework.web.context.request.async.AsyncRequestNotUsableException
+                    || "ClientAbortException".equals(t.getClass().getSimpleName())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private ResponseEntity<ErrorResponse> toResponse(ErrorCode errorCode) {
