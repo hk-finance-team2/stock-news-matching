@@ -64,9 +64,10 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 - 오늘(한국 시간 **0시 ~ 지금**) 작성된 글에 **많이 나온 종목** 순. 글 수가 같으면 평균 관련도가 높은 순
 - `source`: `NEWS` / `SNS` (**없으면 `NEWS`**), `limit`: 1~50 (기본 10). 페이지 없음
   - 기본이 뉴스만인 이유: AI가 SNS를 "최근 뉴스가 많은 종목"만 골라 모으므로, 섞어서 세면 같은 종목을 두 번 세게 됨. SNS 순위는 `source=SNS`로 따로
-- 한 건: `{ rank, stockCode, stockName, articleCount, eventCount, avgRelevance, lastPublishedAt }`
+- 한 건: `{ rank, stockCode, stockName, articleCount, eventCount, disclosureCount, avgRelevance, lastPublishedAt }`
+  - **2026-11-10: 순위는 뉴스 기사 수로만.** `articleCount`·`eventCount`·`avgRelevance`·`lastPublishedAt`은 뉴스만 세고, 공시(`channel` `DART`)는 `disclosureCount`(오늘 공시 수)로 따로 줌. 공시만 있는 종목은 순위에 없음. 화면은 "글 n건 · 소식 m건 · 공시 k"처럼 배지로 (근거: `decisions.md` 2026-11-10 이슈 순위와 공시)
   - `articleCount`: 오늘 이 종목이 나온 글 수(보도량, **순위 기준**), `avgRelevance`: 평균 관련도 %(없으면 `null`), `lastPublishedAt`: 가장 최근 글 시각
-  - `eventCount` (2026-11-09): **같은 소식 묶음을 1건으로 센 소식 수**. 예: 같은 실적 기사를 3곳이 쓰고 다른 소식이 1건이면 `articleCount` 4, `eventCount` 2. 화면은 "글 4건 · 소식 2건"처럼 정보로 보여 주면 됨. 묶음은 AI가 5분마다 저장(같은 종목 + 24시간 안 + 제목이 비슷함, V13). 묶음이 아직 없으면 `articleCount`와 같음
+  - `eventCount` (2026-11-09): **같은 소식 묶음을 1건으로 센 소식 수**. 예: 같은 실적 기사를 3곳이 쓰고 다른 소식이 1건이면 `articleCount` 4, `eventCount` 2. 화면은 "글 4건 · 소식 2건"처럼 정보로 보여 주면 됨. 묶음은 AI가 5분마다 저장(같은 종목 + 24시간 안 + 제목·요약이 비슷함, V13). 묶음이 아직 없으면 `articleCount`와 같음
 - 오늘 글이 없으면 `items: []`. 0시가 막 지나면 비어 있을 수 있음
 
 **오늘의 종합 요약** (종목별 조회 화면 가운데)
