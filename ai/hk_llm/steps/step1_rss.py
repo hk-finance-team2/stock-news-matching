@@ -19,7 +19,13 @@ from hk_llm.core.config import KST, USER_AGENT
 from hk_llm.core.models import Article
 
 FEEDS = {
-    "한국경제": ["https://www.hankyung.com/feed/finance", "https://www.hankyung.com/feed/economy"],
+    # 2026-11-12 밤: 한경은 전체 기사(all-news) 피드까지 (사용자: 한경닷컴 교육 과정 프로젝트라 한경은 전부 수집).
+    # all-news 는 50건 = 약 2시간치라 5분 주기로 빠짐없음. finance·economy 는 더 긴 기간을 덮어 그대로 둠 (겹치는 주소는 2단계가 거름)
+    "한국경제": [
+        "https://www.hankyung.com/feed/all-news",
+        "https://www.hankyung.com/feed/finance",
+        "https://www.hankyung.com/feed/economy",
+    ],
     "연합뉴스": ["https://www.yna.co.kr/rss/economy.xml", "https://www.yna.co.kr/rss/market.xml"],
     "서울경제": ["https://www.sedaily.com/rss/finance", "https://www.sedaily.com/rss/economy"],
     "파이낸셜뉴스": [
