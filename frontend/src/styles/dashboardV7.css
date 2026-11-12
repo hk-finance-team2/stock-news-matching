@@ -4312,3 +4312,34 @@ textarea:focus-visible,
 .app-shell.dark-mode .summary-lines li {
     color: #e2e8f0;
 }
+
+/* 제목만 연결한 기사 (AI 활용 금지 언론사): 판단 보류와 구분되게 점선 테두리 (2026-11-12) */
+.trend-badge.title-only {
+  border-style: dashed;
+}
+.title-only-today {
+  margin: 10px 0 12px;
+  padding: 10px 12px;
+  border: 1px dashed var(--line-soft, #d0d5dd);
+  border-radius: 8px;
+}
+.title-only-today-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.title-only-today ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.title-only-today li {
+  margin: 3px 0;
+  line-height: 1.45;
+}
+.title-only-today a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}

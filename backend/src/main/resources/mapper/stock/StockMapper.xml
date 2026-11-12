@@ -213,6 +213,7 @@
         WHERE s.stock_code = #{stockCode}
           AND a.status = 'DONE'
           AND s.sentiment IS NOT NULL   -- 감성을 판단하지 않은 연결(제목만 연결, V12)은 비율에서 뺌
+          AND NOT (a.channel = 'DART' AND a.summarized_at IS NULL)  -- 원문 요약 전 공시의 기본값 NEUTRAL 은 판단이 아님 (11/12)
           AND a.published_at >= #{from}
           <if test="sourceType != null">
               AND a.source_type = #{sourceType}
