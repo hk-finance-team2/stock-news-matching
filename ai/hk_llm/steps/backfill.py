@@ -147,15 +147,19 @@ def _refetch_day(engine, day, count_only, summarize_limit):
     from hk_llm.steps.step4_body import fetch_bodies
 
     # 대상 = 요약이 없는 한경 기사 중 제목만 연결된 것(DONE·NO_STOCK) + 지난번에 멈춰 남은 것(LISTED·FETCHED)
-    where = """press IN :p AND summary IS NULL AND status IN ('DONE', 'NO_STOCK', 'LISTED', 'FETCHED')
-               AND source_type = 'NEWS' AND published_at >= :s AND published_at < :e"""
-    args = {"p": list(REFETCH_PRESSES), "s": day, "e": day + timedelta(days=1)}
+    #        + 본문이 지워져 요약에 실패한 것(FAILED, 본문 없음). '사전 종목 이름 없음'으로 거른 기사는 다시 받아도 또 걸러지니 뺌
+    where = """press IN :p AND summary IS NULL AND source_type = 'NEWS' AND published_at >= :s AND published_at < :e
+               AND (status IN ('DONE', 'NO_STOCK', 'LISTED', 'FETCHED') OR (status = 'FAILED' AND body IS NULL))
+               AND NOT (status = 'NO_STOCK' AND last_error LIKE :prefilter)"""
+    args = {"p": list(REFETCH_PRESSES), "s": day, "e": day + timedelta(days=1), "prefilter": "LLM 전 거르기%"}
     with engine.begin() as conn:
         n = conn.execute(text(f"SELECT COUNT(*) FROM article WHERE {where}").bindparams(bindparam("p", expanding=True)), args).scalar()
         if count_only or not n:
             return n, 0
-        conn.execute(text(f"""UPDATE article SET status = 'LISTED', last_error = NULL, retry_count = 0
-                              WHERE {where} AND status IN ('DONE', 'NO_STOCK')""").bindparams(bindparam("p", expanding=True)), args)
+        # 수집 시각을 지금으로: 본문 7일 보관(purge_old_bodies)은 collected_at 기준이라, 옛 시각 그대로면 받자마자 다음 5분 안에 지워짐
+        # (11/12 밤: 2,217건 받았는데 907건이 요약 전에 지워짐). 규칙은 그대로 두고 '다시 받은 날부터 7일'로 셈
+        conn.execute(text(f"""UPDATE article SET status = 'LISTED', last_error = NULL, retry_count = 0, collected_at = NOW()
+                              WHERE {where} AND (status IN ('DONE', 'NO_STOCK') OR body IS NULL)""").bindparams(bindparam("p", expanding=True)), args)
     got = bad = waits = 0
     # 천천히: 20건씩 받고 쉬어서 기사 1건에 약 PACE 초 (평소 수집은 하루 약 200건. 비즈워치는 빠르게 약 1,700건 받은 뒤
     # 우리 봇을 막았음 — 같은 일을 피하려고 4단계 기본 간격 1초보다 느리게). 막히는 신호(본문 0건 + 실패·재시도)가 두 번이면 멈춤
