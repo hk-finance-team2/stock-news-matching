@@ -35,7 +35,10 @@ public class AiSummaryClient {
 
     public AiSummaryClient(@Value("${AI_SERVER_URL:http://localhost:8000}") String baseUrl,
                            @Value("${AI_INTERNAL_TOKEN:}") String token) {
-        HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build();
+        // HTTP/1.1 고정: 기본(HTTP/2 시도)은 평문 연결에 'Upgrade: h2c' 를 붙여 AI 서버(uvicorn)가 요청마다
+        // "Unsupported upgrade request" 경고를 남김 (11/12 QA). 같은 Docker 망 안의 짧은 요청이라 HTTP/2 이득도 없음
+        HttpClient http = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1)
+                .connectTimeout(Duration.ofSeconds(3)).build();
         JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(http);
         factory.setReadTimeout(Duration.ofSeconds(30));
         this.restClient = RestClient.builder().requestFactory(factory).build();
