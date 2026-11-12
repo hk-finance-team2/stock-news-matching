@@ -87,6 +87,27 @@ def test_dart_document_text():
         == "본문 원재료 철광석", "첨부보다 본문"
 
 
+def test_disclosure_sentiment_rules():
+    """공시 감성을 뉴스와 같은 기준으로 (11/12): 판단 보류는 None, 목적·방식에 따라 해석이 갈리는 유형은 LLM 답과 관계없이 None"""
+    from hk_llm.steps.dart import context_dependent, final_sentiment, PROMPT
+
+    assert context_dependent("삼성전자 주요사항보고서(자기주식취득결정)")
+    assert context_dependent("에코프로 단일판매ㆍ공급계약체결")
+    assert context_dependent("셀트리온 유상증자결정") and context_dependent("HLB 무상증자결정")
+    assert not context_dependent("SNT홀딩스 주요사항보고서(자기주식취득신탁계약해지결정)")  # 해지는 뜻이 반대 → 다른 유형
+    assert not context_dependent("이건산업 생산중단") and not context_dependent(None)
+
+    assert final_sentiment("에코프로 단일판매ㆍ공급계약체결", "POSITIVE") is None
+    assert final_sentiment("셀트리온 유상증자결정", "NEGATIVE") is None
+    assert final_sentiment("이건산업 생산중단", "NEGATIVE") == "NEGATIVE"
+    assert final_sentiment("어떤회사 풍문또는보도에대한해명(미확정)", "UNCERTAIN") is None
+    assert final_sentiment("어떤회사 주주총회소집결의", "NEUTRAL") == "NEUTRAL"
+
+    system = PROMPT.messages[0].prompt.template
+    assert "주가가 오를지 내릴지는 판단하지 않는다" in system and "UNCERTAIN" in system
+    assert "호재 POSITIVE" not in system  # 예전 '주가 영향' 기준이 남지 않게
+
+
 def test_dart_not_ready():
     from hk_llm.steps import dart
 
