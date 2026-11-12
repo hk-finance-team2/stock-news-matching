@@ -108,6 +108,20 @@ def backfill_day(engine, press, day, names, count_only=False):
 
 REFETCH_PRESSES = ("한국경제",)
 REFETCH_BATCH = 20
+MAX_WAITS = 3  # 하루 처리 중 차단기를 기다리는 최대 횟수
+MAX_WAIT_SECONDS = 20 * 60
+BLOCK_HINTS = ("403", "429", "401", "Forbidden", "Too Many")  # 이 이유로 쉬는 중이면 진짜 막힘 신호 → 기다리지 않고 멈춤
+
+
+def _breaker_wait(host):
+    """차단기가 '연결 오류'로 쉬는 중이면 남은 초(최대 20분), 아니면 0. 403·429 같은 막힘 신호면 0 (기다리지 않음)"""
+    from hk_llm.core.resilience import breaker
+
+    s = breaker._load().get(host) or {}
+    until, reason = s.get("until"), str(s.get("reason") or "")
+    if not until or any(h in reason for h in BLOCK_HINTS):
+        return 0
+    return int(min(MAX_WAIT_SECONDS, max(0, until - time.time()) + 5))
 PACE = 3.0  # 다시 받기 때 기사 1건당 최소 초
 
 
@@ -142,7 +156,7 @@ def _refetch_day(engine, day, count_only, summarize_limit):
             return n, 0
         conn.execute(text(f"""UPDATE article SET status = 'LISTED', last_error = NULL, retry_count = 0
                               WHERE {where} AND status IN ('DONE', 'NO_STOCK')""").bindparams(bindparam("p", expanding=True)), args)
-    got = bad = 0
+    got = bad = waits = 0
     # 천천히: 20건씩 받고 쉬어서 기사 1건에 약 PACE 초 (평소 수집은 하루 약 200건. 비즈워치는 빠르게 약 1,700건 받은 뒤
     # 우리 봇을 막았음 — 같은 일을 피하려고 4단계 기본 간격 1초보다 느리게). 막히는 신호(본문 0건 + 실패·재시도)가 두 번이면 멈춤
     stopped = False
@@ -154,6 +168,14 @@ def _refetch_day(engine, day, count_only, summarize_limit):
         if not any(done.get(k, 0) for k in ("FETCHED", "SKIPPED", "RETRY", "FAILED")):
             break
         if done.get("FETCHED", 0) == 0 and done.get("RETRY", 0) + done.get("FAILED", 0) >= 3:
+            # 우리 쪽 차단기가 연결 오류(인터넷 끊김 등)로 '쉬는 중'이면 막힌 게 아님 → 쉬는 시간이 끝날 때까지 기다렸다 계속
+            # (11/12 17:52·18:11: 학원 인터넷이 끊겨 차단기가 열렸는데 '차단 가능'으로 멈췄음. 같은 시각 수집기는 한경 본문을 정상으로 받음)
+            wait = _breaker_wait("www.hankyung.com")
+            if wait and waits < MAX_WAITS:
+                waits += 1
+                log.info("한경 차단기가 연결 오류로 쉬는 중 → %d초 기다렸다 계속 (%d/%d)", wait, waits, MAX_WAITS)
+                time.sleep(wait)
+                continue
             bad += 1
             if bad >= 2:
                 log.warning("본문이 연속으로 안 받아짐(차단 가능) → 다시 받기 멈춤. 남은 기사는 LISTED 로 남음: %s", done)
