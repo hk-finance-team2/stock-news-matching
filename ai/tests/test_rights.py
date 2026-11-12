@@ -192,3 +192,18 @@ def test_body_fetch_site_signal_switches_press():
         s4.fetch_bodies(engine)
         assert pp.policy("비즈워치") == pp.TITLE_ONLY
     get.assert_not_called(), "사이트가 AI 입력을 거부하면 기사 페이지도 요청 안 함"
+
+
+def test_new_presses_have_policy_and_body_xpath():
+    """11/12 추가한 언론사: 방침이 FULL 로 적혀 있고(없으면 기본 TITLE_ONLY), 기사 주소의 본문 칸이 있고, 기사 끝 고지가 금지로 걸리지 않음"""
+    from hk_llm.core.press_policy import FULL, POLICY
+    from hk_llm.steps.rights import page_reservation
+    from hk_llm.steps.step1_rss import FEEDS
+    from hk_llm.steps.step4_body import BODY_XPATH
+
+    assert set(FEEDS) <= set(POLICY)  # 모든 RSS 언론사의 방침을 확인해 적었는가
+    for press, host in [("아주경제", "www.ajunews.com"), ("블로터", "www.bloter.net")]:
+        rule, why = POLICY[press]
+        assert rule == FULL and host in BODY_XPATH, press
+        notice = why.split("'")[1]  # 옮겨 적은 실제 기사 끝 고지 → AI 금지로 오인하지 않아야 함
+        assert not page_reservation(f"<div>본문</div><p>{notice}</p>".encode()), press
