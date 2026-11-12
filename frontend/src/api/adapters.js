@@ -116,6 +116,11 @@ export function toUiArticle(item) {
     .filter(Boolean);
 
   const isDisclosure = item.channel === 'DART';
+  // 원문을 아직 요약하지 않은 공시: 서버는 요약 칸에 제목을, 감성 칸에 기본값 NEUTRAL 을 넣어 둠
+  // → "중립"으로 보이면 '판단해서 중립'으로 읽히므로 판단하지 않은 글(null)로 바꿈 (2026-11-12 서준님 피드백)
+  const disclosurePending = isDisclosure && (!rawSummary || rawSummary === String(item.title || '').trim());
+  // 제목만 연결한 기사: AI 활용을 금지한 언론사라 본문·요약·감성이 없음 (일반 '판단 보류'와 구분해서 보여 줌)
+  const titleOnly = !isDisclosure && item.sourceType !== 'SNS' && summaryLines.length === 0;
   return {
     id: String(item.articleId),
     sourceType: item.sourceType === 'SNS' ? 'SNS' : 'NEWS',
@@ -141,12 +146,14 @@ export function toUiArticle(item) {
     daysAgo: daysAgoKst(item.publishedAt),
     url: item.url || '',
     analysisStatus: 'COMPLETED',
-    summary: summaryLines.slice(0, 3),
-    // AI 요약이 없는 글 (AI 활용 금지 언론사·제목만 있는 공시 등) → 화면 "AI 요약 없음 · 원문 보기"
-    hasSummary: summaryLines.length > 0,
+    summary: disclosurePending ? [] : summaryLines.slice(0, 3),
+    // AI 요약이 없는 글 (AI 활용 금지 언론사·원문 요약 전 공시 등) → 화면 "AI 요약 없음 · 원문 보기"
+    hasSummary: summaryLines.length > 0 && !disclosurePending,
+    titleOnly,
+    disclosurePending,
     keywords: item.keywords || [],
     // 감성이 없으면 null (AI 활용 금지 언론사 기사는 제목만 연결하고 감성을 판단하지 않음. 중립으로 채우면 '중립 판단'과 구별이 안 됨)
-    sentiment: item.sentiment || main?.sentiment || null,
+    sentiment: titleOnly || disclosurePending ? null : item.sentiment || main?.sentiment || null,
     relatedStocks,
     matchedStocks: relatedStocks,
     relatedSns: (item.relatedSns || []).map((s) => ({

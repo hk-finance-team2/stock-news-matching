@@ -256,6 +256,34 @@ function SentimentBadge({ sentiment, short = false }) {
   );
 }
 
+// 글마다 붙는 '기사 내용' 배지. 제목만 연결한 기사는 판단 보류와 다른 이유라 따로 알려 줌
+const TITLE_ONLY_TIP = '이 언론사는 기사에 AI 활용 금지를 밝혀서, 본문을 읽지 않고 제목으로만 종목을 연결했어요. 내용은 원문에서 확인해 주세요.';
+const DISCLOSURE_PENDING_TIP = '공시 원문을 아직 AI가 읽지 않았어요. 잠시 뒤 요약과 함께 표시돼요.';
+function JudgeBadge({ article, short = false }) {
+  if (article.titleOnly) {
+    return (
+      <span className="trend-badge trend-hold title-only" title={TITLE_ONLY_TIP} aria-label={TITLE_ONLY_TIP}>
+        제목만 확인
+      </span>
+    );
+  }
+  if (article.disclosurePending) {
+    return (
+      <span className="trend-badge trend-hold" title={DISCLOSURE_PENDING_TIP} aria-label={DISCLOSURE_PENDING_TIP}>
+        원문 확인 전
+      </span>
+    );
+  }
+  return <SentimentBadge sentiment={article.sentiment} short={short} />;
+}
+
+// 요약이 없을 때 이유별 안내 (원문 링크는 상세 화면 아래에 늘 있음)
+const missingSummaryText = (article) => {
+  if (article.titleOnly) return 'AI 활용을 금지한 언론사 기사라 요약하지 않았어요 · 원문 보기로 확인해 주세요';
+  if (article.disclosurePending) return '공시 원문을 아직 요약하지 않았어요 · 잠시 뒤 다시 보거나 원문 보기로 확인해 주세요';
+  return 'AI 요약 없음 · 원문 보기로 확인해 주세요';
+};
+
 // 감성·요약 옆에 붙이는 짧은 안내
 function AiNote({ className = '' }) {
   return <span className={`ai-note ${className}`}>{AI_NOTE_TEXT}</span>;
@@ -611,7 +639,7 @@ function ArticleList({ articles, selectedId, onSelect, onSelectStock, loading = 
                 >
                   {sourceLabelOf(art)}
                 </span>
-                <SentimentBadge sentiment={art.sentiment} short />
+                <JudgeBadge article={art} short />
                 <ArticleInfoBadges article={art} />
                 <span className="article-press-time num">
                   {art.press} · {art.publishedAt}
@@ -988,7 +1016,7 @@ function ArticleDetail({
         <div className="ai-card-header">
           <span className="ai-card-badge">🤖 AI 3줄 요약 · 기사 내용 판단</span>
           <div className="header-btn-group">
-            <SentimentBadge sentiment={article.sentiment} />
+            <JudgeBadge article={article} />
             {onRegenerateSummary && (
               <button
                 type="button"
@@ -1003,7 +1031,7 @@ function ArticleDetail({
           </div>
         </div>
         {article.hasSummary === false ? (
-          <div className="summary-missing">AI 요약 없음 · 원문 보기로 확인해 주세요</div>
+          <div className="summary-missing">{missingSummaryText(article)}</div>
         ) : (
           <ul className="summary-lines">
             {article.summary.map((line, idx) => (
@@ -2225,6 +2253,16 @@ export default function DashboardPageV7() {
       sentimentByEvent: loadedSummary?.sentimentByEvent ?? null,
       sentimentByEventCount: loadedSummary?.sentimentByEventCount ?? 0,
     };
+
+  // 요약이 없는 종목: 오늘 제목으로만 연결한 기사(AI 활용 금지 언론사)를 대신 보여 줌 → 빈 카드 대신 "무슨 소식이 있었나"
+  const todayTitleOnly = useMemo(
+    () =>
+      allArticles
+        .filter((art) => art.titleOnly && art.daysAgo === 0)
+        .filter((art) => art.relatedStocks.some((r) => r.code === selectedStockCode))
+        .slice(0, 5),
+    [allArticles, selectedStockCode]
+  );
 
   const trendSeries = mentionSeries;
 
@@ -3668,6 +3706,29 @@ export default function DashboardPageV7() {
               <div className="ai-card">
                 <p className="ai-card-headline">{currentSummary.headline}</p>
                 <p className="ai-card-body">{currentSummary.summary}</p>
+                {!loadedSummary?.newsSummary && todayTitleOnly.length > 0 && (
+                  <div className="title-only-today">
+                    <div className="title-only-today-head">
+                      오늘 제목으로 확인한 소식 {todayTitleOnly.length}건
+                      <span className="trend-badge trend-hold title-only" title={TITLE_ONLY_TIP}>
+                        제목만 확인
+                      </span>
+                    </div>
+                    <ul>
+                      {todayTitleOnly.map((art) => (
+                        <li key={art.id}>
+                          <a href={art.url} target="_blank" rel="noopener noreferrer">
+                            {art.title}
+                          </a>
+                          <span className="stock-meta num">
+                            {' '}
+                            {art.press} · {art.publishedAt}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
                 <SentimentBar ratio={currentSummary.sentimentRatio} />
                 {currentSummary.sentimentByEvent && currentSummary.sentimentByEventCount > 0 && (
                   <div className="event-ratio-line num">
