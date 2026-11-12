@@ -20,6 +20,8 @@ repositories {
 
 dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+    // 헬스체크 (/actuator/health): Docker 가 백엔드가 살아 있는지 확인. health 만 공개 (application.yml management) — 11/12
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
     implementation 'org.springframework.boot:spring-boot-starter-security'
     // JWT 발급·검사 (Spring Security 공식 JWT 지원)
     implementation 'org.springframework.boot:spring-boot-starter-security-oauth2-resource-server'

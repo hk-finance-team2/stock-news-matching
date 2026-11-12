@@ -15,6 +15,17 @@ spring:
     # 예시 기사를 켰다가 끈 PC에서도 서버가 멈추지 않게 (기록엔 있는데 파일 위치가 빠진 반복 지시서는 무시)
     ignore-migration-patterns: "*:future,repeatable:missing"
 
+# 헬스체크: /actuator/health 만 웹에 공개 (env·beans 같은 내부 정보는 닫음 — 보안 설정이 나머지 주소를 로그인 없이 열어 두므로 꼭 health 만)
+# 결과는 UP/DOWN 만 (DB 연결 상태까지 반영, 자세한 내용은 숨김). Docker healthcheck 가 30초마다 부름 (docker-compose.yml)
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+
 mybatis:
   # SQL은 resources/mapper 아래 XML 파일에 작성
   mapper-locations: classpath:mapper/**/*.xml
