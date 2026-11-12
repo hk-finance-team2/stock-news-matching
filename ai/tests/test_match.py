@@ -217,8 +217,8 @@ def test_title_only():
     from hk_llm.core.press_policy import FULL, TITLE_ONLY, policy, title_only_presses
     from hk_llm.steps.title_only import MAX_STOCKS, decide, title_stocks
 
-    assert title_only_presses() == ["서울경제", "아주경제", "연합뉴스", "연합인포맥스", "전자신문", "파이낸셜뉴스", "한국경제"]  # 11/12 규약·약관 반영
-    assert policy("블로터") == FULL and policy("비즈워치") == FULL
+    assert title_only_presses() == ["비즈워치", "서울경제", "아주경제", "연합뉴스", "연합인포맥스", "전자신문", "파이낸셜뉴스", "한국경제"]  # 11/12 규약·약관 반영
+    assert policy("블로터") == FULL and policy("시사저널e") == FULL
     assert policy("처음 보는 언론사") == TITLE_ONLY, "모르는 언론사는 보수적으로"
 
     names = {"삼성전자": "A", "SK하이닉스": "B", "태양": "C", "SK": "D", "대상": "E", "HL만도": "F", "기아": "G",
