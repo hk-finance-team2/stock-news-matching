@@ -36,7 +36,8 @@ FEEDS = {
     "헤럴드경제": ["https://biz.heraldcorp.com/rss/google/finance"],  # 조사표 언론사_추가_조사_1112.md
     "뉴시스": ["https://www.newsis.com/RSS/economy.xml"],
 }
-DC = "{http://purl.org/dc/elements/1.1/}"  # 연합뉴스 기자명은 <dc:creator>
+DC = "{http://purl.org/dc/elements/1.1/}"
+HANGUL = re.compile(r"[가-힣]")  # 제목에 한글이 한 글자도 없으면 외국어판  # 연합뉴스 기자명은 <dc:creator>
 
 log = get_logger(__name__)
 
@@ -73,6 +74,8 @@ def parse(xml, press, now=None):
     for it in ET.fromstring(xml).iter("item"):
         url, title = _text(it, "link"), _text(it, "title")
         if not url or not title:
+            continue
+        if not HANGUL.search(title):  # 외국어판 기사(인사이트코리아 중국어판 등)는 종목 사전·요약이 한국어라 뺌 (11/12 QA)
             continue
         items.append(Article(
             url=url,
