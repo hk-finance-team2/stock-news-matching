@@ -20,7 +20,7 @@ def test_page_notice_catches_real_notices():
     from hk_llm.steps.rights import page_reservation
 
     for press, (rule, why) in POLICY.items():
-        if rule == TITLE_ONLY:  # 11/05 실제 기사 끝에서 옮겨 적은 고지 3개
+        if rule == TITLE_ONLY and why.startswith("기사 끝"):  # 11/05 실제 기사 끝에서 옮겨 적은 고지 3개 (규약 근거는 따로)
             notice = why.split("'")[1]
             assert page_reservation(f"<div>본문</div><p>{notice}</p>".encode()), press
 
@@ -85,14 +85,14 @@ def test_policy_only_gets_stricter_automatically():
     from hk_llm.core import press_policy as pp
 
     with _policy_file():
-        assert pp.policy("한국경제") == pp.FULL
-        assert pp.restrict("한국경제", pp.TITLE_ONLY, "시험")
-        assert pp.policy("한국경제") == pp.TITLE_ONLY and "한국경제" in pp.title_only_presses()
-        assert not pp.restrict("한국경제", pp.FULL, "되돌리기 시도"), "자동으로는 느슨하게 못 바꿈"
+        assert pp.policy("전자신문") == pp.FULL
+        assert pp.restrict("전자신문", pp.TITLE_ONLY, "시험")
+        assert pp.policy("전자신문") == pp.TITLE_ONLY and "전자신문" in pp.title_only_presses()
+        assert not pp.restrict("전자신문", pp.FULL, "되돌리기 시도"), "자동으로는 느슨하게 못 바꿈"
         assert pp.policy("연합뉴스") == pp.TITLE_ONLY and not pp.restrict("연합뉴스", pp.TITLE_ONLY, "같음")
-        assert any("한국경제" in i for i in pp.issues()), "사람이 반영할 때까지 알림"
-        pp.reset("한국경제")
-        assert pp.policy("한국경제") == pp.FULL and not pp.issues(), "사람이 확인 후 되돌림"
+        assert any("전자신문" in i for i in pp.issues()), "사람이 반영할 때까지 알림"
+        pp.reset("전자신문")
+        assert pp.policy("전자신문") == pp.FULL and not pp.issues(), "사람이 확인 후 되돌림"
         assert pp.policy("처음 보는 언론사") == pp.TITLE_ONLY, "모르는 언론사는 제목만 (그대로)"
 
 
@@ -102,11 +102,11 @@ def test_exclude_press():
 
     with _policy_file():
         pp.restrict("연합뉴스", pp.EXCLUDED, "권리자 요청")
-        assert pp.excluded_presses() == ["연합뉴스"] and "연합뉴스" in pp.title_only_presses()
+        assert "연합뉴스" in pp.excluded_presses() and "연합뉴스" in pp.title_only_presses()
         with mock.patch.object(step1_rss, "fetch_feed", return_value=[]) as feed:
             step1_rss.fetch_all()
         asked = {c.args[1] for c in feed.call_args_list}
-        assert "연합뉴스" not in asked and "한국경제" in asked, "제외 언론사는 RSS 도 요청 안 함"
+        assert "연합뉴스" not in asked and "전자신문" in asked, "제외 언론사는 RSS 도 요청 안 함"
 
 
 def test_page_notice_needs_two_different_articles():
@@ -145,8 +145,8 @@ def test_body_fetch_stops_on_ai_notice():
 
 
 def test_wire_article_notice_skips_only_that_article():
-    """파이낸셜뉴스가 연합뉴스 기사를 그대로 실음(전재) → 연합의 AI 금지 고지가 붙어 있음.
-    그 기사만 본문을 안 쓰고, 파이낸셜뉴스 전체를 제목만으로 바꾸지는 않음 (2026-11-11 지난 기사 10건 중 3건이 이런 기사)"""
+    """전자신문가 연합뉴스 기사를 그대로 실음(전재) → 연합의 AI 금지 고지가 붙어 있음.
+    그 기사만 본문을 안 쓰고, 전자신문 전체를 제목만으로 바꾸지는 않음 (2026-11-11 지난 기사 10건 중 3건이 이런 기사)"""
     from hk_llm.core import press_policy as pp
     from hk_llm.core.resilience import Breaker
     from hk_llm.steps import step4_body as s4
@@ -155,11 +155,11 @@ def test_wire_article_notice_skips_only_that_article():
     yna = "<p>(끝) <br>&lt;저작권자(c) 연합뉴스, 무단 전재-재배포, AI 학습 및 활용 금지&gt;</p>"
     assert notice_holder(yna) == "연합뉴스"
     assert notice_holder("<p>ⓒ 서울경제신문, 무단 전재-재배포, AI 학습 및 활용 금지</p>") == "서울경제신문"
-    assert is_wire("파이낸셜뉴스", "연합뉴스")
+    assert is_wire("전자신문", "연합뉴스")
     assert not is_wire("서울경제", "서울경제신문"), "이름이 조금 달라도 자기 고지"
     assert not is_wire("연합뉴스", "연합뉴스") and not is_wire("전자신문", None), "저작권자를 못 읽으면 예전처럼 언론사 몫"
 
-    rows = [mock.Mock(article_id=i, url=f"https://www.fnnews.com/news/{i}", press="파이낸셜뉴스", retry_count=0) for i in (1, 2, 3)]
+    rows = [mock.Mock(article_id=i, url=f"https://www.etnews.com/{i}", press="전자신문", retry_count=0) for i in (1, 2, 3)]
     engine = mock.MagicMock()
     engine.connect.return_value.__enter__.return_value.execute.return_value.all.return_value = rows
     page = requests.Response()
@@ -172,7 +172,7 @@ def test_wire_article_notice_skips_only_that_article():
             mock.patch.object(s4, "_get", return_value=page), \
             mock.patch.object(s4, "_update", side_effect=lambda *a, **k: updates.append(k)):
         s4.fetch_bodies(engine)
-        assert pp.policy("파이낸셜뉴스") == pp.FULL, "전재 기사 3건이어도 언론사 방침은 그대로"
+        assert pp.policy("전자신문") == pp.FULL, "전재 기사 3건이어도 언론사 방침은 그대로"
     assert [u["status"] for u in updates] == ["SKIPPED"] * 3 and all(u.get("body") is None for u in updates)
     assert all("연합뉴스 전재" in u["error"] for u in updates)
 
@@ -195,14 +195,18 @@ def test_body_fetch_site_signal_switches_press():
 
 
 def test_new_presses_have_policy_and_body_xpath():
-    """11/12 추가한 언론사: 방침이 FULL 로 적혀 있고(없으면 기본 TITLE_ONLY), 기사 주소의 본문 칸이 있고, 기사 끝 고지가 금지로 걸리지 않음"""
-    from hk_llm.core.press_policy import FULL, POLICY
+    """11/12 추가한 언론사: 방침이 FULL 로 적혀 있고(없으면 기본 TITLE_ONLY), 기사 주소의 본문 칸이 있고, 기사 끝 고지가 금지로 걸리지 않음.
+    규약·약관이 자동 수집이나 정보서비스를 금지하는 곳은 본문을 받지 않음 (11/12)"""
+    from hk_llm.core.press_policy import EXCLUDED, FULL, POLICY, TITLE_ONLY, excluded_presses, title_only_presses
     from hk_llm.steps.rights import page_reservation
     from hk_llm.steps.step1_rss import FEEDS
     from hk_llm.steps.step4_body import BODY_XPATH
 
     assert set(FEEDS) <= set(POLICY)  # 모든 RSS 언론사의 방침을 확인해 적었는가
-    for press, host in [("아주경제", "www.ajunews.com"), ("블로터", "www.bloter.net")]:
+    assert POLICY["한국경제"][0] == TITLE_ONLY and POLICY["파이낸셜뉴스"][0] == TITLE_ONLY
+    assert POLICY["아주경제"][0] == EXCLUDED and "아주경제" not in FEEDS
+    assert {"한국경제", "파이낸셜뉴스", "아주경제"} <= set(title_only_presses()) and "아주경제" in excluded_presses()
+    for press, host in [("블로터", "www.bloter.net")]:
         rule, why = POLICY[press]
         assert rule == FULL and host in BODY_XPATH, press
         notice = why.split("'")[1]  # 옮겨 적은 실제 기사 끝 고지 → AI 금지로 오인하지 않아야 함

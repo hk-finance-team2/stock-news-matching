@@ -36,7 +36,6 @@ BODY_XPATH = {
     "www.etnews.com": '//*[@itemprop="articleBody"]',
     "news.einfomax.co.kr": '//*[@itemprop="articleBody"]',
     "news.bizwatch.co.kr": '//*[@itemprop="articleBody"]',
-    "www.ajunews.com": '//div[@id="articleBody"]',  # 2026-11-12 기사 2건 확인 (2,692·1,417자)
     "www.bloter.net": '//*[@id="article-view-content-div"]',  # 2026-11-12 기사 2건 확인 (1,719·2,065자)
 }
 DROP = ".//figure | .//figcaption | .//aside | .//script | .//style | .//table"  # 사진 설명·광고·표는 요약에 방해
