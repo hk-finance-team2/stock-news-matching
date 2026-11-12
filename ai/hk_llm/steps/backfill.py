@@ -2,6 +2,11 @@
 
     python -m hk_llm.steps.backfill 2026-10-27 2026-11-01 --count   하루마다 사이트맵 기사 수·통과 수만 셈 (저장·LLM 없음)
     python -m hk_llm.steps.backfill 2026-10-27 2026-11-01           저장 → 요약 → 매칭 (요약 1건 약 $0.0006)
+    python -m hk_llm.steps.backfill 2026-10-20 2026-11-12 --refetch --count   제목만 남은 한경 기사 수만 셈
+    python -m hk_llm.steps.backfill 2026-10-20 2026-11-12 --refetch  제목만 남은 한경 기사를 다시 받아 요약·매칭
+
+- --refetch (2026-11-12 밤): 언론사 기준이 하루 동안 엄격했을 때(제목만) 지운 한경 요약을 되살림. 이미 저장된 기사라
+  사이트맵 채우기(새 주소만)로는 안 잡힘 → 상태를 LISTED 로 돌려 4단계(본문)부터 다시. 유료 기사(SKIPPED)는 그대로
 
 - 대상: AI 수집 제한이 없는 한국경제만 (2026-11-03 robots.txt 확인. 조사표 docs/조사/robots_조사.md)
   연합뉴스·서울경제·비즈워치는 AI 봇을 사이트 전체에서 막았고 연합인포맥스는 기사 끝에 AI 활용 금지
@@ -101,6 +106,71 @@ def backfill_day(engine, press, day, names, count_only=False):
     return len(rows), hit, new
 
 
+REFETCH_PRESSES = ("한국경제",)
+REFETCH_BATCH = 20
+PACE = 3.0  # 다시 받기 때 기사 1건당 최소 초
+
+
+def refetch_titles(start, end, engine=None, count_only=False, summarize_limit=200):
+    """요약 없이 제목으로만 연결된 기사(한경)를 다시 받아 요약·매칭. (대상 수, 본문 받은 수)
+    하루씩, 최근 날부터: LISTED 로 돌린 기사는 끝날 때까지 화면에서 빠지므로 한 번에 몇 시간씩 사라지지 않게"""
+    engine = engine or get_engine()
+    total = got = 0
+    day = end
+    while day >= start:
+        n, g = _refetch_day(engine, day, count_only, summarize_limit)
+        total += n
+        got += g
+        if g < 0:  # 막힘 신호로 멈춤
+            break
+        day -= timedelta(days=1)
+    log.info("다시 받기 합계 %s~%s: 대상 %d건, 본문 %d건%s", start, end, total, max(got, 0), " (세기만)" if count_only else "")
+    return total, got
+
+
+def _refetch_day(engine, day, count_only, summarize_limit):
+    """(대상 수, 본문 받은 수 — 막혀서 멈추면 -1)"""
+    from hk_llm.steps.step4_body import fetch_bodies
+
+    # 대상 = 요약이 없는 한경 기사 중 제목만 연결된 것(DONE·NO_STOCK) + 지난번에 멈춰 남은 것(LISTED·FETCHED)
+    where = """press IN :p AND summary IS NULL AND status IN ('DONE', 'NO_STOCK', 'LISTED', 'FETCHED')
+               AND source_type = 'NEWS' AND published_at >= :s AND published_at < :e"""
+    args = {"p": list(REFETCH_PRESSES), "s": day, "e": day + timedelta(days=1)}
+    with engine.begin() as conn:
+        n = conn.execute(text(f"SELECT COUNT(*) FROM article WHERE {where}").bindparams(bindparam("p", expanding=True)), args).scalar()
+        if count_only or not n:
+            return n, 0
+        conn.execute(text(f"""UPDATE article SET status = 'LISTED', last_error = NULL, retry_count = 0
+                              WHERE {where} AND status IN ('DONE', 'NO_STOCK')""").bindparams(bindparam("p", expanding=True)), args)
+    got = bad = 0
+    # 천천히: 20건씩 받고 쉬어서 기사 1건에 약 PACE 초 (평소 수집은 하루 약 200건. 비즈워치는 빠르게 약 1,700건 받은 뒤
+    # 우리 봇을 막았음 — 같은 일을 피하려고 4단계 기본 간격 1초보다 느리게). 막히는 신호(본문 0건 + 실패·재시도)가 두 번이면 멈춤
+    stopped = False
+    while True:  # 본문: robots·사이트별 간격·유료 기사 건너뛰기는 4단계 그대로. since=그날 → 그날 이후 LISTED 만
+        t0 = time.monotonic()
+        done = fetch_bodies(engine, limit=REFETCH_BATCH, since=day, only=REFETCH_PRESSES)
+        got += done.get("FETCHED", 0)
+        # 처리 수만 봄 (done 에는 bad_hosts·tables_dropped 같은 참고 칸도 있어 any(done.values()) 로 보면 끝나지 않음)
+        if not any(done.get(k, 0) for k in ("FETCHED", "SKIPPED", "RETRY", "FAILED")):
+            break
+        if done.get("FETCHED", 0) == 0 and done.get("RETRY", 0) + done.get("FAILED", 0) >= 3:
+            bad += 1
+            if bad >= 2:
+                log.warning("본문이 연속으로 안 받아짐(차단 가능) → 다시 받기 멈춤. 남은 기사는 LISTED 로 남음: %s", done)
+                stopped = True
+                break
+        else:
+            bad = 0
+        rest = REFETCH_BATCH * PACE - (time.monotonic() - t0)
+        if rest > 0:
+            time.sleep(rest)
+    while summarize_articles(engine, summarize_limit, since=day):
+        pass
+    match_articles(engine)
+    log.info("다시 받기 %s: 대상 %d건, 본문 %d건", day, n, got)
+    return n, (-1 if stopped else got)
+
+
 def backfill(start, end, engine=None, count_only=False, summarize_limit=200):
     """start~end(날짜 포함). 저장 뒤 그 기간 FETCHED 를 요약하고 다시 매칭"""
     engine = engine or get_engine()
@@ -122,4 +192,7 @@ def backfill(start, end, engine=None, count_only=False, summarize_limit=200):
 
 if __name__ == "__main__":
     s, e = (datetime.strptime(x, "%Y-%m-%d").date() for x in sys.argv[1:3])
-    print(backfill(s, e, count_only="--count" in sys.argv))
+    if "--refetch" in sys.argv:
+        print(refetch_titles(s, e, count_only="--count" in sys.argv))
+    else:
+        print(backfill(s, e, count_only="--count" in sys.argv))
