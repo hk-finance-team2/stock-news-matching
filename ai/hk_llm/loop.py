@@ -5,6 +5,8 @@
 
 - 5분 정각에 맞춰 시작. 실행이 5분을 넘으면 지나간 차례는 건너뜀
 - 실행이 실패해도 멈추지 않고 다음 차례에 다시
+- 시작할 때 DB 가 받을 때까지 최대 2분 기다림: Docker 를 다시 켜면 재시작 정책은 depends_on 을 안 지켜서 수집기가 DB 보다 먼저 뜸
+  → 기다리지 않으면 첫 차례가 실패하고 5분 뒤에야 수집 (2026-11-12 시연 점검에서 발견)
 - SNS(네이버 블로그·카페): 1차에서 뺌 (2026-11-09). 측정해 보니 카페는 작성 날짜가 오지 않고 거르면 3% 만 남았고,
   블로그는 42% 가 같은 소식을 뉴스보다 8시간 늦게 다시 쓴 글이라 뉴스에 더하는 정보가 작았음. 댓글·커뮤니티는 robots.txt 가 막음
   → SNS_ENABLED=true 일 때만 1시간마다 따로 돎(오래 걸려도 뉴스 수집을 막지 않음). 이미 모은 SNS 글은 run.py 가 7일 뒤 지움
@@ -15,6 +17,8 @@ import threading
 import time
 from datetime import datetime, timedelta
 
+from sqlalchemy import text
+
 from hk_llm.core.config import KST
 from hk_llm.core.db import get_engine
 from hk_llm.core.util import get_logger
@@ -24,6 +28,8 @@ from hk_llm.steps.step5_summary import BATCH
 
 INTERVAL = 300  # 초
 EARLY_WAKE = 5  # 초. 정각 차례가 이만큼 일찍 시작해도 그 시의 차례로 봄
+DB_WAIT = 120  # 초. 시작할 때 DB 를 기다리는 최대 시간 (MariaDB 가 켜지는 데 보통 10~30초)
+DB_RETRY = 3  # 초. 그동안 다시 확인하는 간격
 log = get_logger(__name__)
 
 
@@ -37,6 +43,26 @@ def run_hour(now):
     return (now + timedelta(seconds=EARLY_WAKE)).replace(minute=0, second=0, microsecond=0)
 
 
+def wait_for_db(engine, limit=DB_WAIT, every=DB_RETRY):
+    """DB 가 SELECT 1 에 답할 때까지 기다림. 되면 True, limit 초가 지나면 False (그래도 루프는 시작 → 차례마다 다시 시도)"""
+    waited = 0
+    while True:
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            if waited:
+                log.info("DB 연결됨 (%d초 기다림)", waited)
+            return True
+        except Exception as e:
+            if waited >= limit:
+                log.warning("DB 를 %d초 기다렸지만 연결 안 됨, 그대로 시작: %s", waited, e)
+                return False
+            if not waited:
+                log.info("DB 가 아직 준비 안 됨, 최대 %d초 기다림", limit)
+            time.sleep(every)
+            waited += every
+
+
 def sns_enabled():
     """SNS 수집을 켤지. 기본 꺼짐 (1차 제외, 2026-11-09)"""
     return os.environ.get("SNS_ENABLED", "false").strip().lower() == "true"
@@ -48,6 +74,7 @@ def main(limit=BATCH):
     sns_hour = None
     sns_on = sns_enabled()
     log.info("자동 실행 시작 (SNS %s)", "켜짐" if sns_on else "꺼짐")
+    wait_for_db(engine)
     while True:
         hour = run_hour(datetime.now(KST))
         if sns_on and hour != sns_hour:

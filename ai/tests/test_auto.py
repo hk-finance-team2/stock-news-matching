@@ -48,6 +48,25 @@ def test_loop_daily_once_per_hour():
 
 
 
+def test_loop_waits_for_db():
+    """Docker 를 다시 켜면 수집기가 DB 보다 먼저 뜸 → 첫 차례 전에 DB 를 기다림 (11/12)"""
+    from hk_llm import loop
+
+    def engine_failing(n):  # 처음 n 번은 연결 거부, 그다음 성공
+        engine = mock.MagicMock()
+        engine.connect.side_effect = [ConnectionRefusedError("db 아직")] * n + [mock.MagicMock()]
+        return engine
+
+    with mock.patch.object(loop.time, "sleep") as sleep:
+        assert loop.wait_for_db(engine_failing(2), limit=120, every=3) is True
+        assert sleep.call_count == 2
+    with mock.patch.object(loop.time, "sleep") as sleep:  # 끝내 안 되면 정해진 시간만 기다리고 False (루프는 그대로 시작)
+        engine = mock.MagicMock()
+        engine.connect.side_effect = ConnectionRefusedError("db 꺼짐")
+        assert loop.wait_for_db(engine, limit=9, every=3) is False
+        assert sleep.call_count == 3
+
+
 def test_dart_document_text():
     from hk_llm.steps.dart import document_text
 
