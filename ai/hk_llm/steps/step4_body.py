@@ -22,7 +22,7 @@ from sqlalchemy import bindparam, text
 from hk_llm.core.config import KST, USER_AGENT
 from hk_llm.core.db import get_engine
 from hk_llm.core.press_policy import TITLE_ONLY, report_page_notice, restrict, title_only_presses
-from hk_llm.steps.rights import page_reservation, site_reservation
+from hk_llm.steps.rights import is_wire, notice_holder, page_reservation, site_reservation
 from hk_llm.steps.robots import allowed, crawl_delay, reachable
 from hk_llm.core.resilience import breaker
 from hk_llm.core.util import get_logger, retry
@@ -162,8 +162,12 @@ def fetch_bodies(engine=None, limit=BATCH):
             res = _get(r.url)
             html = res.content
             why = page_reservation(html, res.headers)  # 기사 끝 "AI 학습·활용 금지" 고지·TDMRep 표시 (rights.py)
-            if why:  # 이 기사는 본문을 저장하지 않음. 서로 다른 기사 2건이면 언론사 전체를 제목만으로
-                report_page_notice(r.press, r.article_id, why)
+            if why:  # 이 기사는 본문을 저장하지 않음. 그 언론사 자신의 고지가 서로 다른 기사 2건이면 언론사 전체를 제목만으로
+                holder = notice_holder(html)
+                if is_wire(r.press, holder):  # 다른 곳 기사를 실은 것(예: 연합 전재) → 이 기사만 건너뜀, 언론사 방침엔 안 셈
+                    why = f"{holder} 전재 기사 고지: {why}"
+                else:
+                    report_page_notice(r.press, r.article_id, why)
                 _update(engine, r.article_id, status="SKIPPED", error=f"AI 이용 거부 고지 → 본문 안 씀: {why}")
                 done["SKIPPED"] += 1
                 continue

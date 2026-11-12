@@ -43,6 +43,27 @@ META = re.compile(r"""<meta[^>]+name\s*=\s*["']tdm-reservation["'][^>]*content\s
 SIGNAL = re.compile(r"^\s*content-signal\s*:\s*(.+)$", re.I | re.M)
 
 
+HOLDER = re.compile(r"(?:저작권자\s*(?:\(c\)|ⓒ|©)?|ⓒ|©|\(c\))\s*([가-힣A-Za-z0-9]{2,20})", re.I)
+
+
+def notice_holder(html):
+    """기사 끝 AI 금지 고지에 적힌 저작권자 이름 (예: '<저작권자(c) 연합뉴스, …>' → '연합뉴스'). 고지가 없거나 이름이 없으면 None"""
+    text = html.decode("utf-8", "replace") if isinstance(html, bytes) else (html or "")
+    m = NOTICE.search(text)
+    h = HOLDER.search(m.group(0)) if m else None
+    return h.group(1) if h else None
+
+
+def is_wire(press, holder):
+    """고지의 저작권자가 그 언론사가 아니면 다른 곳 기사를 그대로 실은 것(전재, 예: 파이낸셜뉴스에 실린 연합뉴스 기사).
+    그 기사만 건너뛰고 언론사 전체 방침에는 세지 않음 (2026-11-11: 파이낸셜뉴스 지난 기사 10건 중 3건이 연합 전재였음).
+    '서울경제' ↔ '서울경제신문' 처럼 한쪽이 다른 쪽을 품으면 같은 곳으로 봄"""
+    if not press or not holder:
+        return False
+    p, h = press.replace(" ", ""), holder.replace(" ", "")
+    return p not in h and h not in p
+
+
 def page_reservation(html, headers=None):
     """기사 페이지 한 건에서 AI 이용 거부 표시를 찾음. 이유 문장 또는 None"""
     headers = headers or {}

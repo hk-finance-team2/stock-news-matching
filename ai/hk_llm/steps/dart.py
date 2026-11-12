@@ -209,9 +209,13 @@ PROMPT = ChatPromptTemplate.from_messages([
 
 
 def document_text(raw, rcept_no):
-    """document.xml 응답(zip)에서 본문 글자만. 본 문서는 파일 이름이 접수번호, 없으면 첫 파일"""
+    """document.xml 응답(zip)에서 본문 글자만. 본 문서는 파일 이름이 정확히 '접수번호.xml', 없으면 첫 파일
+    첨부 문서도 이름이 접수번호로 시작하고(예: 20260318001506_00761.xml) zip 안에서 본문보다 앞에 올 수 있음 →
+    '접수번호로 시작'으로 고르면 첨부를 읽음 (2026-11-11 현대제철 사업보고서에서 확인: 본문 7.5MB 대신 첨부 0.7MB)"""
     with zipfile.ZipFile(io.BytesIO(raw)) as z:
-        info = next((i for i in z.infolist() if i.filename.startswith(rcept_no)), z.infolist()[0])
+        files = z.infolist()
+        info = (next((i for i in files if i.filename == f"{rcept_no}.xml"), None)
+                or next((i for i in files if i.filename.startswith(rcept_no)), files[0]))
         if info.file_size > MAX_FILE:
             raise ValueError(f"공시 문서가 너무 큼: {info.file_size}")
         data = z.read(info)

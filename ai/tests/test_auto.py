@@ -62,6 +62,10 @@ def test_dart_document_text():
     assert document_text(zipped({"a00": b"<P>x</P>", "2026": utf8}), "2026") == "단일판매 공급계약 체결", "접수번호 파일을 읽음"
     euc = '<?xml version="1.0" encoding="euc-kr"?><P>유상증자 결정</P>'.encode("euc-kr")
     assert document_text(zipped({"other": euc}), "2026") == "유상증자 결정", "없으면 첫 파일, EUC-KR 도 읽음"
+    # 첨부(접수번호_00761)가 본문(접수번호)보다 앞에 있어도 본문을 읽음 (2026-11-11 현대제철 사업보고서)
+    main = "<P>본문 원재료 철광석</P>".encode()
+    assert document_text(zipped({"2026_00761": b"<P>attachment</P>", "2026_00760": b"<P>a2</P>", "2026": main}), "2026") \
+        == "본문 원재료 철광석", "첨부보다 본문"
 
 
 def test_dart_not_ready():

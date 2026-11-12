@@ -144,6 +144,39 @@ def test_body_fetch_stops_on_ai_notice():
         "고지가 있는 기사의 본문은 저장 안 함"
 
 
+def test_wire_article_notice_skips_only_that_article():
+    """파이낸셜뉴스가 연합뉴스 기사를 그대로 실음(전재) → 연합의 AI 금지 고지가 붙어 있음.
+    그 기사만 본문을 안 쓰고, 파이낸셜뉴스 전체를 제목만으로 바꾸지는 않음 (2026-11-11 지난 기사 10건 중 3건이 이런 기사)"""
+    from hk_llm.core import press_policy as pp
+    from hk_llm.core.resilience import Breaker
+    from hk_llm.steps import step4_body as s4
+    from hk_llm.steps.rights import is_wire, notice_holder
+
+    yna = "<p>(끝) <br>&lt;저작권자(c) 연합뉴스, 무단 전재-재배포, AI 학습 및 활용 금지&gt;</p>"
+    assert notice_holder(yna) == "연합뉴스"
+    assert notice_holder("<p>ⓒ 서울경제신문, 무단 전재-재배포, AI 학습 및 활용 금지</p>") == "서울경제신문"
+    assert is_wire("파이낸셜뉴스", "연합뉴스")
+    assert not is_wire("서울경제", "서울경제신문"), "이름이 조금 달라도 자기 고지"
+    assert not is_wire("연합뉴스", "연합뉴스") and not is_wire("전자신문", None), "저작권자를 못 읽으면 예전처럼 언론사 몫"
+
+    rows = [mock.Mock(article_id=i, url=f"https://www.fnnews.com/news/{i}", press="파이낸셜뉴스", retry_count=0) for i in (1, 2, 3)]
+    engine = mock.MagicMock()
+    engine.connect.return_value.__enter__.return_value.execute.return_value.all.return_value = rows
+    page = requests.Response()
+    page.status_code = 200
+    page._content = ("<div class='article-view__body'>본문 " * 50 + "</div>" + yna).encode()
+    updates = []
+    with _policy_file(), mock.patch.object(s4, "breaker", Breaker(pathlib.Path(tempfile.mkdtemp()) / "b.json")), \
+            mock.patch.object(s4, "reachable", return_value=True), mock.patch.object(s4, "allowed", return_value=True), \
+            mock.patch.object(s4, "crawl_delay", return_value=0), mock.patch.object(s4, "site_reservation", return_value=None), \
+            mock.patch.object(s4, "_get", return_value=page), \
+            mock.patch.object(s4, "_update", side_effect=lambda *a, **k: updates.append(k)):
+        s4.fetch_bodies(engine)
+        assert pp.policy("파이낸셜뉴스") == pp.FULL, "전재 기사 3건이어도 언론사 방침은 그대로"
+    assert [u["status"] for u in updates] == ["SKIPPED"] * 3 and all(u.get("body") is None for u in updates)
+    assert all("연합뉴스 전재" in u["error"] for u in updates)
+
+
 def test_body_fetch_site_signal_switches_press():
     from hk_llm.core import press_policy as pp
     from hk_llm.core.resilience import Breaker
