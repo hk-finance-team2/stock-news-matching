@@ -1,4 +1,4 @@
-"""1단계 (15번): 언론사 10곳의 RSS 14개에서 기사 목록 받기. 실행: python -m hk_llm.steps.step1_rss (ai 폴더에서) → 피드별 건수와 예시 출력
+"""1단계 (15번): 언론사 12곳의 RSS 16개에서 기사 목록 받기. 실행: python -m hk_llm.steps.step1_rss (ai 폴더에서) → 피드별 건수와 예시 출력
 
 돌려주는 값: Article 목록 (models.py)
 중복 제거(16번)·DB 저장(18번)은 여기서 하지 않는다.
@@ -33,6 +33,8 @@ FEEDS = {
     "블로터": ["https://cdn.bloter.net/rss/gns_allArticle.xml"],
     "시사저널e": ["https://cdn.sisajournal-e.com/rss/gns_allArticle.xml"],  # 조사표 ai/docs/조사/언론사_약관_조사_1112.md
     "인사이트코리아": ["https://cdn.insightkorea.co.kr/rss/gn_rss_allArticle.xml"],
+    "헤럴드경제": ["https://biz.heraldcorp.com/rss/google/finance"],  # 조사표 언론사_추가_조사_1112.md
+    "뉴시스": ["https://www.newsis.com/RSS/economy.xml"],
 }
 DC = "{http://purl.org/dc/elements/1.1/}"  # 연합뉴스 기자명은 <dc:creator>
 

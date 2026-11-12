@@ -39,6 +39,8 @@ BODY_XPATH = {
     "www.bloter.net": '//*[@id="article-view-content-div"]',  # 2026-11-12 기사 2건 확인 (1,719·2,065자)
     "www.sisajournal-e.com": '//*[@id="article-view-content-div"]',  # 2026-11-12 기사 1건 확인 (2,148자)
     "www.insightkorea.co.kr": '//*[@id="article-view-content-div"]',  # 2026-11-12 기사 1건 확인 (1,682자)
+    "biz.heraldcorp.com": '//article[@id="articleText"]',  # 2026-11-12 기사 2건 확인 (1,824·1,798자)
+    "www.newsis.com": '//*[@itemprop="articleBody"]',  # 2026-11-12 기사 2건 확인 (1,491·2,554자)
 }
 DROP = ".//figure | .//figcaption | .//aside | .//script | .//style | .//table"  # 사진 설명·광고·표는 요약에 방해
 TABLES_DROPPED = Counter()  # 사이트별 버린 표 수 (07: 표 손실 감시)

@@ -195,20 +195,21 @@ def test_body_fetch_site_signal_switches_press():
 
 
 def test_new_presses_have_policy_and_body_xpath():
-    """11/12 추가한 언론사: 방침이 FULL 로 적혀 있고(없으면 기본 TITLE_ONLY), 기사 주소의 본문 칸이 있고, 기사 끝 고지가 금지로 걸리지 않음.
-    규약·약관이 자동 수집이나 정보서비스를 금지하는 곳은 본문을 받지 않음 (11/12)"""
-    from hk_llm.core.press_policy import EXCLUDED, FULL, POLICY, TITLE_ONLY, excluded_presses, title_only_presses
+    """11/12 팀 기준: AI 를 직접 금지한 곳(기사 끝 AI 고지, 규약의 AI·크롤링 조항)만 막고 나머지는 본문 요약.
+    모든 RSS 언론사에 방침이 적혀 있고(없으면 기본 TITLE_ONLY), FULL 언론사는 기사 주소의 본문 칸이 있고, 옮겨 적은 고지가 금지로 걸리지 않음"""
+    from hk_llm.core.press_policy import EXCLUDED, FULL, POLICY, TITLE_ONLY, title_only_presses
     from hk_llm.steps.rights import page_reservation
     from hk_llm.steps.step1_rss import FEEDS
     from hk_llm.steps.step4_body import BODY_XPATH
 
-    assert set(FEEDS) <= set(POLICY)  # 모든 RSS 언론사의 방침을 확인해 적었는가
-    assert POLICY["한국경제"][0] == TITLE_ONLY and POLICY["파이낸셜뉴스"][0] == TITLE_ONLY
+    assert set(FEEDS) <= set(POLICY)
     assert POLICY["아주경제"][0] == EXCLUDED and "아주경제" not in FEEDS
-    assert {"한국경제", "파이낸셜뉴스", "아주경제"} <= set(title_only_presses()) and "아주경제" in excluded_presses()
-    assert POLICY["전자신문"][0] == TITLE_ONLY  # 규약 '임의적인 요약 금지'
-    for press, host in [("블로터", "www.bloter.net"), ("시사저널e", "www.sisajournal-e.com"), ("인사이트코리아", "www.insightkorea.co.kr")]:
-        rule, why = POLICY[press]
-        assert rule == FULL and host in BODY_XPATH, press
-        notice = why.split("'")[1]  # 옮겨 적은 실제 기사 끝 고지 → AI 금지로 오인하지 않아야 함
+    assert title_only_presses() == ["서울경제", "아주경제", "연합뉴스", "연합인포맥스"]
+    hosts = {"한국경제": "www.hankyung.com", "파이낸셜뉴스": "www.fnnews.com", "전자신문": "www.etnews.com",
+             "비즈워치": "news.bizwatch.co.kr", "블로터": "www.bloter.net", "시사저널e": "www.sisajournal-e.com",
+             "인사이트코리아": "www.insightkorea.co.kr", "헤럴드경제": "biz.heraldcorp.com", "뉴시스": "www.newsis.com"}
+    for press, host in hosts.items():
+        assert POLICY[press][0] == FULL and press in FEEDS and host in BODY_XPATH, press
+    for press in ["블로터", "시사저널e"]:
+        notice = POLICY[press][1].split("'")[1]
         assert not page_reservation(f"<div>본문</div><p>{notice}</p>".encode()), press
