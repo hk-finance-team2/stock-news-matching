@@ -205,6 +205,24 @@ class StockApiTest extends ApiTestSupport {
                 .andExpect(jsonPath("$.sentiment.neutral").value(100));
     }
 
+    @Test
+    void 원문을_아직_요약하지_않은_공시는_감성_비율에서_빠진다() throws Exception {
+        // AI 가 공시를 저장하면 원문 요약 전에는 감성 칸에 기본값 NEUTRAL 이 들어감 → '판단해서 중립'이 아님 (11/12)
+        link(insertArticle("좋은 소식", "NEWS", "DONE", today(1)), KIA, "POSITIVE", null, true);
+        long pending = insertArticle("기아 주요사항보고서", "NEWS", "DONE", today(2));
+        jdbc.update("UPDATE article SET channel = 'DART', model = NULL, summarized_at = NULL WHERE article_id = ?", pending);
+        link(pending, KIA, "NEUTRAL", null, true);
+        long read = insertArticle("기아 단일판매ㆍ공급계약체결", "NEWS", "DONE", today(3));
+        jdbc.update("UPDATE article SET channel = 'DART' WHERE article_id = ?", read);  // 원문을 읽고 판단한 공시는 셈
+        link(read, KIA, "NEGATIVE", null, true);
+
+        mvc.perform(get("/api/stocks/{code}/summary", KIA))
+                .andExpect(jsonPath("$.sentiment.articleCount").value(2))
+                .andExpect(jsonPath("$.sentiment.positive").value(50))
+                .andExpect(jsonPath("$.sentiment.negative").value(50))
+                .andExpect(jsonPath("$.sentiment.neutral").value(0));
+    }
+
     /** AI 의 step7_group.save_groups() 가 하는 일: 묶음의 대표 기사 번호를 (기사, 종목) 줄에 넣음 */
     private void group(long representative, String stockCode, long... articleIds) {
         for (long id : articleIds) {
