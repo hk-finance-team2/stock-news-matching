@@ -6,6 +6,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -125,18 +129,41 @@ public class QuoteController {
         QuoteService service = service();
         List<String> list = Arrays.stream(codes.split(",")).map(String::strip).filter(s -> !s.isEmpty())
                 .distinct().limit(MAX_CODES).toList();
+        List<String> known = list.stream().filter(stockMapper::existsByCode).toList();
+        if (known.isEmpty()) {
+            return ListResponse.of(List.of());
+        }
+        // 종목들을 동시에 물음 (11/13: 한 종목 답을 받고 다음 종목을 물어 KIS 답 약 0.5초 × 10종목 = 5초쯤 걸렸음)
+        // KIS로 나가는 간격은 줄 서기(KisRateLimiter)가 그대로 지켜서 한도는 같음. 답은 보낸 순서대로
+        // 일꾼은 보통 스레드: 줄 서기가 synchronized 안에서 잠들어 가상 스레드는 바닥 스레드를 붙잡음(Java 21)
         List<QuoteResponse> out = new ArrayList<>();
-        for (String code : list) {
-            if (!stockMapper.existsByCode(code)) {
-                continue;
+        try (ExecutorService pool = Executors.newFixedThreadPool(known.size())) {
+            List<Future<QuoteResponse>> futures = known.stream().map(code -> pool.submit(() -> priceOrNull(service, code))).toList();
+            for (Future<QuoteResponse> f : futures) {
+                QuoteResponse q = f.get();
+                if (q != null) {
+                    out.add(q);
+                }
             }
-            try {
-                out.add(service.price(code));
-            } catch (KisApiException e) {
-                log.warn("시세 조회 실패 {}: {}", code, e.getMessage());   // 한 종목이 실패해도 나머지는 보여 줌
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (ExecutionException e) {
+            if (e.getCause() instanceof RuntimeException re) {
+                throw re;
             }
+            throw new IllegalStateException(e.getCause());
         }
         return ListResponse.of(out);
+    }
+
+    /** 한 종목이 실패해도 나머지는 보여 줌 (실패한 종목은 빠짐) */
+    private QuoteResponse priceOrNull(QuoteService service, String code) {
+        try {
+            return service.price(code);
+        } catch (KisApiException e) {
+            log.warn("시세 조회 실패 {}: {}", code, e.getMessage());
+            return null;
+        }
     }
 
     @Operation(summary = "차트 (봉)",
