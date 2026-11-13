@@ -108,6 +108,20 @@ def backfill_day(engine, press, day, names, count_only=False):
 
 REFETCH_PRESSES = ("한국경제",)
 REFETCH_BATCH = 20
+MAX_WAITS = 3  # 하루 처리 중 차단기를 기다리는 최대 횟수
+MAX_WAIT_SECONDS = 20 * 60
+BLOCK_HINTS = ("403", "429", "401", "Forbidden", "Too Many")  # 이 이유로 쉬는 중이면 진짜 막힘 신호 → 기다리지 않고 멈춤
+
+
+def _breaker_wait(host):
+    """차단기가 '연결 오류'로 쉬는 중이면 남은 초(최대 20분), 아니면 0. 403·429 같은 막힘 신호면 0 (기다리지 않음)"""
+    from hk_llm.core.resilience import breaker
+
+    s = breaker._load().get(host) or {}
+    until, reason = s.get("until"), str(s.get("reason") or "")
+    if not until or any(h in reason for h in BLOCK_HINTS):
+        return 0
+    return int(min(MAX_WAIT_SECONDS, max(0, until - time.time()) + 5))
 PACE = 3.0  # 다시 받기 때 기사 1건당 최소 초
 
 
@@ -133,16 +147,20 @@ def _refetch_day(engine, day, count_only, summarize_limit):
     from hk_llm.steps.step4_body import fetch_bodies
 
     # 대상 = 요약이 없는 한경 기사 중 제목만 연결된 것(DONE·NO_STOCK) + 지난번에 멈춰 남은 것(LISTED·FETCHED)
-    where = """press IN :p AND summary IS NULL AND status IN ('DONE', 'NO_STOCK', 'LISTED', 'FETCHED')
-               AND source_type = 'NEWS' AND published_at >= :s AND published_at < :e"""
-    args = {"p": list(REFETCH_PRESSES), "s": day, "e": day + timedelta(days=1)}
+    #        + 본문이 지워져 요약에 실패한 것(FAILED, 본문 없음). '사전 종목 이름 없음'으로 거른 기사는 다시 받아도 또 걸러지니 뺌
+    where = """press IN :p AND summary IS NULL AND source_type = 'NEWS' AND published_at >= :s AND published_at < :e
+               AND (status IN ('DONE', 'NO_STOCK', 'LISTED', 'FETCHED') OR (status = 'FAILED' AND body IS NULL))
+               AND NOT (status = 'NO_STOCK' AND last_error LIKE :prefilter)"""
+    args = {"p": list(REFETCH_PRESSES), "s": day, "e": day + timedelta(days=1), "prefilter": "LLM 전 거르기%"}
     with engine.begin() as conn:
         n = conn.execute(text(f"SELECT COUNT(*) FROM article WHERE {where}").bindparams(bindparam("p", expanding=True)), args).scalar()
         if count_only or not n:
             return n, 0
-        conn.execute(text(f"""UPDATE article SET status = 'LISTED', last_error = NULL, retry_count = 0
-                              WHERE {where} AND status IN ('DONE', 'NO_STOCK')""").bindparams(bindparam("p", expanding=True)), args)
-    got = bad = 0
+        # 수집 시각을 지금으로: 본문 7일 보관(purge_old_bodies)은 collected_at 기준이라, 옛 시각 그대로면 받자마자 다음 5분 안에 지워짐
+        # (11/12 밤: 2,217건 받았는데 907건이 요약 전에 지워짐). 규칙은 그대로 두고 '다시 받은 날부터 7일'로 셈
+        conn.execute(text(f"""UPDATE article SET status = 'LISTED', last_error = NULL, retry_count = 0, collected_at = NOW()
+                              WHERE {where} AND (status IN ('DONE', 'NO_STOCK') OR body IS NULL)""").bindparams(bindparam("p", expanding=True)), args)
+    got = bad = waits = 0
     # 천천히: 20건씩 받고 쉬어서 기사 1건에 약 PACE 초 (평소 수집은 하루 약 200건. 비즈워치는 빠르게 약 1,700건 받은 뒤
     # 우리 봇을 막았음 — 같은 일을 피하려고 4단계 기본 간격 1초보다 느리게). 막히는 신호(본문 0건 + 실패·재시도)가 두 번이면 멈춤
     stopped = False
@@ -154,6 +172,14 @@ def _refetch_day(engine, day, count_only, summarize_limit):
         if not any(done.get(k, 0) for k in ("FETCHED", "SKIPPED", "RETRY", "FAILED")):
             break
         if done.get("FETCHED", 0) == 0 and done.get("RETRY", 0) + done.get("FAILED", 0) >= 3:
+            # 우리 쪽 차단기가 연결 오류(인터넷 끊김 등)로 '쉬는 중'이면 막힌 게 아님 → 쉬는 시간이 끝날 때까지 기다렸다 계속
+            # (11/12 17:52·18:11: 학원 인터넷이 끊겨 차단기가 열렸는데 '차단 가능'으로 멈췄음. 같은 시각 수집기는 한경 본문을 정상으로 받음)
+            wait = _breaker_wait("www.hankyung.com")
+            if wait and waits < MAX_WAITS:
+                waits += 1
+                log.info("한경 차단기가 연결 오류로 쉬는 중 → %d초 기다렸다 계속 (%d/%d)", wait, waits, MAX_WAITS)
+                time.sleep(wait)
+                continue
             bad += 1
             if bad >= 2:
                 log.warning("본문이 연속으로 안 받아짐(차단 가능) → 다시 받기 멈춤. 남은 기사는 LISTED 로 남음: %s", done)
