@@ -33,6 +33,8 @@ public enum ErrorCode {
     DUPLICATE_LOGIN_ID(HttpStatus.CONFLICT, "이미 사용 중인 아이디입니다."),
     // 아이디가 틀렸는지 비밀번호가 틀렸는지 알려 주지 않음 (아이디 존재 여부를 숨김)
     INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED, "아이디 또는 비밀번호가 올바르지 않습니다."),
+    // 10분 안에 5번 틀리면 10분 동안 (LoginAttemptLimiter)
+    TOO_MANY_LOGIN_ATTEMPTS(HttpStatus.TOO_MANY_REQUESTS, "로그인을 여러 번 실패했습니다. 10분 뒤에 다시 시도해 주세요."),
 
     // 관심 종목
     ALREADY_IN_WATCHLIST(HttpStatus.CONFLICT, "이미 관심 종목에 있습니다."),

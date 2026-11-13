@@ -41,7 +41,7 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 | | 방식 | 주소 | 설명 |
 |---|---|---|---|
 | 🔓 | POST | `/api/auth/signup` | 회원가입 `{ loginId, password }` · 아이디 영문 소문자·숫자 4~20자, 비밀번호 8~64자 |
-| 🔓 | POST | `/api/auth/login` | 로그인 → `{ accessToken, tokenType, expiresIn }` |
+| 🔓 | POST | `/api/auth/login` | 로그인 → `{ accessToken, tokenType, expiresIn }`. 같은 아이디·같은 곳에서 10분 안에 5번 틀리면 10분 동안 `429 TOO_MANY_LOGIN_ATTEMPTS` |
 | 🔒 | GET | `/api/auth/me` | 내 정보 `{ userId, loginId, role }` |
 
 ### 종목
@@ -312,6 +312,7 @@ Swagger에서는 오른쪽 위 **Authorize**에 토큰을 넣으면 로그인이
 | 400 | `INVALID_PAGE` | page·size 범위 밖 | 아주 큰 page 는 오류 없이 빈 `items`
 | 401 | `UNAUTHORIZED` | 로그인 필요한 API에 토큰 없음·만료·위조 |
 | 401 | `INVALID_CREDENTIALS` | 로그인 실패 (아이디 또는 비밀번호 틀림) |
+| 429 | `TOO_MANY_LOGIN_ATTEMPTS` | 로그인을 10분 안에 5번 틀림 → 10분 동안 맞는 비밀번호도 막힘 (화면: "10분 뒤에 다시" 안내) |
 | 403 | `FORBIDDEN` | 권한 없음 |
 | 403 | `NOT_POST_OWNER` / `NOT_COMMENT_OWNER` | 남의 글·댓글 삭제 |
 | 404 | `NOT_FOUND` | 없는 주소 |
