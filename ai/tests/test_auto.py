@@ -126,6 +126,61 @@ def test_dart_not_ready():
             pass
 
 
+def test_disclosure_evidence():
+    # 11/13: 공시도 근거 문장 (뉴스와 맞춤). LLM 이 옮긴 문장이 원문에 글자 그대로 있을 때만 저장 — 지어낸 문장을 원문처럼 보이지 않게
+    from hk_llm.steps.dart import pick_evidence
+
+    body = "1. 계약 내용   반도체 장비 공급 2. 계약금액(원) 52,300,000,000 3. 최근 매출액 대비(%) 12.5"
+    assert pick_evidence("2. 계약금액(원) 52,300,000,000", body) == "2. 계약금액(원) 52,300,000,000"
+    assert pick_evidence("계약 내용 반도체 장비 공급", body), "원문의 띄어쓰기가 여러 칸이어도 맞춤"
+    assert pick_evidence("“3. 최근 매출액 대비(%) 12.5”", body), "LLM 이 붙인 따옴표는 뗌"
+    assert pick_evidence("계약금액은 523억원이다", body) is None, "원문에 없는 문장(바꿔 쓴 것)은 버림"
+    assert pick_evidence("12.5", body) is None, "숫자 하나는 근거로 안 봄"
+    assert pick_evidence("", body) is None and pick_evidence(None, body) is None
+
+
+def test_disclosure_evidence_db():
+    # 저장까지: 시험 공시 1건을 넣고 요약(가짜 LLM) 뒤 article_stock.evidence 를 봄. 다른 진짜 공시는 '원문 아직 없음'으로 돌려 안 건드림
+    from datetime import datetime
+    from types import SimpleNamespace
+
+    from sqlalchemy import text
+
+    from hk_llm.core.config import KST
+    from hk_llm.core.db import get_engine, to_db
+    from hk_llm.steps import dart
+
+    rcp = "19990104000001"
+    url = f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={rcp}"
+    body = "단일판매ㆍ공급계약체결 1. 계약금액(원) 52,300,000,000 2. 최근 매출액 대비(%) 12.5"
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM article WHERE url_key = :k"), {"k": url})
+        aid = conn.execute(text("""INSERT INTO article (url_key, url, press, title, published_at, status, summary, sentiment,
+                                                        source_type, channel)
+                                   VALUES (:k, :k, '전자공시', '시험 공급계약', :at, 'DONE', '시험 공급계약', 'NEUTRAL', 'NEWS', 'DART')"""),
+                           {"k": url, "at": to_db(datetime.now(KST))}).lastrowid
+        conn.execute(text("""INSERT INTO article_stock (article_id, stock_code, is_main, sentiment, reason, match_type)
+                             VALUES (:id, '005930', TRUE, 'NEUTRAL', '시험', 'DIRECT')"""), {"id": aid})
+
+    def fetch(key, no):
+        if no != rcp:
+            raise dart.NotReady(no)  # 진짜 공시는 건드리지 않음
+        return body
+
+    answer = SimpleNamespace(summary="요약", evidence="1. 계약금액(원) 52,300,000,000", sentiment="POSITIVE", reason="계약")
+    try:
+        with mock.patch.object(dart, "fetch_document", side_effect=fetch),                 mock.patch.object(dart, "summarize_one", return_value=answer):
+            assert dart.summarize_disclosures(engine, key="x") == 1
+        with engine.connect() as conn:
+            ev = conn.execute(text("SELECT evidence FROM article_stock WHERE article_id = :id"), {"id": aid}).scalar()
+        assert ev == "1. 계약금액(원) 52,300,000,000", ev
+    finally:
+        with engine.begin() as conn:
+            conn.execute(text("DELETE FROM article_stock WHERE article_id = :id"), {"id": aid})
+            conn.execute(text("DELETE FROM article WHERE article_id = :id"), {"id": aid})
+
+
 def test_sns_rules():
     from hk_llm.core.config import KST
     from hk_llm.steps import sns
