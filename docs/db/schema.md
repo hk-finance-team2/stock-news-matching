@@ -349,9 +349,9 @@ erDiagram
 | 5 | title | VARCHAR(500) | | Y | | 제목 |
 | 6 | reporter | VARCHAR(100) | | N | | 기자명 |
 | 7 | description | TEXT | | N | | RSS 짧은 요약문 |
-| 8 | body | MEDIUMTEXT | | N | | 정제 본문 (LLM 요약용). 7일 후 NULL로 지움. **백엔드·화면에서는 조회하지 않음** |
+| 8 | body | MEDIUMTEXT | | N | | 정제 본문 (LLM 요약용). `collected_at` 7일 후 NULL로 지움. **백엔드·화면에서는 조회하지 않음** |
 | 9 | published_at | DATETIME | IDX | Y | | 발행 시각 (없으면 수집 시각). 그래프 기준 |
-| 10 | collected_at | DATETIME | | Y | CURRENT_TIMESTAMP | 수집 시각 |
+| 10 | collected_at | DATETIME | | Y | CURRENT_TIMESTAMP | 수집 시각. **본문 7일 보관의 기준이기도 함** (아래 주의) |
 | 11 | status | VARCHAR(20) | CHECK, IDX | Y | 'LISTED' | 처리 상태 (아래) |
 | 12 | retry_count | TINYINT | | Y | 0 | 실패 재시도 횟수 (3번 넘으면 FAILED) |
 | 13 | last_error | VARCHAR(1000) | | N | | 마지막 오류 |
@@ -381,6 +381,12 @@ erDiagram
 
 - 버린 기사(`FAILED`·`SKIPPED`·`NO_STOCK`)도 행은 지우지 않음. 지우면 다시 받아서 다시 요약함 (비용 낭비) 예외: SNS 글(`source_type = 'SNS'`)은 모은 지 7일 뒤 행을 지움 (네이버 약관, `decisions.md`)
 - **백엔드는 `status = 'DONE'`인 기사만 화면에 보여 주고, `body`는 조회하지 않음**
+- **주의 (11/13): `collected_at` 은 두 가지 뜻을 같이 짐** — "처음 받은 시각"이면서 "본문 7일 보관(`purge_old_bodies`)의 기준"
+  - 옛 기사의 본문을 **다시** 받는 기능은 `collected_at` 도 지금으로 바꿔야 함. 안 그러면 다음 5분 안에 본문이 지워짐 (11/12 지난 한경 다시 받기에서 2,217건 중 907건이 요약 전에 지워짐 → `backfill.py` 에서 고침, `tests/test_backfill.py`)
+  - 데이터 상태(F-16) "뉴스 마지막 수집"은 `MAX(collected_at)` 이라, 다시 받기를 돌리면 그 시각으로 보임 (실제로 그때 받은 것이라 틀린 정보는 아님. 수집기가 정상인지는 `collect_run` 의 `last_success_at` 으로 봄)
+- **주의: 본문 받기(4단계)는 기본으로 "어제 이후" 기사만** (`fetch_bodies` 의 `since`). 쌓인 옛 기사에 돈·요청을 쓰지 않으려는 것인데,
+  그래서 수집기가 하루 넘게 꺼져 있었거나 새 언론사 RSS 에 며칠 전 기사가 섞이면 그 기사는 `LISTED` 로 남고 화면에 안 나옴
+  (11/13 시사저널e·헤럴드경제 29건 — 직접 한 번 받아 처리). 확인: `SELECT press, COUNT(*) FROM article WHERE status = 'LISTED' GROUP BY press`
 - `companies` (V7): AI 요약 단계에서 LLM이 뽑은 "회사 이름 + 회사별 감성·이유". 매칭 단계가 이것을 종목코드로 바꿔 `article_stock`에 저장
   - 예: `[{"name": "포스코퓨처엠", "is_main": true, "sentiment": "POSITIVE", "reason": "..."}]` (JSON 안의 키 이름은 AI 파트가 정함)
   - MariaDB의 JSON은 `LONGTEXT` + `CHECK (json_valid(companies))`. 깨진 JSON은 DB가 거부
