@@ -52,6 +52,14 @@ services:
       db:
         condition: service_healthy
     restart: unless-stopped
+    # 헬스체크 (11/12): 30초마다 /actuator/health 가 UP 인지 확인 → docker ps 에 (healthy)/(unhealthy) 로 보임
+    # 서버가 켜지는 데 시간이 걸려 처음 60초는 실패를 세지 않음. 런타임 이미지(eclipse-temurin:21-jre)에 curl 있음
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
 
   # ----- AI (profile: ai, full) — 데이터 담당 PC·시연 PC만 -----
   ai:

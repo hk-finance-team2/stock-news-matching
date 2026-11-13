@@ -2930,7 +2930,7 @@ export default function DashboardPageV7() {
           <div className="content-card" ref={homeFeedRef}>
             {/* [V7] A5: 목록 카드 상단에 얇은 한 줄 N-05 안내 배너 유지 (문구 축소/삭제 금지) */}
             <div className="llm-notice feed-top-banner">
-              🤖 안내(N-05): AI 요약·기사 내용 판단은 투자 권유나 주가 예측이 아니며 틀릴 수 있습니다. 원문과 공시를 꼭 확인해 주세요.
+              🤖 안내: AI 요약·기사 내용 판단은 투자 권유나 주가 예측이 아니며 틀릴 수 있습니다. 원문과 공시를 꼭 확인해 주세요.
             </div>
 
             <div className="card-header">

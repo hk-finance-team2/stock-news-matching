@@ -79,10 +79,11 @@ def decide(title, names, blocked):
 
 
 def purge_ai_results(engine, presses):
-    """정책이 바뀌기 전에 만든 본문·AI 결과를 지우고 다시 처리하게 LISTED 로 되돌림. 지운 건수"""
+    """정책이 바뀌기 전에 만든 본문·AI 결과를 지우고 다시 처리하게 LISTED 로 되돌림. 지운 건수
+    RSS 뿐 아니라 지난 기사 받기(SITEMAP, 11/02 한경 사이트맵)로 모은 기사도 같은 언론사면 같이 (11/12)"""
     sql = text("""UPDATE article SET body = NULL, summary = NULL, keywords = NULL, sentiment = NULL, companies = NULL,
                          model = NULL, summarized_at = NULL, status = 'LISTED', last_error = NULL, retry_count = 0
-                  WHERE channel = 'RSS' AND press IN :p
+                  WHERE channel IN ('RSS', 'SITEMAP') AND press IN :p
                     AND (body IS NOT NULL OR summary IS NOT NULL OR companies IS NOT NULL OR model IS NOT NULL
                          OR status IN ('FETCHED', 'SUMMARIZED'))""").bindparams(bindparam("p", expanding=True))
     with engine.begin() as conn:
@@ -96,7 +97,7 @@ def link_title_only(engine=None, redo=False):
     purged = purge_ai_results(engine, presses)
     names, _, _ = load_dictionary(engine)
     blocked = blocked_names(engine)
-    sql = text("""SELECT article_id, title FROM article WHERE channel = 'RSS' AND press IN :p
+    sql = text("""SELECT article_id, title FROM article WHERE channel IN ('RSS', 'SITEMAP') AND press IN :p
                   AND status IN :st""").bindparams(bindparam("p", expanding=True), bindparam("st", expanding=True))
     statuses = ["LISTED", "SKIPPED", "FAILED"] + (["DONE", "NO_STOCK"] if redo else [])
     with engine.connect() as conn:

@@ -36,6 +36,11 @@ BODY_XPATH = {
     "www.etnews.com": '//*[@itemprop="articleBody"]',
     "news.einfomax.co.kr": '//*[@itemprop="articleBody"]',
     "news.bizwatch.co.kr": '//*[@itemprop="articleBody"]',
+    "www.bloter.net": '//*[@id="article-view-content-div"]',  # 2026-11-12 기사 2건 확인 (1,719·2,065자)
+    "www.sisajournal-e.com": '//*[@id="article-view-content-div"]',  # 2026-11-12 기사 1건 확인 (2,148자)
+    "www.insightkorea.co.kr": '//*[@id="article-view-content-div"]',  # 2026-11-12 기사 1건 확인 (1,682자)
+    "biz.heraldcorp.com": '//article[@id="articleText"]',  # 2026-11-12 기사 2건 확인 (1,824·1,798자)
+    "www.newsis.com": '//*[@itemprop="articleBody"]',  # 2026-11-12 기사 2건 확인 (1,491·2,554자)
 }
 DROP = ".//figure | .//figcaption | .//aside | .//script | .//style | .//table"  # 사진 설명·광고·표는 요약에 방해
 TABLES_DROPPED = Counter()  # 사이트별 버린 표 수 (07: 표 손실 감시)
@@ -115,17 +120,21 @@ def _get(url):
     return retry(lambda: requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=15))
 
 
-def fetch_bodies(engine=None, limit=BATCH):
-    since = datetime.now(KST).date() - timedelta(days=1)  # 어제 이후만. 요약 대상이 아닌 옛 기사는 언론사에 요청하지 않음
+def fetch_bodies(engine=None, limit=BATCH, since=None, only=None):
+    # 어제 이후만. 요약 대상이 아닌 옛 기사는 언론사에 요청하지 않음 (지난 기사 다시 받기는 backfill.py --refetch 가 since 를 넘김)
+    since = since or datetime.now(KST).date() - timedelta(days=1)
+    # only: 이 언론사만 (지난 기사 다시 받기용. 없으면 전부 — 다른 언론사의 밀린 기사가 앞을 막지 않게)
+    only_sql = " AND press IN :only" if only else ""
     engine = engine or get_engine()
     with engine.connect() as conn:
         # 본문을 쓰지 않는 언론사(press_policy TITLE_ONLY)는 요청 자체를 안 보냄 → title_only.py 가 제목으로 처리
         # 밀렸을 때 실제로 최근에 나온 기사부터 (작성 시각순). 기사 번호순이면 RSS 를 피드 순서대로 저장해서 뒤에 저장된 언론사만 먼저 처리됨 (2026-11-10 지승현 지적)
         rows = conn.execute(text("""SELECT article_id, url, press, retry_count FROM article
                                     WHERE status = 'LISTED' AND source_type = 'NEWS' AND published_at >= :since
-                                      AND press NOT IN :skip
-                                    ORDER BY published_at DESC, article_id DESC LIMIT :n""").bindparams(bindparam("skip", expanding=True)),
-                            {"since": since, "n": limit, "skip": title_only_presses()}).all()
+                                      AND press NOT IN :skip""" + only_sql + """
+                                    ORDER BY published_at DESC, article_id DESC LIMIT :n""").bindparams(
+                                bindparam("skip", expanding=True), *([bindparam("only", expanding=True)] if only else [])),
+                            {"since": since, "n": limit, "skip": title_only_presses(), **({"only": list(only)} if only else {})}).all()
     done = {"FETCHED": 0, "SKIPPED": 0, "RETRY": 0, "FAILED": 0}
     last_hit = {}  # 사이트별 마지막 요청 시각
     ok, bad = Counter(), Counter()  # 사이트별 본문 성공·실패

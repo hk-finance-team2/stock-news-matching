@@ -18,9 +18,15 @@ resilience.breaker.path = pathlib.Path(tempfile.mkdtemp()) / "breaker_state.json
 from hk_llm.core import press_policy  # noqa: E402
 
 press_policy.OVERRIDE_FILE = pathlib.Path(tempfile.mkdtemp()) / "press_override.json"  # 언론사 방침 바꿈도 (진짜 방침을 안 바꾸게)
+from hk_llm.steps import step5_summary  # noqa: E402
+
+# LLM 비용도 진짜 DB 의 오늘 금액에 더하지 않게 임시 파일로 (DB 쪽은 test_llm_usage_db 가 지난 날짜로 따로 시험)
+step5_summary.USAGE_STORE = "file"
+step5_summary.USAGE_FILE = pathlib.Path(tempfile.mkdtemp()) / "llm_usage.json"
 
 # python -m tests offline: DB·인터넷이 필요한 시험을 뺌 (CI 용)
-NEEDS_NETWORK = {"test_step3_save", "test_sns_db", "test_robots"}
+NEEDS_NETWORK = {"test_step3_save", "test_sns_db", "test_robots", "test_llm_usage_db", "test_refetch_db",
+                 "test_refetch_waits_for_connection_breaker"}
 offline = "offline" in sys.argv
 failed = total = 0
 for path in sorted(pathlib.Path(__file__).parent.glob("test_*.py")):

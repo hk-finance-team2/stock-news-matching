@@ -353,3 +353,15 @@ def test_util_retry():
         raise AssertionError("404 는 예외가 나야 함")
     except requests.HTTPError:
         assert len(calls) == 1, "404 는 다시 해도 같으니 재시도 안 함"
+
+
+def test_rss_skips_foreign_language_titles():
+    """인사이트코리아가 같은 기사의 중국어판을 RSS 에 같이 내서 목록에 중국어 제목이 나옴 (11/12 QA) → 한글 없는 제목은 뺌"""
+    from hk_llm.steps.step1_rss import parse
+    xml = ("<rss><channel>"
+           "<item><title>삼성전자, 3분기 영업이익 증가</title><link>https://a.example/1</link></item>"
+           "<item><title>三星电子第三季度营业利润增长</title><link>https://a.example/2</link></item>"
+           "<item><title>SK hynix HBM 공급 확대</title><link>https://a.example/3</link></item>"
+           "</channel></rss>")
+    titles = [a.title for a in parse(xml, "인사이트코리아")]
+    assert titles == ["삼성전자, 3분기 영업이익 증가", "SK hynix HBM 공급 확대"]

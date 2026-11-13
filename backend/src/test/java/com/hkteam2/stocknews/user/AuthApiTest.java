@@ -75,6 +75,22 @@ class AuthApiTest extends ApiTestSupport {
     }
 
     @Test
+    void 다섯_번_틀리면_맞는_비밀번호도_429() throws Exception {
+        tokenOf("zzauth06");
+
+        for (int i = 0; i < LoginAttemptLimiter.MAX_FAILURES; i++) {
+            mvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+                            .content(loginJson("zzauth06", "wrongpassword")))
+                    .andExpect(status().isUnauthorized());
+        }
+        // 막힌 동안은 비밀번호를 보지 않음
+        mvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+                        .content(loginJson("zzauth06", PASSWORD)))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value("TOO_MANY_LOGIN_ATTEMPTS"));
+    }
+
+    @Test
     void 토큰이_없거나_위조면_401() throws Exception {
         mvc.perform(get("/api/auth/me"))
                 .andExpect(status().isUnauthorized())

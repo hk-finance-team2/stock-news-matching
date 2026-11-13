@@ -33,7 +33,12 @@ MAX_CHARS = 3000  # ponytail: 본문 앞 3,000자만 (한글 약 2,000토큰). �
 BATCH = 200  # 1번 실행에 최대 200건 (약 $0.13)
 MAX_TRIES = 3
 PRICE_IN, PRICE_OUT = 0.20 / 1_000_000, 1.25 / 1_000_000  # 달러/토큰. 200건 실측(입력 348,662·출력 49,042 = $0.1310)에 맞는 값, 캐시 할인 안 침
-USAGE_FILE = LOG_DIR / "llm_usage.json"  # 날짜별 토큰·추정 비용 (Git 제외). 재시작해도 오늘 쓴 금액을 기억
+USAGE_FILE = LOG_DIR / "llm_usage.json"  # DB 에 닿지 않을 때만 쓰는 예비 기록. 날짜별 토큰·추정 비용 (Git 제외). 재시작해도 오늘 쓴 금액을 기억
+# 11/13: 하루 비용은 DB 표 llm_usage_daily(V16) 에서 셈 → 수집기 컨테이너·내 PC 실행이 같은 상한을 나눠 씀
+# (전에는 각자 파일에 적어 $2 상한이 따로 걸림: 11/12 내 PC $1.99 + 수집기 따로). 시험은 tests/__main__.py 가 "file" 로 바꿈
+USAGE_STORE = "db"  # "file" 이면 예전처럼 파일로만 셈
+_usage_engine = None
+_db_warned = False
 DAILY_LIMIT = 2.0
 _usage_lock = threading.Lock()
 
@@ -114,6 +119,42 @@ PROMPT = ChatPromptTemplate.from_messages([
 ])
 
 
+def _today():
+    return datetime.now(KST).date()
+
+
+def _engine():
+    global _usage_engine
+    if _usage_engine is None:
+        _usage_engine = get_engine()
+    return _usage_engine
+
+
+def _db_failed(e):
+    """DB 에 못 쓰면 파일로 (LLM 답을 버리거나 수집을 멈추지 않음). 경고는 한 번만"""
+    global _db_warned
+    if not _db_warned:
+        log.warning("LLM 비용을 DB 에 못 셈 → 이 실행은 파일(%s)로 셈: %s", USAGE_FILE.name, e)
+        _db_warned = True
+
+
+def _db_spent(day):
+    with _engine().connect() as conn:
+        v = conn.execute(text("SELECT usd FROM llm_usage_daily WHERE usage_date = :d"), {"d": day}).scalar()
+    return float(v or 0)
+
+
+def _db_add(day, tokens_in, tokens_out, usd):
+    # 더하기를 DB 가 한 번에 함 → 두 곳이 동시에 써도 빠지지 않음
+    with _engine().begin() as conn:
+        conn.execute(text("""INSERT INTO llm_usage_daily (usage_date, input_tokens, output_tokens, usd)
+                             VALUES (:d, :i, :o, :u)
+                             ON DUPLICATE KEY UPDATE input_tokens = input_tokens + VALUES(input_tokens),
+                                                     output_tokens = output_tokens + VALUES(output_tokens),
+                                                     usd = usd + VALUES(usd)"""),
+                     {"d": day, "i": tokens_in, "o": tokens_out, "u": usd})
+
+
 def _read_usage():
     try:
         return json.loads(USAGE_FILE.read_text(encoding="utf-8"))
@@ -122,8 +163,13 @@ def _read_usage():
 
 
 def spent_today():
-    """오늘 추정 비용(달러)"""
-    return _read_usage().get(datetime.now(KST).date().isoformat(), {}).get("usd", 0.0)
+    """오늘 추정 비용(달러). DB 가 기본, 안 되면 파일"""
+    if USAGE_STORE == "db":
+        try:
+            return _db_spent(_today())
+        except Exception as e:  # 표가 아직 없음(백엔드 V16 전)·DB 끊김
+            _db_failed(e)
+    return _read_usage().get(_today().isoformat(), {}).get("usd", 0.0)
 
 
 def _add_usage(by_model):
@@ -131,12 +177,19 @@ def _add_usage(by_model):
     tokens_out = sum(u.get("output_tokens", 0) for u in by_model.values())
     if not tokens_in and not tokens_out:
         return
+    usd = round(tokens_in * PRICE_IN + tokens_out * PRICE_OUT, 6)
+    if USAGE_STORE == "db":
+        try:
+            _db_add(_today(), tokens_in, tokens_out, usd)
+            return
+        except Exception as e:
+            _db_failed(e)
     with _usage_lock:
         usage = _read_usage()
-        day = usage.setdefault(datetime.now(KST).date().isoformat(), {"input": 0, "output": 0, "usd": 0.0})
+        day = usage.setdefault(_today().isoformat(), {"input": 0, "output": 0, "usd": 0.0})
         day["input"] += tokens_in
         day["output"] += tokens_out
-        day["usd"] = round(day["usd"] + tokens_in * PRICE_IN + tokens_out * PRICE_OUT, 6)
+        day["usd"] = round(day["usd"] + usd, 6)
         tmp = USAGE_FILE.with_name(f"{USAGE_FILE.stem}.{os.getpid()}.{threading.get_ident()}.tmp")  # 프로세스끼리 안 겹치게
         try:
             USAGE_FILE.parent.mkdir(exist_ok=True)

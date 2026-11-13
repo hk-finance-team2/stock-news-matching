@@ -15,6 +15,7 @@ import com.hkteam2.stocknews.common.config.OpenApiConfig;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 
 @Tag(name = "회원", description = "회원가입·로그인")
@@ -35,10 +36,12 @@ public class AuthController {
         return userService.signup(request);
     }
 
-    @Operation(summary = "로그인", description = "성공하면 JWT를 발급합니다. 아이디나 비밀번호가 틀리면 401 INVALID_CREDENTIALS")
+    @Operation(summary = "로그인", description = "성공하면 JWT를 발급합니다. 아이디나 비밀번호가 틀리면 401 INVALID_CREDENTIALS. "
+            + "같은 아이디·같은 곳에서 10분 안에 5번 틀리면 10분 동안 429 TOO_MANY_LOGIN_ATTEMPTS")
     @PostMapping("/login")
-    public LoginResponse login(@Valid @RequestBody LoginRequest request) {
-        return userService.login(request);
+    public LoginResponse login(@Valid @RequestBody LoginRequest request, HttpServletRequest http) {
+        // 프록시 없이 바로 받으므로 접속한 주소를 그대로 씀 (X-Forwarded-For 는 누구나 꾸밀 수 있어 믿지 않음)
+        return userService.login(request, http.getRemoteAddr());
     }
 
     /** Security가 토큰 검사를 통과시킨 경우에만 들어옴. jwt = 검사가 끝난 토큰 내용 */
