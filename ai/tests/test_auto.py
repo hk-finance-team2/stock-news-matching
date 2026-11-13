@@ -219,6 +219,34 @@ def test_llm_budget():
         assert s5.spent_today() == 0, "기록 파일이 깨져도 수집은 안 멈춤"
 
 
+def test_llm_usage_db():
+    # 11/13: 하루 비용을 DB(llm_usage_daily, V16)에서 셈 → 컨테이너·내 PC 가 같은 상한. 진짜 오늘 금액은 안 건드리게 지난 날짜로
+    from datetime import date
+
+    from sqlalchemy import text
+
+    from hk_llm.steps import step5_summary as s5
+
+    day = date(1999, 1, 1)
+    with mock.patch.object(s5, "USAGE_STORE", "db"), mock.patch.object(s5, "_today", lambda: day):
+        with s5._engine().begin() as conn:
+            conn.execute(text("DELETE FROM llm_usage_daily WHERE usage_date = :d"), {"d": day})
+        try:
+            assert s5.spent_today() == 0
+            s5._add_usage({"m": {"input_tokens": 1_000_000, "output_tokens": 0}})
+            s5._add_usage({"m": {"input_tokens": 0, "output_tokens": 1_000_000}})  # 두 번째는 같은 줄에 더함
+            assert abs(s5.spent_today() - 1.45) < 1e-6, "두 번 쓴 비용이 한 줄에 합쳐져야 함"
+        finally:
+            with s5._engine().begin() as conn:
+                conn.execute(text("DELETE FROM llm_usage_daily WHERE usage_date = :d"), {"d": day})
+    # DB 가 안 되면 파일로 (수집이 멈추면 안 됨)
+    import pathlib
+    import tempfile
+    with tempfile.TemporaryDirectory() as folder, mock.patch.object(s5, "USAGE_STORE", "db"),             mock.patch.object(s5, "USAGE_FILE", pathlib.Path(folder) / "u.json"),             mock.patch.object(s5, "_db_add", side_effect=RuntimeError("DB 끊김")),             mock.patch.object(s5, "_db_spent", side_effect=RuntimeError("DB 끊김")):
+        s5._add_usage({"m": {"input_tokens": 1_000_000, "output_tokens": 0}})
+        assert abs(s5.spent_today() - 0.20) < 1e-9, "DB 가 안 되면 파일에 적고 파일로 셈"
+
+
 def test_llm_usage_real_chain():
     # 실제 ChatOpenAI 체인에 가짜 응답을 줘서 토큰이 기록되는지 확인 (네트워크·비용 없음)
     import json

@@ -24,6 +24,7 @@
 | `article_stock` | 기사 × 종목 연결 (감성, 이유, 관련도) | AI | 백엔드 | V5 | ✅ |
 | `collect_run` | 수집·요약 실행 기록 | AI | 백엔드 | V5 | ✅ |
 | `stock_daily_summary` | 종목별 하루 종합 요약 | AI | 백엔드 | V5 | ✅ (AI가 나중에 채움) |
+| `llm_usage_daily` | LLM 하루 비용 (하루 상한을 모든 실행이 같이 셈) | AI | - | V16 | ✅ |
 | `quote_snapshot` | 실시간 현재가 (종목당 1줄) — 확장 ①② | 백엔드 | 백엔드 | V10 | ✅ (KIS를 켠 서버만 채움) |
 | `quote_tick` | 실시간 체결 이력 (녹화본) — 확장 ①② | 백엔드 | 백엔드 | V10 | ✅ (KIS를 켠 서버만 채움) |
 | `quote_quarantine` | 해석하지 못한 실시간 메시지 원문 — 확장 ①② | 백엔드 | 백엔드 | V10 | ✅ |
@@ -348,9 +349,9 @@ erDiagram
 | 5 | title | VARCHAR(500) | | Y | | 제목 |
 | 6 | reporter | VARCHAR(100) | | N | | 기자명 |
 | 7 | description | TEXT | | N | | RSS 짧은 요약문 |
-| 8 | body | MEDIUMTEXT | | N | | 정제 본문 (LLM 요약용). 7일 후 NULL로 지움. **백엔드·화면에서는 조회하지 않음** |
+| 8 | body | MEDIUMTEXT | | N | | 정제 본문 (LLM 요약용). `collected_at` 7일 후 NULL로 지움. **백엔드·화면에서는 조회하지 않음** |
 | 9 | published_at | DATETIME | IDX | Y | | 발행 시각 (없으면 수집 시각). 그래프 기준 |
-| 10 | collected_at | DATETIME | | Y | CURRENT_TIMESTAMP | 수집 시각 |
+| 10 | collected_at | DATETIME | | Y | CURRENT_TIMESTAMP | 수집 시각. **본문 7일 보관의 기준이기도 함** (아래 주의) |
 | 11 | status | VARCHAR(20) | CHECK, IDX | Y | 'LISTED' | 처리 상태 (아래) |
 | 12 | retry_count | TINYINT | | Y | 0 | 실패 재시도 횟수 (3번 넘으면 FAILED) |
 | 13 | last_error | VARCHAR(1000) | | N | | 마지막 오류 |
@@ -380,6 +381,12 @@ erDiagram
 
 - 버린 기사(`FAILED`·`SKIPPED`·`NO_STOCK`)도 행은 지우지 않음. 지우면 다시 받아서 다시 요약함 (비용 낭비) 예외: SNS 글(`source_type = 'SNS'`)은 모은 지 7일 뒤 행을 지움 (네이버 약관, `decisions.md`)
 - **백엔드는 `status = 'DONE'`인 기사만 화면에 보여 주고, `body`는 조회하지 않음**
+- **주의 (11/13): `collected_at` 은 두 가지 뜻을 같이 짐** — "처음 받은 시각"이면서 "본문 7일 보관(`purge_old_bodies`)의 기준"
+  - 옛 기사의 본문을 **다시** 받는 기능은 `collected_at` 도 지금으로 바꿔야 함. 안 그러면 다음 5분 안에 본문이 지워짐 (11/12 지난 한경 다시 받기에서 2,217건 중 907건이 요약 전에 지워짐 → `backfill.py` 에서 고침, `tests/test_backfill.py`)
+  - 데이터 상태(F-16) "뉴스 마지막 수집"은 `MAX(collected_at)` 이라, 다시 받기를 돌리면 그 시각으로 보임 (실제로 그때 받은 것이라 틀린 정보는 아님. 수집기가 정상인지는 `collect_run` 의 `last_success_at` 으로 봄)
+- **주의: 본문 받기(4단계)는 기본으로 "어제 이후" 기사만** (`fetch_bodies` 의 `since`). 쌓인 옛 기사에 돈·요청을 쓰지 않으려는 것인데,
+  그래서 수집기가 하루 넘게 꺼져 있었거나 새 언론사 RSS 에 며칠 전 기사가 섞이면 그 기사는 `LISTED` 로 남고 화면에 안 나옴
+  (11/13 시사저널e·헤럴드경제 29건 — 직접 한 번 받아 처리). 확인: `SELECT press, COUNT(*) FROM article WHERE status = 'LISTED' GROUP BY press`
 - `companies` (V7): AI 요약 단계에서 LLM이 뽑은 "회사 이름 + 회사별 감성·이유". 매칭 단계가 이것을 종목코드로 바꿔 `article_stock`에 저장
   - 예: `[{"name": "포스코퓨처엠", "is_main": true, "sentiment": "POSITIVE", "reason": "..."}]` (JSON 안의 키 이름은 AI 파트가 정함)
   - MariaDB의 JSON은 `LONGTEXT` + `CHECK (json_valid(companies))`. 깨진 JSON은 DB가 거부
@@ -439,6 +446,19 @@ erDiagram
 
 - UK① `uk_stock_daily_summary (stock_code, summary_date)`: 종목당 하루 한 줄. 다시 생성하면 덮어씀
 - 감성은 개수로 저장하고 비율(%)은 백엔드가 계산 (F-08)
+
+### llm_usage_daily · LLM 하루 비용 (V16)
+
+| # | Column Name | Data Type | Key | Not Null | Default | Comments |
+|---|---|---|---|---|---|---|
+| 1 | usage_date | DATE | PK | Y | | 한국 시간 날짜 |
+| 2 | input_tokens | BIGINT | | Y | 0 | 입력 토큰 합계 |
+| 3 | output_tokens | BIGINT | | Y | 0 | 출력 토큰 합계 |
+| 4 | usd | DECIMAL(12,6) | | Y | 0 | 추정 비용(달러) = 토큰 × 단가 (`step5_summary.PRICE_IN/OUT`) |
+| 5 | updated_at | DATETIME | | Y | CURRENT_TIMESTAMP (갱신 시 자동) | 마지막으로 더한 시각 |
+
+- AI 의 모든 LLM 호출(`llm_call`)이 끝날 때마다 `INSERT … ON DUPLICATE KEY UPDATE` 로 **더하기만** 함 → 수집기 컨테이너·내 PC 실행이 동시에 써도 빠지지 않음
+- 하루 상한(`LLM_DAILY_USD`, 기본 $2)은 이 표의 오늘 `usd` 로 판단. DB 에 못 닿으면 그 실행만 예전처럼 `ai/logs/llm_usage.json` 파일로 셈
 
 ### quote_snapshot · 실시간 현재가 (V10, 확장 ①②)
 
@@ -515,3 +535,4 @@ KIS 시세는 재배포 금지라 이 표의 데이터는 Git·외부에 내보�
 | 2026-11-09 | V13 | article_stock.group_article_id + IDX `idx_article_stock_group`: 같은 소식 묶음 (그동안 칸이 없어 AI 묶기 결과가 저장되지 않았음) |
 | 2026-11-10 | V14 | article_stock.fact_type + CHECK: 근거 문장의 사실 종류 (FACT/PLAN/FORECAST/RUMOR) |
 | 2026-11-10 | V15 | 공시 연결(`channel` DART)의 article_stock.relevance 를 NULL 로 (데이터만, 구조 변경 없음). 관련도는 기사용 점수라 공시는 비움 |
+| 2026-11-13 | V16 | llm_usage_daily: LLM 하루 비용을 DB 에서 셈 (전에는 수집기·내 PC 가 각자 파일에 적어 $2 상한이 따로 걸림) |
