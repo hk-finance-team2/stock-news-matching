@@ -71,12 +71,21 @@ async function request(method, path, { params, body, signal } = {}) {
   // 만료·위조 토큰이면 로그인이 필요 없는 API도 401 → 토큰을 지우고 알림 (docs/api.md 2절)
   if (res.status === 401) tokenStore.clear();
 
-  if (res.status === 204) return null;
+  if (res.status === 204) return { status: 204, ok: true };
   const data = await res.json().catch(() => null);
-  if (!res.ok) {
+  const isSuccessStatus = res.status === 200 || res.status === 201 || res.ok;
+  if (!isSuccessStatus) {
     throw new ApiError(res.status, data?.code || 'UNKNOWN', data?.message || '요청을 처리하지 못했습니다.');
   }
-  return data;
+  if (data && typeof data === 'object') {
+    try {
+      Object.defineProperty(data, 'status', { value: res.status, enumerable: false });
+    } catch {
+      // ignore if frozen
+    }
+    return data;
+  }
+  return { status: res.status, ok: true, data };
 }
 
 export const apiGet = (path, params, options = {}) => request('GET', path, { ...options, params });

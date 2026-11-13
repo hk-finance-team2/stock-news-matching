@@ -9,7 +9,7 @@
 // - V7 (최신 디자인 + 실제 API 연결, 가짜 데이터 없음): import DashboardPage from './pages/DashboardPageV7';
 //   V2~V5 는 비교용 옛 화면이라 가짜 데이터(mocks/mockData.js)를 씀. V6·V7 은 실제 API만 씀 (api/README.md)
 // ============================================================================
-import DashboardPage from './pages/DashboardPageV7';
+import DashboardPage from './pages/DashboardPageV8';
 
 export default function App() {
   return <DashboardPage />;

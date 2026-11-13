@@ -10,7 +10,7 @@ import {
   statusApi,
   searchApi,
   tokenStore,
-} from '../api';
+} from '../api'
 import {
   toUiStock,
   toUiArticle,

@@ -51,12 +51,23 @@ export const authApi = {
   logout: () => tokenStore.clear(),
 };
 
+/** 종목코드 정규화 (숫자·영문 혼합 종목코드 '0007C0' 등 모두 허용) */
+function normalizeStockCodePayload(input) {
+  const raw =
+    typeof input === 'object' && input !== null
+      ? input.stockCode ?? input.code ?? ''
+      : input ?? '';
+  return String(raw).trim().toUpperCase();
+}
+
 /** 관심 종목 (로그인 필요) */
 export const watchlistApi = {
   list: (options) => apiGet('/api/watchlist', undefined, options),
   articles: (params = {}, options) => apiGet('/api/watchlist/articles', params, options),
-  add: (stockCode) => apiPost('/api/watchlist', { stockCode }),
-  remove: (stockCode) => apiDelete(`/api/watchlist/${stockCode}`),
+  add: (stockCode, options) =>
+    apiPost('/api/watchlist', { stockCode: normalizeStockCodePayload(stockCode) }, options),
+  remove: (stockCode, options) =>
+    apiDelete(`/api/watchlist/${encodeURIComponent(normalizeStockCodePayload(stockCode))}`, options),
 };
 
 /** 종목 토론 게시판 */
