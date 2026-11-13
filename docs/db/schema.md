@@ -24,6 +24,7 @@
 | `article_stock` | 기사 × 종목 연결 (감성, 이유, 관련도) | AI | 백엔드 | V5 | ✅ |
 | `collect_run` | 수집·요약 실행 기록 | AI | 백엔드 | V5 | ✅ |
 | `stock_daily_summary` | 종목별 하루 종합 요약 | AI | 백엔드 | V5 | ✅ (AI가 나중에 채움) |
+| `llm_usage_daily` | LLM 하루 비용 (하루 상한을 모든 실행이 같이 셈) | AI | - | V16 | ✅ |
 | `quote_snapshot` | 실시간 현재가 (종목당 1줄) — 확장 ①② | 백엔드 | 백엔드 | V10 | ✅ (KIS를 켠 서버만 채움) |
 | `quote_tick` | 실시간 체결 이력 (녹화본) — 확장 ①② | 백엔드 | 백엔드 | V10 | ✅ (KIS를 켠 서버만 채움) |
 | `quote_quarantine` | 해석하지 못한 실시간 메시지 원문 — 확장 ①② | 백엔드 | 백엔드 | V10 | ✅ |
@@ -440,6 +441,19 @@ erDiagram
 - UK① `uk_stock_daily_summary (stock_code, summary_date)`: 종목당 하루 한 줄. 다시 생성하면 덮어씀
 - 감성은 개수로 저장하고 비율(%)은 백엔드가 계산 (F-08)
 
+### llm_usage_daily · LLM 하루 비용 (V16)
+
+| # | Column Name | Data Type | Key | Not Null | Default | Comments |
+|---|---|---|---|---|---|---|
+| 1 | usage_date | DATE | PK | Y | | 한국 시간 날짜 |
+| 2 | input_tokens | BIGINT | | Y | 0 | 입력 토큰 합계 |
+| 3 | output_tokens | BIGINT | | Y | 0 | 출력 토큰 합계 |
+| 4 | usd | DECIMAL(12,6) | | Y | 0 | 추정 비용(달러) = 토큰 × 단가 (`step5_summary.PRICE_IN/OUT`) |
+| 5 | updated_at | DATETIME | | Y | CURRENT_TIMESTAMP (갱신 시 자동) | 마지막으로 더한 시각 |
+
+- AI 의 모든 LLM 호출(`llm_call`)이 끝날 때마다 `INSERT … ON DUPLICATE KEY UPDATE` 로 **더하기만** 함 → 수집기 컨테이너·내 PC 실행이 동시에 써도 빠지지 않음
+- 하루 상한(`LLM_DAILY_USD`, 기본 $2)은 이 표의 오늘 `usd` 로 판단. DB 에 못 닿으면 그 실행만 예전처럼 `ai/logs/llm_usage.json` 파일로 셈
+
 ### quote_snapshot · 실시간 현재가 (V10, 확장 ①②)
 
 KIS 웹소켓 실시간 체결(H0STCNT0)로 종목마다 "지금 상태" 1줄을 덮어씀. `KIS_ENABLED=true`인 서버만 채움.
@@ -515,3 +529,4 @@ KIS 시세는 재배포 금지라 이 표의 데이터는 Git·외부에 내보�
 | 2026-11-09 | V13 | article_stock.group_article_id + IDX `idx_article_stock_group`: 같은 소식 묶음 (그동안 칸이 없어 AI 묶기 결과가 저장되지 않았음) |
 | 2026-11-10 | V14 | article_stock.fact_type + CHECK: 근거 문장의 사실 종류 (FACT/PLAN/FORECAST/RUMOR) |
 | 2026-11-10 | V15 | 공시 연결(`channel` DART)의 article_stock.relevance 를 NULL 로 (데이터만, 구조 변경 없음). 관련도는 기사용 점수라 공시는 비움 |
+| 2026-11-13 | V16 | llm_usage_daily: LLM 하루 비용을 DB 에서 셈 (전에는 수집기·내 PC 가 각자 파일에 적어 $2 상한이 따로 걸림) |
