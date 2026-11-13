@@ -449,16 +449,20 @@ function MentionTrendChart({ series, plotHeight }) {
   );
 }
 
-// [V7] A6: "총 N건 · n / N 페이지"와 번호 버튼을 한 묶음으로 가운데 정렬
+// [V7] A6: 하단 페이지네이션 (pagination-wrapper 구조 통일, absolute 금지)
 function Pagination({ currentPage, totalPages, totalItems, onPageChange }) {
   if (totalPages <= 1) {
     if (totalItems > 0) {
       return (
-        <div className="pagination-bar">
-          <div className="pagination-group">
-            <span className="pagination-info num">총 {totalItems}건 · 1 / 1 페이지</span>
+        <nav className="pagination-bar" aria-label="기사 목록 페이지 네비게이션">
+          <div className="pagination-wrapper">
+            <div className="pagination-info num">
+              <span className="pagination-total">총 {totalItems}건</span>
+              <span className="pagination-sep" aria-hidden="true">·</span>
+              <span className="pagination-current">1 / 1 페이지</span>
+            </div>
           </div>
-        </div>
+        </nav>
       );
     }
     return null;
@@ -492,10 +496,14 @@ function Pagination({ currentPage, totalPages, totalItems, onPageChange }) {
 
   return (
     <nav className="pagination-bar" aria-label="기사 목록 페이지 네비게이션">
-      <div className="pagination-group">
-        <span className="pagination-info num">
-          총 {totalItems}건 · {currentPage} / {totalPages} 페이지
-        </span>
+      <div className="pagination-wrapper">
+        <div className="pagination-info num">
+          <span className="pagination-total">총 {totalItems}건</span>
+          <span className="pagination-sep" aria-hidden="true">·</span>
+          <span className="pagination-current">
+            {currentPage} / {totalPages} 페이지
+          </span>
+        </div>
         <div className="pagination-buttons">
           <button
             type="button"

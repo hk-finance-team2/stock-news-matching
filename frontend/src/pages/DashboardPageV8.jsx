@@ -449,16 +449,20 @@ function MentionTrendChart({ series, plotHeight }) {
   );
 }
 
-// [V7] A6: "총 N건 · n / N 페이지"와 번호 버튼을 한 묶음으로 가운데 정렬
+// [V8] 하단 페이지네이션: pagination-wrapper 안에 (1) 정보 텍스트, (2) 이전 버튼 + 페이지 번호 그룹 + 다음 버튼을 명확히 분리 (absolute 금지)
 function Pagination({ currentPage, totalPages, totalItems, onPageChange }) {
   if (totalPages <= 1) {
     if (totalItems > 0) {
       return (
-        <div className="pagination-bar">
-          <div className="pagination-group">
-            <span className="pagination-info num">총 {totalItems}건 · 1 / 1 페이지</span>
+        <nav className="pagination-bar" aria-label="기사 목록 페이지 네비게이션">
+          <div className="pagination-wrapper">
+            <div className="pagination-info num">
+              <span className="pagination-total">총 {totalItems}건</span>
+              <span className="pagination-sep" aria-hidden="true">·</span>
+              <span className="pagination-current">1 / 1 페이지</span>
+            </div>
           </div>
-        </div>
+        </nav>
       );
     }
     return null;
@@ -492,10 +496,17 @@ function Pagination({ currentPage, totalPages, totalItems, onPageChange }) {
 
   return (
     <nav className="pagination-bar" aria-label="기사 목록 페이지 네비게이션">
-      <div className="pagination-group">
-        <span className="pagination-info num">
-          총 {totalItems}건 · {currentPage} / {totalPages} 페이지
-        </span>
+      <div className="pagination-wrapper">
+        {/* ① 상단/좌측 정보 텍스트 블록 */}
+        <div className="pagination-info num">
+          <span className="pagination-total">총 {totalItems}건</span>
+          <span className="pagination-sep" aria-hidden="true">·</span>
+          <span className="pagination-current">
+            {currentPage} / {totalPages} 페이지
+          </span>
+        </div>
+
+        {/* ② 중앙 페이지 번호 버튼 그룹 ([이전], 1, 2, ..., N, [다음]) */}
         <div className="pagination-buttons">
           <button
             type="button"
@@ -1145,13 +1156,17 @@ function ArticleDetail({
                       <strong>연결 이유:</strong> {rel.reason}
                     </div>
                   )}
-                  {rel.evidence?.trim() && (
+                  {rel.evidence?.trim() ? (
                     <div className="evidence-quote">
                       <strong>근거 원문</strong>
                       {rel.factTypeLabel && (
                         <span className="fact-type-label">{rel.factTypeLabel}</span>
                       )}
                       <strong>:</strong> {rel.evidence.trim()}
+                    </div>
+                  ) : (
+                    <div className="evidence-empty-notice">
+                      원문 링크를 통해 상세 내용을 확인하세요
                     </div>
                   )}
                 </div>
@@ -1892,6 +1907,7 @@ export default function DashboardPageV7() {
   }, []);
 
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [authMode, setAuthMode] = useState('login');
   const [authForm, setAuthForm] = useState({
     username: '',
@@ -1945,14 +1961,101 @@ export default function DashboardPageV7() {
     stockTab,
   ]);
 
+  const [watchlistSort, setWatchlistSort] = useState('news');
+  const [watchlistPage, setWatchlistPage] = useState(1);
+  const [selectedWatchStockCode, setSelectedWatchStockCode] = useState(null);
+  const [loadedWatchStockCodes, setLoadedWatchStockCodes] = useState({});
+  const requestedWatchStockArticlesRef = useRef(new Set());
+
   const watchlistStocks = useMemo(
     () =>
       watchlistCodes
-        .map((code) => stockByCode(code) || toUiStock({ stockCode: code, stockName: code }))
+        .map((code) => {
+          const base = stockByCode(code) || toUiStock({ stockCode: code, stockName: code });
+          if (!base) return null;
+          const relatedArts = allArticles.filter(
+            (art) =>
+              art.sourceType !== 'SNS' &&
+              (art.relatedStocks || []).some((r) => r.code === base.code)
+          );
+          const relatedNews = relatedArts.filter((art) => !art.isDisclosure);
+          const relatedDisclosures = relatedArts.filter((art) => art.isDisclosure);
+
+          const hasLoadedArticles =
+            Boolean(loadedWatchStockCodes[base.code]) || relatedArts.length > 0;
+          const fallbackDisclosure = Number(base.todayDisclosureCount ?? 0);
+          const fallbackTotal = Number(
+            base.todayArticleCount ?? base.todayMatchedCount ?? 0
+          );
+          const computedDisclosureCount = hasLoadedArticles
+            ? relatedDisclosures.length
+            : fallbackDisclosure;
+          const computedNewsCount = hasLoadedArticles
+            ? relatedNews.length
+            : Math.max(0, fallbackTotal - computedDisclosureCount);
+
+          let latestIso =
+            base.latestPublishedAt ||
+            base.lastMatchedAtIso ||
+            (base.lastMatchedAt && base.lastMatchedAt !== '-' ? base.lastMatchedAt : '');
+          relatedArts.forEach((art) => {
+            const candidate = art.publishedAtIso || art.publishedAt || '';
+            if (candidate && (!latestIso || String(candidate) > String(latestIso))) {
+              latestIso = candidate;
+            }
+          });
+          return {
+            ...base,
+            stockName: base.stockName || base.name || base.code,
+            newsCount: computedNewsCount,
+            disclosureCount: computedDisclosureCount,
+            latestPublishedAt: latestIso || null,
+          };
+        })
         .filter(Boolean),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [watchlistCodes, allStocks]
+    [watchlistCodes, allStocks, allArticles, loadedWatchStockCodes]
   );
+
+  const sortedWatchlistStocks = useMemo(() => {
+    const list = [...watchlistStocks];
+    list.sort((a, b) => {
+      if (watchlistSort === 'news') {
+        const diff = (b.newsCount ?? 0) - (a.newsCount ?? 0);
+        if (diff !== 0) return diff;
+        const discDiff = (b.disclosureCount ?? 0) - (a.disclosureCount ?? 0);
+        if (discDiff !== 0) return discDiff;
+        return (a.stockName || a.name || '').localeCompare(b.stockName || b.name || '', 'ko');
+      }
+      if (watchlistSort === 'latest') {
+        const timeA = a.latestPublishedAt ? Date.parse(String(a.latestPublishedAt).replace(' ', 'T')) || 0 : 0;
+        const timeB = b.latestPublishedAt ? Date.parse(String(b.latestPublishedAt).replace(' ', 'T')) || 0 : 0;
+        if (timeB !== timeA) return timeB - timeA;
+        const strCmp = String(b.latestPublishedAt || '').localeCompare(String(a.latestPublishedAt || ''));
+        if (strCmp !== 0) return strCmp;
+        return (b.newsCount ?? 0) - (a.newsCount ?? 0);
+      }
+      return (a.stockName || a.name || '').localeCompare(b.stockName || b.name || '', 'ko');
+    });
+    return list;
+  }, [watchlistStocks, watchlistSort]);
+
+  useEffect(() => {
+    setWatchlistPage(1);
+  }, [watchlistSort]);
+
+  useEffect(() => {
+    const maxPage = Math.max(1, Math.ceil(sortedWatchlistStocks.length / 5));
+    if (watchlistPage > maxPage) {
+      setWatchlistPage(maxPage);
+    }
+  }, [sortedWatchlistStocks.length, watchlistPage]);
+
+  useEffect(() => {
+    if (selectedWatchStockCode && !watchlistCodes.includes(selectedWatchStockCode)) {
+      setSelectedWatchStockCode(null);
+    }
+  }, [watchlistCodes, selectedWatchStockCode]);
 
   useEffect(() => {
     setWatchlistArticlesPage(1);
@@ -1963,6 +2066,7 @@ export default function DashboardPageV7() {
     onlyMainRole,
     articleSort,
     watchlistStocks.length,
+    selectedWatchStockCode,
   ]);
 
   const handleHomePageChange = (page) => {
@@ -1982,7 +2086,8 @@ export default function DashboardPageV7() {
   const handleWatchlistPageChange = (page) => {
     setWatchlistArticlesPage(page);
     if (watchlistFeedRef.current) {
-      watchlistFeedRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      watchlistFeedRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+      watchlistFeedRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
   };
 
@@ -2075,8 +2180,11 @@ export default function DashboardPageV7() {
           rememberStocks(
             items.map((it) => ({
               ...toUiStock(it),
+              stockName: it.stockName || it.name || it.stockCode,
               todayMatchedCount: it.todayArticleCount ?? 0,
               todayArticleCount: it.todayArticleCount ?? 0,
+              latestPublishedAt: it.lastMatchedAt || null,
+              lastMatchedAtIso: it.lastMatchedAt || '',
               lastMatchedAt: toDisplayTime(it.lastMatchedAt) || '-',
             }))
           );
@@ -2145,17 +2253,18 @@ export default function DashboardPageV7() {
   };
 
   useEffect(() => {
-    if (!showAuthModal && !showAutocomplete && !showWatchModal) return undefined;
+    if (!showAuthModal && !showAutocomplete && !showWatchModal && !showLogoutModal) return undefined;
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') {
         setShowAuthModal(false);
         setShowAutocomplete(false);
         setShowWatchModal(false);
+        setShowLogoutModal(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showAuthModal, showAutocomplete, showWatchModal]);
+  }, [showAuthModal, showAutocomplete, showWatchModal, showLogoutModal]);
 
   const isInWatchlist = (code) => watchlistCodes.includes(code);
 
@@ -2179,6 +2288,18 @@ export default function DashboardPageV7() {
       .search('', { page: 1, size: 100 }, { signal: controller.signal })
       .then((res) => {
         rememberStocks((res.items || []).map(toUiStock), { onlyNew: true });
+        const total = Number(res?.total || 0);
+        const totalPages = Math.min(20, Math.ceil(total / 100));
+        if (totalPages > 1) {
+          for (let p = 2; p <= totalPages; p += 1) {
+            stockApi
+              .search('', { page: p, size: 100 }, { signal: controller.signal })
+              .then((pageRes) => {
+                rememberStocks((pageRes.items || []).map(toUiStock), { onlyNew: true });
+              })
+              .catch(() => { });
+          }
+        }
       })
       .catch((err) => {
         if (err.name !== 'AbortError') {
@@ -2319,22 +2440,20 @@ export default function DashboardPageV7() {
         : null;
 
     const localMatched = allStocks.filter((st) => matchStockByQuery(st, q));
-    const remoteMatched = (remote || [])
-      .map((item) => {
-        const stock =
-          allStocks.find((st) => st.code === item.stockCode) ||
-          toUiStock(item);
-        const quote = liveQuotes[item.stockCode];
-        return quote
-          ? {
-            ...stock,
-            price: quote.price,
-            changeRate: quote.changeRate,
-            changeAmount: quote.changeAmount,
-          }
-          : stock;
-      })
-      .filter((st) => matchStockByQuery(st, q));
+    const remoteMatched = (remote || []).map((item) => {
+      const stock =
+        allStocks.find((st) => st.code === item.stockCode) ||
+        toUiStock(item);
+      const quote = liveQuotes[item.stockCode];
+      return quote
+        ? {
+          ...stock,
+          price: quote.price,
+          changeRate: quote.changeRate,
+          changeAmount: quote.changeAmount,
+        }
+        : stock;
+    });
 
     const stockMap = new Map();
     [...remoteMatched, ...localMatched].forEach((st) => {
@@ -2407,9 +2526,9 @@ export default function DashboardPageV7() {
       });
       return [...merged.values()];
     }
-    const remoteItems = (watchAddSearch.data?.items || [])
-      .map((it) => stockByCode(it.stockCode) || toUiStock(it))
-      .filter((st) => matchStockByQuery(st, q));
+    const remoteItems = (watchAddSearch.data?.items || []).map(
+      (it) => stockByCode(it.stockCode) || toUiStock(it)
+    );
     const localItems = allStocks.filter((st) => matchStockByQuery(st, q));
     const merged = new Map();
     [...remoteItems, ...localItems].forEach((st) => {
@@ -2565,21 +2684,81 @@ export default function DashboardPageV7() {
     return () => controller.abort();
   }, [activeNav, user, watchlistCodes, mergeArticles]);
 
-  // 관심 종목 화면: "관심 종목이 주인공인 글만", 정렬은 최신순 / 주인공 먼저
+  // 관심 종목 각 종목별 뉴스·공시 건수를 정확히 나누어 집계하기 위해 미조회 종목 기사를 보강 조회
+  useEffect(() => {
+    if (!user || watchlistCodes.length === 0) return undefined;
+    const pendingCodes = watchlistCodes.filter(
+      (code) => code && !requestedWatchStockArticlesRef.current.has(code)
+    );
+    if (pendingCodes.length === 0) return undefined;
+
+    const controller = new AbortController();
+    pendingCodes.forEach((code) => {
+      requestedWatchStockArticlesRef.current.add(code);
+      articleApi
+        .list({ stockCode: code, source: 'NEWS', page: 1, size: 100 }, { signal: controller.signal })
+        .then((res) => {
+          mergeArticles((res?.items || []).map(toUiArticle));
+          setLoadedWatchStockCodes((prev) => ({ ...prev, [code]: true }));
+        })
+        .catch((err) => {
+          requestedWatchStockArticlesRef.current.delete(code);
+          if (err.name !== 'AbortError') {
+            console.error(`관심 종목(${code}) 기사 조회 실패:`, err);
+          }
+        });
+    });
+
+    return () => controller.abort();
+  }, [user, watchlistCodes, mergeArticles]);
+
+  // 관심 종목 화면: 선택된 관심 종목이 있으면 해당 종목 기사도 추가로 조회해 보강
+  useEffect(() => {
+    if (activeNav !== 'watchlist' || !user || !selectedWatchStockCode) return undefined;
+    const controller = new AbortController();
+    articleApi
+      .list(
+        { stockCode: selectedWatchStockCode, source: 'NEWS', page: 1, size: 100 },
+        { signal: controller.signal }
+      )
+      .then((res) => {
+        mergeArticles((res.items || []).map(toUiArticle));
+        setLoadedWatchStockCodes((prev) => ({ ...prev, [selectedWatchStockCode]: true }));
+      })
+      .catch((err) => {
+        if (err.name !== 'AbortError') console.error('선택 관심 종목 기사 조회 실패:', err);
+      });
+    return () => controller.abort();
+  }, [activeNav, user, selectedWatchStockCode, mergeArticles]);
+
+  const activeWatchFilterCodes = useMemo(
+    () => (selectedWatchStockCode ? [selectedWatchStockCode] : watchlistCodes),
+    [selectedWatchStockCode, watchlistCodes]
+  );
+
+  // 관심 종목 화면: 선택된 관심 종목(또는 전체 관심 종목) 뉴스·공시 목록
   const watchlistFeedArticles = useMemo(
     () =>
       sortArticles(
         allArticles
           .filter((art) => art.sourceType !== 'SNS')
-          .filter((art) => art.relatedStocks.some((r) => watchlistCodes.includes(r.code)))
+          .filter((art) => art.relatedStocks.some((r) => activeWatchFilterCodes.includes(r.code)))
           .filter((art) => matchesChannel(art, channelFilter))
           .filter((art) => matchesSentiment(art, sentimentFilter))
           .filter((art) => articlePeriod === 'ALL' || art.daysAgo <= Number(articlePeriod))
-          .filter((art) => !onlyMainRole || isMainFor(art, watchlistCodes)),
+          .filter((art) => !onlyMainRole || isMainFor(art, activeWatchFilterCodes)),
         articleSort,
-        watchlistCodes
+        activeWatchFilterCodes
       ),
-    [allArticles, watchlistCodes, channelFilter, sentimentFilter, articlePeriod, onlyMainRole, articleSort]
+    [
+      allArticles,
+      activeWatchFilterCodes,
+      channelFilter,
+      sentimentFilter,
+      articlePeriod,
+      onlyMainRole,
+      articleSort,
+    ]
   );
 
   // 종목 탐색: 검색어가 있으면 종목 검색 API + 전체 종목(allStocks) 필터링, 없으면 이슈 종목 + 전체 종목
@@ -2598,7 +2777,7 @@ export default function DashboardPageV7() {
     if (q) {
       (stockListSearch.data?.items || []).forEach((it) => {
         const st = stockByCode(it.stockCode) || toUiStock(it);
-        if (st?.code && matchStockByQuery(st, q)) mergedMap.set(st.code, st);
+        if (st?.code) mergedMap.set(st.code, st);
       });
       allStocks.forEach((st) => {
         if (st?.code && !mergedMap.has(st.code) && matchStockByQuery(st, q)) {
@@ -2945,12 +3124,12 @@ export default function DashboardPageV7() {
     try {
       setAuthError('');
       if (authMode === 'signup') {
-        if (id.length < 3 || id.length > 20) {
-          setAuthError('아이디는 3~20자로 입력해 주세요.');
+        if (!/^[a-z0-9]{4,20}$/.test(id)) {
+          setAuthError('아이디는 영문 소문자(a-z)와 숫자(0-9) 4~20자로 입력해 주세요.');
           return;
         }
-        if (pw.length < 4) {
-          setAuthError('비밀번호는 4자 이상으로 입력해 주세요.');
+        if (pw.length < 8 || pw.length > 64) {
+          setAuthError('비밀번호는 8~64자로 입력해 주세요.');
           return;
         }
         if (pw !== authForm.passwordConfirm) {
@@ -2977,19 +3156,32 @@ export default function DashboardPageV7() {
       triggerToast(`👋 환영합니다, ${id}님!`);
     } catch (error) {
       console.error('인증 API 오류:', error);
-      setAuthError(
-        authMode === 'signup'
-          ? '회원가입 또는 로그인에 실패했습니다. 입력 정보와 서버 상태를 확인해 주세요.'
-          : '로그인에 실패했습니다. 아이디와 비밀번호를 확인해 주세요.'
-      );
+      if (error?.status === 409 || error?.code === 'DUPLICATE_LOGIN_ID') {
+        setAuthError('이미 사용 중인 아이디입니다. 다른 아이디를 입력해 주세요.');
+      } else if (error?.message && error?.status === 400) {
+        setAuthError(error.message);
+      } else {
+        setAuthError(
+          authMode === 'signup'
+            ? '회원가입 또는 로그인에 실패했습니다. 아이디(영문 소문자·숫자 4~20자)와 비밀번호(8~64자) 형식을 확인해 주세요.'
+            : '로그인에 실패했습니다. 아이디와 비밀번호를 확인해 주세요.'
+        );
+      }
     }
   };
 
   const handleLogout = () => {
+    setShowLogoutModal(true);
+  };
+
+  const confirmLogout = () => {
+    setShowLogoutModal(false);
     authApi.logout();
     localStorage.removeItem('snm_current_user');
     setUser(null);
     setWatchlistCodes([]);
+    setLoadedWatchStockCodes({});
+    requestedWatchStockArticlesRef.current.clear();
     triggerToast('로그아웃되었습니다.');
   };
 
@@ -4251,35 +4443,85 @@ export default function DashboardPageV7() {
     );
   };
 
-  // [V7] B1, B2: 2컬럼 레이아웃 (좌측 280px 패널 + 우측 피드), 비로그인/빈 상태 정리
+  // [V7] B1, B2: 2컬럼 레이아웃 (좌측 280px sidebar-watchlist-section 패널 + 우측 피드), 비로그인/빈 상태 정리
   const renderWatchlistView = () => {
+    const openLoginModal = () => {
+      setAuthMode('login');
+      setAuthError('');
+      setShowAuthModal(true);
+    };
+
     if (!user) {
       return (
-        <div className="wrapper">
-          <div className="content-card watchlist-guest-card">
-            <div className="empty-state">
-              <div className="empty-icon">⭐</div>
-              <div className="empty-title">로그인하고 관심 종목을 등록하세요</div>
-              <div className="empty-sub">
-                관심 종목을 등록하면 맞춤형 뉴스·공시 모아보기와 시세를 확인할 수 있습니다.
+        <div className="wrapper watchlist-2col-layout">
+          <aside
+            className="watchlist-left-panel sidebar-watchlist-section"
+            aria-label="관심 종목 관리 패널"
+          >
+            <div className="content-card watchlist-guest-side-card">
+              <div className="card-header">
+                <div className="card-title">
+                  ⭐ 관심 종목 <span className="count-badge num">0</span>
+                </div>
               </div>
-              <button
-                type="button"
-                className="btn-primary"
-                style={{ marginTop: '16px' }}
-                onClick={() => {
-                  setAuthMode('login');
-                  setAuthError('');
-                  setShowAuthModal(true);
-                }}
-              >
-                로그인하기
-              </button>
+              <div className="empty-state" style={{ padding: '24px 12px' }}>
+                <div className="empty-icon">🔒</div>
+                <div className="empty-title" style={{ fontSize: '14px' }}>
+                  로그인이 필요합니다
+                </div>
+                <div className="empty-sub" style={{ fontSize: '12px' }}>
+                  로그인 후 관심 종목을 검색·추가하고 정렬해 관리할 수 있습니다.
+                </div>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  style={{ marginTop: '14px', width: '100%' }}
+                  onClick={openLoginModal}
+                >
+                  로그인하기
+                </button>
+              </div>
             </div>
-          </div>
+          </aside>
+
+          <main className="watchlist-right-feed">
+            <div className="content-card watchlist-guest-card">
+              <div className="empty-state">
+                <div className="empty-icon">⭐</div>
+                <div className="empty-title">로그인하고 관심 종목을 등록하세요</div>
+                <div className="empty-sub">
+                  관심 종목을 등록하면 맞춤형 뉴스·공시 모아보기와 우측 상세 분석을 한눈에 확인할 수 있습니다.
+                </div>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  style={{ marginTop: '16px' }}
+                  onClick={openLoginModal}
+                >
+                  로그인하기
+                </button>
+              </div>
+            </div>
+          </main>
         </div>
       );
     }
+
+    const watchlistSidePageSize = 5;
+    const watchlistSideTotalPages = Math.max(
+      1,
+      Math.ceil(sortedWatchlistStocks.length / watchlistSidePageSize)
+    );
+    const currentWatchlistSidePage = Math.min(watchlistPage, watchlistSideTotalPages);
+    const pagedWatchlistStocks = sortedWatchlistStocks.slice(
+      (currentWatchlistSidePage - 1) * watchlistSidePageSize,
+      currentWatchlistSidePage * watchlistSidePageSize
+    );
+
+    const selectedWatchStock = selectedWatchStockCode
+      ? watchlistStocks.find((st) => st.code === selectedWatchStockCode) ||
+      stockByCode(selectedWatchStockCode)
+      : null;
 
     const watchSentimentCounts = countSentiments(watchlistFeedArticles);
 
@@ -4295,329 +4537,436 @@ export default function DashboardPageV7() {
       : null;
 
     return (
-      <div className="wrapper">
-        {/* 1. 관심종목 카드 리스트 영역 (세로 스크롤 박스 적용) */}
-        <section className="content-card" aria-label="관심 종목 관리 패널">
-          <div className="card-header">
-            <div className="card-title">
-              ⭐ 관심 종목 <span className="count-badge num">{watchlistStocks.length}</span>
-            </div>
-            <button
-              type="button"
-              className="more-link2"
-              onClick={() => setShowWatchModal(true)}
-              title="전체 종목 검색 후 추가"
-            >
-              + 검색
-            </button>
-          </div>
-
-          <form className="watch-add-inline" onSubmit={handleWatchAddSubmit}>
-            <div className="watch-input-wrap">
-              <input
-                type="text"
-                className="watch-inline-input"
-                placeholder="종목명·코드 빠른 추가"
-                aria-label="관심종목 빠른 추가 입력"
-                value={watchAddQuery}
-                onChange={(e) => setWatchAddQuery(e.target.value)}
-              />
-              {watchAddQuery && (
-                <button
-                  type="button"
-                  className="clear-search-btn"
-                  aria-label="검색어 지우기"
-                  onClick={() => setWatchAddQuery('')}
-                >
-                  ✕
-                </button>
-              )}
-            </div>
-            <button type="submit" className="more-link2 active">
-              추가
-            </button>
-          </form>
-
-          {watchAddQuery.trim() && (
-            <div
-              className="watch-modal-list"
-              style={{
-                marginBottom: '12px',
-                maxHeight: '220px',
-                overflowY: 'auto',
-                overflowX: 'hidden',
-              }}
-            >
-              {watchAddCandidates.length === 0 ? (
-                <div className="auto-empty">일치하는 종목이 없습니다.</div>
-              ) : (
-                watchAddCandidates.map((s) => {
-                  const added = isInWatchlist(s.code);
-                  return (
-                    <div key={s.code} className="watch-modal-row">
-                      <div
-                        role="button"
-                        tabIndex={0}
-                        style={{ cursor: 'pointer' }}
-                        onClick={() => navigateToStockDetail(s.code, 'summary')}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            navigateToStockDetail(s.code, 'summary');
-                          }
-                        }}
-                      >
-                        <strong>{s.name}</strong>{' '}
-                        <span className="stock-code num">
-                          ({s.code}{s.market ? ` · ${s.market}` : ''})
-                        </span>
-                        <div className="stock-meta">
-                          {s.sector || '기타'} · 오늘 매칭 {s.todayMatchedCount || 0}건
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        className={`more-link2 ${added ? '' : 'active'}`}
-                        onClick={() => handleToggleWatchlist(s.code, s)}
-                      >
-                        {added ? '★ 해제' : '+ 추가'}
-                      </button>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          )}
-
-          {watchlistStocks.length === 0 ? (
-            <div className="empty-state" style={{ padding: '24px 12px' }}>
-              <div className="empty-icon">📌</div>
-              <div className="empty-title" style={{ fontSize: '14px' }}>종목을 추가하세요</div>
-              <div className="empty-sub" style={{ fontSize: '12px' }}>
-                위 입력창에서 종목명 또는 코드를 입력해 추가하세요.
-              </div>
-            </div>
-          ) : (
-            <div
-              className="watchlist-side-items"
-              style={{
-                maxHeight: '240px',
-                overflowY: 'auto',
-                overflowX: 'hidden',
-                paddingRight: '4px',
-              }}
-            >
-              {watchlistStocks.map((st) => (
-                <div
-                  key={st.code}
-                  className="watchlist-side-item"
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => navigateToStockDetail(st.code, 'summary')}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      navigateToStockDetail(st.code, 'summary');
-                    }
-                  }}
-                >
-                  <div className="side-item-main">
-                    <span className="side-item-name">{st.name}</span>
-                    <span className="side-item-code num">{st.code}</span>
-                  </div>
-                  <div className="side-item-sub">
-                    <QuotePrice price={st.price} className="side-item-price" />
-                    <QuoteRate rate={st.changeRate} size="sm" />
-                    <span className="side-item-cnt num" title="오늘 이 종목이 나온 글 수">오늘 {st.todayMatchedCount}건</span>
-                    <button
-                      type="button"
-                      className="remove-btn"
-                      aria-label={`${st.name} 관심종목에서 삭제`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleRemoveWatchlist(st.code);
-                      }}
-                    >
-                      ✕
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-
-        {/* 2. 좌우 2분할 레이아웃 (Split Layout): 좌측 뉴스·공시 목록 + 우측 고정 상세 패널 */}
-        <div className="split-layout">
-          <div className="content-card" ref={watchlistFeedRef} aria-label="관심 종목 뉴스 및 공시 피드">
+      <div className="wrapper watchlist-2col-layout">
+        {/* 1. 좌측 패널 (고정 너비 280px, sidebar-watchlist-section): 검색·추가 입력창, 정렬 버튼, 5건 페이지네이션 리스트 */}
+        <aside
+          className="watchlist-left-panel sidebar-watchlist-section"
+          aria-label="관심 종목 관리 패널"
+        >
+          <div className="content-card sidebar-watchlist-card">
             <div className="card-header">
               <div className="card-title">
-                📰 관심 종목 뉴스·공시 모아보기{' '}
-                <span className="count-badge num">{watchlistFeedArticles.length}</span>
+                ⭐ 관심 종목 <span className="count-badge num">{watchlistStocks.length}</span>
               </div>
-              <span className="card-caption">
-                글 클릭 시 우측 상세 분석 · #종목칩 클릭 시 종목 상세 화면 이동
-              </span>
+              <button
+                type="button"
+                className="more-link2"
+                onClick={() => setShowWatchModal(true)}
+                title="전체 종목 검색 후 추가"
+              >
+                + 검색
+              </button>
             </div>
 
-            {/* 통합 필터 바 */}
-            <div className="unified-feed-toolbar">
-              <div className="feed-toolbar-left">
-                <div className="seg-group" role="group" aria-label="출처 선택">
-                  {CHANNEL_FILTERS.map((ch) => (
-                    <button
-                      key={ch.key}
-                      type="button"
-                      className={`more-link2 seg-btn ${channelFilter === ch.key ? 'active' : ''}`}
-                      onClick={() => {
-                        setChannelFilter(ch.key);
-                        setWatchlistArticlesPage(1);
-                      }}
-                    >
-                      {ch.label}
-                    </button>
-                  ))}
-                </div>
+            <form className="watch-add-inline" onSubmit={handleWatchAddSubmit}>
+              <div className="watch-input-wrap">
+                <input
+                  type="text"
+                  className="watch-inline-input"
+                  placeholder="종목명·코드 빠른 추가"
+                  aria-label="관심종목 빠른 추가 입력"
+                  value={watchAddQuery}
+                  onChange={(e) => setWatchAddQuery(e.target.value)}
+                />
+                {watchAddQuery && (
+                  <button
+                    type="button"
+                    className="clear-search-btn"
+                    aria-label="검색어 지우기"
+                    onClick={() => setWatchAddQuery('')}
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+              <button type="submit" className="more-link2 active">
+                추가
+              </button>
+            </form>
 
-                <div className="sentiment-filter-chips" role="group" aria-label="기사 내용 필터 칩">
-                  {sentimentChips(watchSentimentCounts).map((chip) => {
-                    const isActive = sentimentFilter === chip.key;
-                    const isZero = chip.count === 0 && chip.key !== 'ALL';
+            {watchAddQuery.trim() && (
+              <div
+                className="watch-modal-list"
+                style={{
+                  marginBottom: '12px',
+                  maxHeight: '220px',
+                  overflowY: 'auto',
+                  overflowX: 'hidden',
+                }}
+              >
+                {watchAddCandidates.length === 0 ? (
+                  <div className="auto-empty">일치하는 종목이 없습니다.</div>
+                ) : (
+                  watchAddCandidates.map((s) => {
+                    const added = isInWatchlist(s.code);
                     return (
-                      <button
-                        key={chip.key}
-                        type="button"
-                        className={`more-link2 sentiment-chip-btn ${chip.cls} ${isActive ? 'active' : ''} ${isZero ? 'zero-count' : ''}`}
-                        onClick={() => {
-                          setSentimentFilter(chip.key);
-                          setWatchlistArticlesPage(1);
-                        }}
-                        aria-pressed={isActive}
-                      >
-                        <span className="chip-dot-icon">●</span>
-                        <span>{chip.label} {chip.count}</span>
-                      </button>
+                      <div key={s.code} className="watch-modal-row">
+                        <div
+                          role="button"
+                          tabIndex={0}
+                          style={{ cursor: 'pointer' }}
+                          onClick={() => navigateToStockDetail(s.code, 'summary')}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              navigateToStockDetail(s.code, 'summary');
+                            }
+                          }}
+                        >
+                          <strong>{s.name}</strong>{' '}
+                          <span className="stock-code num">
+                            ({s.code}{s.market ? ` · ${s.market}` : ''})
+                          </span>
+                          <div className="stock-meta">
+                            {s.sector || '기타'} · 오늘 매칭 {s.todayMatchedCount || 0}건
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          className={`more-link2 ${added ? '' : 'active'}`}
+                          onClick={() => handleToggleWatchlist(s.code, s)}
+                        >
+                          {added ? '★ 해제' : '+ 추가'}
+                        </button>
+                      </div>
                     );
-                  })}
-                </div>
-
-                <div className="seg-group" role="group" aria-label="정렬">
-                  <button
-                    type="button"
-                    className={`more-link2 seg-btn ${articleSort === 'latest' ? 'active' : ''}`}
-                    onClick={() => setArticleSort('latest')}
-                  >
-                    최신순
-                  </button>
-                  <button
-                    type="button"
-                    className={`more-link2 seg-btn ${articleSort === 'main' ? 'active' : ''}`}
-                    onClick={() => setArticleSort('main')}
-                    title="관심 종목이 주인공인 글을 먼저 보여 줍니다"
-                  >
-                    주인공 먼저
-                  </button>
-                </div>
-              </div>
-
-              <div className="feed-toolbar-right">
-                <button
-                  type="button"
-                  className={`more-link2 filter-toggle-btn ${watchActiveSubCount > 0 ? 'active' : ''}`}
-                  onClick={() => setIsFilterExpanded((prev) => !prev)}
-                  aria-expanded={isFilterExpanded}
-                  aria-label="상세 필터 접기/펼치기"
-                >
-                  <span>⚙️ 상세 필터</span>
-                  {watchActiveSubCount > 0 && (
-                    <span className="filter-count-badge num">{watchActiveSubCount}</span>
-                  )}
-                  <span>{isFilterExpanded ? '▲' : '▼'}</span>
-                </button>
-              </div>
-            </div>
-
-            {isFilterExpanded && (
-              <div className="sub-filter-row">
-                <div className="sub-filter-group" role="group" aria-label="기간 필터">
-                  <span className="sub-filter-label">기간</span>
-                  {ARTICLE_PERIODS.map((ap) => (
-                    <button
-                      key={ap.key}
-                      type="button"
-                      className={`more-link2 filter-chip ${articlePeriod === ap.key ? 'active' : ''}`}
-                      onClick={() => {
-                        setArticlePeriod(ap.key);
-                        setWatchlistArticlesPage(1);
-                      }}
-                    >
-                      {ap.label}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="sub-filter-group" role="group" aria-label="역할 필터">
-                  <span className="sub-filter-label">역할</span>
-                  <button
-                    type="button"
-                    className={`more-link2 filter-chip ${onlyMainRole ? 'active' : ''}`}
-                    aria-pressed={onlyMainRole}
-                    onClick={() => {
-                      setOnlyMainRole((prev) => !prev);
-                      setWatchlistArticlesPage(1);
-                    }}
-                  >
-                    관심 종목이 주인공인 글만
-                  </button>
-                </div>
-
-                {watchActiveSubCount > 0 && (
-                  <button
-                    type="button"
-                    className="more-link2 reset-btn"
-                    onClick={() => {
-                      setArticlePeriod('ALL');
-                      setOnlyMainRole(false);
-                      setWatchlistArticlesPage(1);
-                    }}
-                  >
-                    초기화 ↺
-                  </button>
+                  })
                 )}
               </div>
             )}
 
-            <ArticleList
-              articles={watchlistFeedArticles.slice(
-                (watchlistArticlesPage - 1) * 5,
-                watchlistArticlesPage * 5
-              )}
-              selectedId={activeWatchArticle?.id}
-              onSelect={(artId) =>
-                setSelectedArticleId((prev) => (prev === artId ? null : artId))
-              }
-              onSelectStock={(code) => navigateToStockDetail(code, 'summary')}
-              loading={!feedBooted}
-            />
-            <Pagination
-              currentPage={watchlistArticlesPage}
-              totalPages={Math.max(1, Math.ceil(watchlistFeedArticles.length / 5))}
-              totalItems={watchlistFeedArticles.length}
-              onPageChange={handleWatchlistPageChange}
-            />
-          </div>
+            {/* 관심 종목 정렬 칩 3종 (뉴스순 / 최신순 / 가나다순) */}
+            <div className="watchlist-sort-bar" role="group" aria-label="관심 종목 정렬 기준">
+              {[
+                { key: 'news', label: '뉴스순' },
+                { key: 'latest', label: '최신순' },
+                { key: 'name', label: '가나다순' },
+              ].map((opt) => (
+                <button
+                  key={opt.key}
+                  type="button"
+                  className={`more-link2 watchlist-sort-chip ${watchlistSort === opt.key ? 'active' : ''}`}
+                  aria-pressed={watchlistSort === opt.key}
+                  onClick={() => {
+                    setWatchlistSort(opt.key);
+                    setWatchlistPage(1);
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
 
-          <aside className="panel sticky-detail-panel" aria-label="관심 종목 기사 상세 패널">
-            <ArticleDetail
-              {...detailSharedProps}
-              article={activeWatchArticle}
-              onSelectStock={(code) => navigateToStockDetail(code, 'summary')}
-              onSelectArticle={(artId) => setSelectedArticleId(artId)}
-              onClose={activeWatchArticle ? () => setSelectedArticleId(null) : undefined}
-              closeLabel="✕ 상세 닫기"
-            />
-          </aside>
-        </div>
+            {sortedWatchlistStocks.length === 0 ? (
+              <div className="empty-state" style={{ padding: '24px 12px' }}>
+                <div className="empty-icon">📌</div>
+                <div className="empty-title" style={{ fontSize: '14px' }}>종목을 추가하세요</div>
+                <div className="empty-sub" style={{ fontSize: '12px' }}>
+                  위 입력창에서 종목명 또는 코드를 입력해 추가하세요.
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="watchlist-side-items">
+                  {pagedWatchlistStocks.map((st) => {
+                    const isSelected = selectedWatchStockCode === st.code;
+                    return (
+                      <div
+                        key={st.code}
+                        className={`watchlist-side-item ${isSelected ? 'selected' : ''}`}
+                        role="button"
+                        tabIndex={0}
+                        aria-pressed={isSelected}
+                        onClick={() => {
+                          setSelectedWatchStockCode((prev) =>
+                            prev === st.code ? null : st.code
+                          );
+                          setSelectedArticleId(null);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            setSelectedWatchStockCode((prev) =>
+                              prev === st.code ? null : st.code
+                            );
+                            setSelectedArticleId(null);
+                          }
+                        }}
+                      >
+                        <div className="side-item-main">
+                          <div className="side-item-title-group">
+                            <span className="side-item-name">{st.stockName || st.name}</span>
+                            <span className="side-item-code num">{st.code}</span>
+                          </div>
+                          <div className="side-item-actions">
+                            <button
+                              type="button"
+                              className="side-item-detail-btn"
+                              title={`${st.stockName || st.name} 종목 상세 화면으로 이동`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigateToStockDetail(st.code, 'summary');
+                              }}
+                            >
+                              상세 →
+                            </button>
+                            <button
+                              type="button"
+                              className="remove-btn"
+                              aria-label={`${st.stockName || st.name} 관심종목에서 삭제`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRemoveWatchlist(st.code);
+                              }}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </div>
+                        <div className="side-item-sub">
+                          <div className="side-item-quote">
+                            <QuotePrice price={st.price} className="side-item-price" />
+                            <QuoteRate rate={st.changeRate} size="sm" />
+                          </div>
+                          <span
+                            className="side-item-cnt num"
+                            title={`관련 뉴스 ${st.newsCount ?? 0}건 · 공시 ${st.disclosureCount ?? 0}건`}
+                          >
+                            뉴스 {st.newsCount ?? 0}건 · 공시 {st.disclosureCount ?? 0}건
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* 좌측 리스트 하단 5건 단위 페이지네이션 */}
+                <div
+                  className="watchlist-side-pagination"
+                  role="navigation"
+                  aria-label="관심 종목 페이지 이동"
+                >
+                  <button
+                    type="button"
+                    className="more-link2 page-nav-btn"
+                    disabled={currentWatchlistSidePage <= 1}
+                    onClick={() => setWatchlistPage((p) => Math.max(1, p - 1))}
+                  >
+                    이전
+                  </button>
+                  <span className="watchlist-page-indicator num">
+                    {currentWatchlistSidePage} / {watchlistSideTotalPages}
+                  </span>
+                  <button
+                    type="button"
+                    className="more-link2 page-nav-btn"
+                    disabled={currentWatchlistSidePage >= watchlistSideTotalPages}
+                    onClick={() =>
+                      setWatchlistPage((p) => Math.min(watchlistSideTotalPages, p + 1))
+                    }
+                  >
+                    다음
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </aside>
+
+        {/* 2. 우측 패널 (나머지 영역): 선택된 관심 종목의 뉴스 목록 및 우측 상세 분석 패널 */}
+        <main className="watchlist-right-feed">
+          <div className="split-layout">
+            <div
+              className="content-card watchlist-feed-card"
+              ref={watchlistFeedRef}
+              aria-label="관심 종목 뉴스 및 공시 피드"
+            >
+              <div className="card-header">
+                <div className="card-title">
+                  📰{' '}
+                  {selectedWatchStock
+                    ? `${selectedWatchStock.name} 뉴스·공시`
+                    : '관심 종목 뉴스·공시 모아보기'}{' '}
+                  <span className="count-badge num">{watchlistFeedArticles.length}</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  {selectedWatchStock && (
+                    <button
+                      type="button"
+                      className="more-link2 active"
+                      onClick={() => {
+                        setSelectedWatchStockCode(null);
+                        setSelectedArticleId(null);
+                      }}
+                    >
+                      전체 관심 종목 보기 ✕
+                    </button>
+                  )}
+                  <span className="card-caption">
+                    글 클릭 시 우측 상세 분석 · #종목칩 클릭 시 종목 상세 화면 이동
+                  </span>
+                </div>
+              </div>
+
+              {/* 통합 필터 바 */}
+              <div className="unified-feed-toolbar">
+                <div className="feed-toolbar-left">
+                  <div className="seg-group" role="group" aria-label="출처 선택">
+                    {CHANNEL_FILTERS.map((ch) => (
+                      <button
+                        key={ch.key}
+                        type="button"
+                        className={`more-link2 seg-btn ${channelFilter === ch.key ? 'active' : ''}`}
+                        onClick={() => {
+                          setChannelFilter(ch.key);
+                          setWatchlistArticlesPage(1);
+                        }}
+                      >
+                        {ch.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="sentiment-filter-chips" role="group" aria-label="기사 내용 필터 칩">
+                    {sentimentChips(watchSentimentCounts).map((chip) => {
+                      const isActive = sentimentFilter === chip.key;
+                      const isZero = chip.count === 0 && chip.key !== 'ALL';
+                      return (
+                        <button
+                          key={chip.key}
+                          type="button"
+                          className={`more-link2 sentiment-chip-btn ${chip.cls} ${isActive ? 'active' : ''} ${isZero ? 'zero-count' : ''}`}
+                          onClick={() => {
+                            setSentimentFilter(chip.key);
+                            setWatchlistArticlesPage(1);
+                          }}
+                          aria-pressed={isActive}
+                        >
+                          <span className="chip-dot-icon">●</span>
+                          <span>{chip.label} {chip.count}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="seg-group" role="group" aria-label="정렬">
+                    <button
+                      type="button"
+                      className={`more-link2 seg-btn ${articleSort === 'latest' ? 'active' : ''}`}
+                      onClick={() => setArticleSort('latest')}
+                    >
+                      최신순
+                    </button>
+                    <button
+                      type="button"
+                      className={`more-link2 seg-btn ${articleSort === 'main' ? 'active' : ''}`}
+                      onClick={() => setArticleSort('main')}
+                      title="관심 종목이 주인공인 글을 먼저 보여 줍니다"
+                    >
+                      주인공 먼저
+                    </button>
+                  </div>
+                </div>
+
+                <div className="feed-toolbar-right">
+                  <button
+                    type="button"
+                    className={`more-link2 filter-toggle-btn ${watchActiveSubCount > 0 ? 'active' : ''}`}
+                    onClick={() => setIsFilterExpanded((prev) => !prev)}
+                    aria-expanded={isFilterExpanded}
+                    aria-label="상세 필터 접기/펼치기"
+                  >
+                    <span>⚙️ 상세 필터</span>
+                    {watchActiveSubCount > 0 && (
+                      <span className="filter-count-badge num">{watchActiveSubCount}</span>
+                    )}
+                    <span>{isFilterExpanded ? '▲' : '▼'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {isFilterExpanded && (
+                <div className="sub-filter-row">
+                  <div className="sub-filter-group" role="group" aria-label="기간 필터">
+                    <span className="sub-filter-label">기간</span>
+                    {ARTICLE_PERIODS.map((ap) => (
+                      <button
+                        key={ap.key}
+                        type="button"
+                        className={`more-link2 filter-chip ${articlePeriod === ap.key ? 'active' : ''}`}
+                        onClick={() => {
+                          setArticlePeriod(ap.key);
+                          setWatchlistArticlesPage(1);
+                        }}
+                      >
+                        {ap.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="sub-filter-group" role="group" aria-label="역할 필터">
+                    <span className="sub-filter-label">역할</span>
+                    <button
+                      type="button"
+                      className={`more-link2 filter-chip ${onlyMainRole ? 'active' : ''}`}
+                      aria-pressed={onlyMainRole}
+                      onClick={() => {
+                        setOnlyMainRole((prev) => !prev);
+                        setWatchlistArticlesPage(1);
+                      }}
+                    >
+                      관심 종목이 주인공인 글만
+                    </button>
+                  </div>
+
+                  {watchActiveSubCount > 0 && (
+                    <button
+                      type="button"
+                      className="more-link2 reset-btn"
+                      onClick={() => {
+                        setArticlePeriod('ALL');
+                        setOnlyMainRole(false);
+                        setWatchlistArticlesPage(1);
+                      }}
+                    >
+                      초기화 ↺
+                    </button>
+                  )}
+                </div>
+              )}
+
+              <ArticleList
+                articles={watchlistFeedArticles.slice(
+                  (watchlistArticlesPage - 1) * 5,
+                  watchlistArticlesPage * 5
+                )}
+                selectedId={activeWatchArticle?.id}
+                onSelect={(artId) =>
+                  setSelectedArticleId((prev) => (prev === artId ? null : artId))
+                }
+                onSelectStock={(code) => navigateToStockDetail(code, 'summary')}
+                loading={!feedBooted}
+              />
+              <Pagination
+                currentPage={watchlistArticlesPage}
+                totalPages={Math.max(1, Math.ceil(watchlistFeedArticles.length / 5))}
+                totalItems={watchlistFeedArticles.length}
+                onPageChange={handleWatchlistPageChange}
+              />
+            </div>
+
+            <aside className="panel sticky-detail-panel" aria-label="관심 종목 기사 상세 패널">
+              <ArticleDetail
+                {...detailSharedProps}
+                article={activeWatchArticle}
+                onSelectStock={(code) => navigateToStockDetail(code, 'summary')}
+                onSelectArticle={(artId) => setSelectedArticleId(artId)}
+                onClose={activeWatchArticle ? () => setSelectedArticleId(null) : undefined}
+                closeLabel="✕ 상세 닫기"
+              />
+            </aside>
+          </div>
+        </main>
       </div>
     );
   };
@@ -4874,6 +5223,57 @@ export default function DashboardPageV7() {
         </div>
       )}
 
+      {showLogoutModal && (
+        <div className="modal-backdrop" onClick={() => setShowLogoutModal(false)}>
+          <div
+            className="modal-card"
+            style={{ maxWidth: '360px' }}
+            onClick={(e) => e.stopPropagation()}
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="logout-modal-title"
+            aria-describedby="logout-modal-desc"
+          >
+            <div className="card-header">
+              <h3 id="logout-modal-title" className="card-title">
+                🚪 로그아웃 확인
+              </h3>
+              <button
+                type="button"
+                className="remove-btn"
+                aria-label="로그아웃 확인 모달 닫기"
+                onClick={() => setShowLogoutModal(false)}
+              >
+                ✕
+              </button>
+            </div>
+            <p
+              id="logout-modal-desc"
+              className="card-caption"
+              style={{ fontSize: '14px', color: 'var(--text-main)', margin: '6px 0 14px' }}
+            >
+              정말 로그아웃 하시겠습니까?
+            </p>
+            <div className="comment-form-footer" style={{ justifyContent: 'flex-end', gap: '8px' }}>
+              <button
+                type="button"
+                className="btn-outline"
+                onClick={() => setShowLogoutModal(false)}
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={confirmLogout}
+              >
+                로그아웃
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showAuthModal && (
         <div className="modal-backdrop" onClick={() => setShowAuthModal(false)}>
           <div
@@ -4940,6 +5340,19 @@ export default function DashboardPageV7() {
                   : '가입하신 아이디와 등록된 이메일 주소를 입력하시면 비밀번호 재설정 링크를 발송해 드립니다.'}
             </p>
 
+            {(authMode === 'login' || authMode === 'signup') && (
+              <div className="auth-format-guide" aria-label="아이디 및 비밀번호 입력 형식 안내">
+                <div className="auth-format-item">
+                  <span className="auth-format-label">아이디 형식</span>
+                  <span className="auth-format-desc">영문 소문자(a~z)·숫자(0~9) 4~20자 (예: tester01)</span>
+                </div>
+                <div className="auth-format-item">
+                  <span className="auth-format-label">비밀번호 형식</span>
+                  <span className="auth-format-desc">8~64자 입력 (영문·숫자·특수문자 사용 가능)</span>
+                </div>
+              </div>
+            )}
+
             {authError && (
               <div className="sns-warning-inline" role="alert">
                 {authError}
@@ -4948,36 +5361,52 @@ export default function DashboardPageV7() {
 
             {(authMode === 'login' || authMode === 'signup') && (
               <form className="comment-form" onSubmit={handleAuthSubmit}>
-                <input
-                  type="text"
-                  className="watch-inline-input"
-                  placeholder="아이디 (예: tester01)"
-                  aria-label="아이디"
-                  value={authForm.username}
-                  onChange={(e) => setAuthForm({ ...authForm, username: e.target.value })}
-                  required
-                />
-                <input
-                  type="password"
-                  className="watch-inline-input"
-                  placeholder="비밀번호"
-                  aria-label="비밀번호"
-                  value={authForm.password}
-                  onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })}
-                  required
-                />
-                {authMode === 'signup' && (
+                <div className="auth-field-group">
+                  <input
+                    type="text"
+                    className="watch-inline-input"
+                    placeholder="아이디 (영문 소문자·숫자 4~20자, 예: tester01)"
+                    aria-label="아이디"
+                    value={authForm.username}
+                    onChange={(e) => setAuthForm({ ...authForm, username: e.target.value })}
+                    required
+                  />
+                  {authMode === 'signup' && (
+                    <span className="auth-field-hint">
+                      * 영문 소문자(a-z)와 숫자(0-9)만 사용하여 4~20자로 입력해 주세요.
+                    </span>
+                  )}
+                </div>
+                <div className="auth-field-group">
                   <input
                     type="password"
                     className="watch-inline-input"
-                    placeholder="비밀번호 확인"
-                    aria-label="비밀번호 확인"
-                    value={authForm.passwordConfirm}
-                    onChange={(e) =>
-                      setAuthForm({ ...authForm, passwordConfirm: e.target.value })
-                    }
+                    placeholder="비밀번호 (8~64자)"
+                    aria-label="비밀번호"
+                    value={authForm.password}
+                    onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })}
                     required
                   />
+                  {authMode === 'signup' && (
+                    <span className="auth-field-hint">
+                      * 최소 8자 이상 64자 이하로 입력해 주세요.
+                    </span>
+                  )}
+                </div>
+                {authMode === 'signup' && (
+                  <div className="auth-field-group">
+                    <input
+                      type="password"
+                      className="watch-inline-input"
+                      placeholder="비밀번호 확인 (동일하게 재입력)"
+                      aria-label="비밀번호 확인"
+                      value={authForm.passwordConfirm}
+                      onChange={(e) =>
+                        setAuthForm({ ...authForm, passwordConfirm: e.target.value })
+                      }
+                      required
+                    />
+                  </div>
                 )}
                 <div className="comment-form-footer">
                   <button

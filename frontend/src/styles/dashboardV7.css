@@ -2870,83 +2870,118 @@ textarea:focus-visible,
 }
 
 .pagination-bar {
-    position: relative !important;
+    position: static !important;
     display: flex !important;
+    flex-direction: column !important;
     justify-content: center !important;
     align-items: center !important;
     width: 100% !important;
-    padding: 14px 20px !important;
+    padding: 14px 16px !important;
     background-color: transparent !important;
     border-top: 1px solid var(--line-light) !important;
     box-sizing: border-box !important;
     margin-top: 14px !important;
 }
 
+.pagination-wrapper,
+.pagination-group {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    flex-wrap: wrap !important;
+    gap: 10px !important;
+    width: 100% !important;
+}
+
 .pagination-info {
-    position: absolute !important;
-    left: 20px !important;
-    /* 총 건수는 왼쪽 끝에 고정 */
+    position: static !important;
+    left: auto !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 6px !important;
+    font-size: 12.5px !important;
+    font-weight: 600 !important;
+    color: var(--text-sub) !important;
+    white-space: nowrap !important;
     flex-shrink: 0 !important;
+}
+
+.pagination-sep {
+    color: var(--text-muted);
+    opacity: 0.7;
 }
 
 .pagination-buttons {
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
+    flex-wrap: wrap !important;
     gap: 6px !important;
     margin-left: 0 !important;
-    /* 오른쪽 쏠림 강제 해제 */
     margin-right: 0 !important;
 }
 
 .page-number-group {
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    gap: 3px;
-    flex-wrap: nowrap;
+    justify-content: center;
+    gap: 5px;
+    flex-wrap: wrap;
 }
 
 .more-link2.page-num-btn {
-    min-width: 28px;
-    height: 28px;
-    padding: 0 6px;
+    min-width: 32px;
+    height: 32px;
+    padding: 0 9px;
+    margin: 0 1px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12.5px;
+    font-weight: 600;
+    border-radius: 8px;
+    background: #ffffff;
+    color: var(--text-sub);
+    border: 1px solid var(--line-soft, #e2e8f0);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+}
+
+.more-link2.page-num-btn:hover:not(:disabled) {
+    background: #f8fafc;
+    border-color: #cbd5e1;
+    color: var(--text-main);
+    transform: translateY(-1px);
+}
+
+.more-link2.page-num-btn.active {
+    background: var(--primary-color, #2962ff);
+    color: #ffffff;
+    font-weight: 700;
+    border-color: var(--primary-color, #2962ff);
+    box-shadow: 0 2px 6px rgba(41, 98, 255, 0.28);
+}
+
+.more-link2.page-nav-btn {
+    height: 32px;
+    padding: 0 12px;
+    margin: 0 2px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     font-size: 12px;
     font-weight: 600;
-    border-radius: 6px;
-    background: transparent;
-    color: var(--text-sub);
-    border: 1px solid transparent;
-    cursor: pointer;
-    transition: all 0.15s ease;
-}
-
-.more-link2.page-num-btn:hover:not(:disabled) {
-    background: #f1f5f9;
-    color: var(--text-main);
-}
-
-.more-link2.page-num-btn.active {
-    background: var(--primary-color);
-    color: #ffffff;
-    font-weight: 700;
-    border-color: var(--primary-color);
-}
-
-.more-link2.page-nav-btn {
-    height: 28px;
-    padding: 0 10px;
-    font-size: 11.5px;
-    font-weight: 600;
-    border-radius: 6px;
-    border: 1px solid var(--line-soft);
+    border-radius: 8px;
+    border: 1px solid var(--line-soft, #e2e8f0);
     background: #ffffff;
     color: var(--text-sub);
     cursor: pointer;
     transition: all 0.15s ease;
     white-space: nowrap;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
 }
 
 .more-link2.page-nav-btn:hover:not(:disabled) {
@@ -2960,6 +2995,7 @@ textarea:focus-visible,
     cursor: not-allowed;
     background: #f8fafc;
     border-color: var(--line-light);
+    box-shadow: none;
 }
 
 .page-ellipsis {
@@ -2969,7 +3005,66 @@ textarea:focus-visible,
     user-select: none;
 }
 
-/* 4. 로그인 모달 아이디/비밀번호 찾기 링크 및 뷰 */
+/* 4. 로그인 모달 아이디/비밀번호 찾기 링크 및 입력 형식 안내 */
+.auth-format-guide {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 10px 12px;
+    border-radius: 9px;
+    background-color: var(--surface-sub, #f8fafc);
+    border: 1px solid var(--line-soft, #e2e8f0);
+    font-size: 12px;
+}
+
+.auth-format-item {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    line-height: 1.45;
+}
+
+.auth-format-label {
+    font-weight: 700;
+    color: var(--primary-color, #2962ff);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.auth-format-desc {
+    color: var(--text-sub, #475569);
+}
+
+.auth-field-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.auth-field-hint {
+    font-size: 11px;
+    color: var(--text-muted, #64748b);
+    padding-left: 4px;
+    line-height: 1.35;
+}
+
+.app-shell.dark-mode .auth-format-guide {
+    background-color: #182235;
+    border-color: #2d3748;
+}
+
+.app-shell.dark-mode .auth-format-label {
+    color: #60a5fa;
+}
+
+.app-shell.dark-mode .auth-format-desc {
+    color: #cbd5e1;
+}
+
+.app-shell.dark-mode .auth-field-hint {
+    color: #94a3b8;
+}
+
 .auth-find-links {
     display: flex;
     align-items: center;
@@ -3493,14 +3588,14 @@ textarea:focus-visible,
 }
 
 .app-shell.dark-mode .more-link2.page-num-btn {
-    background: transparent !important;
-    color: #a0aec0 !important;
-    border: 1px solid transparent !important;
+    background: #182235 !important;
+    color: #cbd5e1 !important;
+    border: 1px solid #2d3748 !important;
 }
 
 .app-shell.dark-mode .more-link2.page-num-btn:hover:not(:disabled) {
-    background-color: #182235 !important;
-    border-color: #2d3748 !important;
+    background-color: #24324a !important;
+    border-color: #4a5568 !important;
     color: #f8fafc !important;
 }
 
@@ -3717,7 +3812,11 @@ textarea:focus-visible,
     opacity: 0.5;
 }
 
-/* B1: 관심 종목 2컬럼 레이아웃 */
+/* B1: 관심 종목 2컬럼 레이아웃 (좌측 280px sidebar-watchlist-section + 우측 피드) */
+.wrapper.watchlist-2col-layout {
+    max-width: 1400px;
+}
+
 .watchlist-2col-layout {
     display: grid;
     grid-template-columns: 280px 1fr;
@@ -3725,36 +3824,90 @@ textarea:focus-visible,
     align-items: start;
 }
 
-@media (max-width: 1100px) {
-    .watchlist-2col-layout {
-        grid-template-columns: 1fr;
-    }
-}
-
-.watchlist-left-panel {
+.watchlist-left-panel,
+.sidebar-watchlist-section {
+    width: 280px;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     gap: 12px;
+}
+
+.watchlist-right-feed {
+    min-width: 0;
+    width: 100%;
+}
+
+.watchlist-right-feed .split-layout {
+    grid-template-columns: minmax(0, 1fr) 380px;
+    gap: 14px;
+    align-items: start;
+}
+
+.watchlist-feed-card,
+.watchlist-right-feed .split-layout > .content-card {
+    max-height: calc(100vh - 160px);
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-gutter: stable;
+}
+
+.watchlist-right-feed .sticky-detail-panel {
+    max-height: calc(100vh - 160px);
+    overflow-y: auto;
+}
+
+.unified-feed-toolbar .sentiment-filter-chips {
+    margin-bottom: 0;
+}
+
+@media (max-width: 1100px) {
+    .watchlist-2col-layout,
+    .watchlist-right-feed .split-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .watchlist-left-panel,
+    .sidebar-watchlist-section {
+        width: 100%;
+    }
+
+    .watchlist-feed-card,
+    .watchlist-right-feed .split-layout > .content-card,
+    .watchlist-right-feed .sticky-detail-panel {
+        max-height: none;
+        overflow: visible;
+    }
+}
+
+.watchlist-sort-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 10px;
+}
+
+.more-link2.watchlist-sort-chip {
+    flex: 1;
+    justify-content: center;
+    padding: 5px 8px;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 6px;
 }
 
 .watchlist-side-items {
     display: flex;
     flex-direction: column;
     gap: 6px;
-    margin-top: 10px;
-    max-height: 240px;
-    overflow-y: auto;
-    overflow-x: hidden;
-    padding-right: 4px;
+    margin-top: 8px;
 }
 
 .watchlist-side-item {
     display: flex;
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 9px 14px;
+    flex-direction: column;
+    gap: 5px;
+    padding: 9px 11px;
     border-radius: 8px;
     background: #f8fafc;
     border: 1px solid var(--border-color, #e2e8f0);
@@ -3767,26 +3920,80 @@ textarea:focus-visible,
     background: #f1f5f9;
 }
 
+.watchlist-side-item.selected {
+    border-color: var(--primary-color, #2962ff);
+    background: var(--primary-soft, #eef4ff);
+    box-shadow: 0 0 0 1px rgba(41, 98, 255, 0.18);
+}
+
 .side-item-main {
     display: flex;
     align-items: center;
-    gap: 8px;
+    justify-content: space-between;
+    gap: 6px;
     font-weight: 600;
-    font-size: 14px;
+    font-size: 13.5px;
+}
+
+.side-item-title-group {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.side-item-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .side-item-code {
-    font-size: 12px;
+    font-size: 11.5px;
     color: var(--text-muted, #64748b);
     font-weight: 400;
+    flex-shrink: 0;
+}
+
+.side-item-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.side-item-detail-btn {
+    border: 1px solid var(--line-soft, #cbd5e1);
+    background: #ffffff;
+    color: var(--text-sub, #475569);
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.side-item-detail-btn:hover {
+    border-color: var(--primary-color, #2962ff);
+    color: var(--primary-color, #2962ff);
+    background: #f8fafc;
 }
 
 .side-item-sub {
     display: flex;
     align-items: center;
-    justify-content: flex-end;
+    justify-content: space-between;
+    flex-wrap: wrap;
     font-size: 12px;
-    gap: 10px;
+    gap: 4px 8px;
+}
+
+.side-item-quote {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
 }
 
 .side-item-price {
@@ -3796,12 +4003,44 @@ textarea:focus-visible,
 .side-item-cnt {
     color: var(--text-muted, #64748b);
     font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+    margin-left: auto;
 }
 
-/* B2: 비로그인 단일 안내 카드 */
+.watchlist-side-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px solid var(--line-light, #e2e8f0);
+}
+
+.watchlist-page-indicator {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-sub, #475569);
+}
+
+.evidence-empty-notice {
+    margin-top: 6px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: var(--surface-muted, #f1f5f9);
+    color: var(--text-muted, #64748b);
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+/* B2: 비로그인 안내 카드 */
 .watchlist-guest-card {
-    max-width: 600px;
-    margin: 40px auto;
+    text-align: center;
+    padding: 36px 20px;
+}
+
+.watchlist-guest-side-card {
     text-align: center;
 }
 
@@ -4077,6 +4316,35 @@ textarea:focus-visible,
 .app-shell.dark-mode .watchlist-side-item:hover {
     border-color: var(--primary-color);
     background: #182235;
+}
+
+.app-shell.dark-mode .watchlist-side-item.selected {
+    border-color: #60a5fa;
+    background: rgba(41, 98, 255, 0.22);
+}
+
+.app-shell.dark-mode .side-item-detail-btn {
+    background: #182235;
+    border-color: #2d3748;
+    color: #cbd5e1;
+}
+
+.app-shell.dark-mode .side-item-detail-btn:hover {
+    border-color: #60a5fa;
+    color: #ffffff;
+}
+
+.app-shell.dark-mode .watchlist-side-pagination {
+    border-top-color: #2d3748;
+}
+
+.app-shell.dark-mode .watchlist-page-indicator {
+    color: #cbd5e1;
+}
+
+.app-shell.dark-mode .evidence-empty-notice {
+    background: #182235;
+    color: #94a3b8;
 }
 
 .app-shell.dark-mode .stock-header-tier1 {
