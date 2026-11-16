@@ -1,5 +1,6 @@
 // src/pages/DashboardPage.jsx
 import { useState, useMemo, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   INITIAL_SYSTEM_STATUS,
   INITIAL_WATCHLIST_CODES,
@@ -21,16 +22,15 @@ import '../styles/dashboard.css';
 
 // 1계층: 왼쪽 사이드바 네비게이션 메뉴 (장소 이동 전용)
 const NAV_ITEMS = [
-  { key: 'home', icon: '🏠', label: '홈', title: '시장 종합 & 실시간 뉴스·SNS 매칭' },
+  { key: 'home', icon: '🏠', label: '홈', title: '시장 종합 & 실시간 뉴스 매칭' },
   { key: 'stock', icon: '📊', label: '종목', title: '종목 탐색 & 개별 종목 대시보드' },
-  { key: 'watchlist', icon: '⭐', label: '관심 종목', title: '내 관심 종목 & 뉴스·SNS 모아보기' },
+  { key: 'watchlist', icon: '⭐', label: '관심 종목', title: '내 관심 종목 & 뉴스 모아보기' },
 ];
 
 // 2계층: 개별 종목 상세 내부 가로 탭 (.stock-tabs)
 const STOCK_TABS = [
   { key: 'summary', icon: '📑', label: '요약·감성' },
   { key: 'news', icon: '📰', label: '뉴스' },
-  { key: 'sns', icon: '💬', label: 'SNS' },
   { key: 'mention', icon: '📈', label: '언급량 추이' },
   { key: 'board', icon: '🗣️', label: '종목 토론' },
 ];
@@ -682,7 +682,7 @@ function StockComments({
           </div>
           {!compact && (
             <span className="card-caption">
-              뉴스·SNS·언급량 탭에서 실시간 공유되는 종목 의견입니다
+              뉴스·언급량 탭에서 실시간 공유되는 종목 의견입니다
             </span>
           )}
         </div>
@@ -692,7 +692,6 @@ function StockComments({
             {[
               { key: 'all', label: '전체 의견' },
               { key: 'news', label: '뉴스' },
-              { key: 'sns', label: 'SNS' },
               { key: 'mention', label: '언급량' },
             ].map((f) => (
               <button
@@ -743,7 +742,6 @@ function StockComments({
             <span className="stock-meta">말머리 선택:</span>
             {[
               { key: 'news', label: '뉴스' },
-              { key: 'sns', label: 'SNS' },
               { key: 'mention', label: '언급량' },
             ].map((t) => (
               <button
@@ -951,32 +949,20 @@ INITIAL_WATCHLIST_CODES[0] || allStocks[0]?.code || '005930'
   //       : { positive: 45, neutral: 35, negative: 20 });
   const articleSentimentRatio = article.sentimentRatio ?? null;
 
-  const relatedSnsList = (() => {
-    if (isSns) return [];
-    if (Array.isArray(article.relatedSns) && article.relatedSns.length > 0) {
-      return article.relatedSns.slice(0, 5);
-    }
-    const relCodes = new Set(sortedRelatedStocks.map((r) => r.code));
-    return allArticles
-      .filter(
-        (a) => a.sourceType === 'SNS' && a.relatedStocks.some((r) => relCodes.has(r.code))
-      )
-      .slice(0, 5);
-  })();
-
   const targetStockComments = commentsByStock[primaryStock?.code] || [];
   // 현재 상세보기로 열어본 글이 뉴스(NEWS)이면 'news'([뉴스]), SNS이면 'sns'([SNS]) 말머리 자동 연동
   const commentTabKey = isSns ? 'sns' : 'news';
 
   return (
     <div className="article-detail">
-      {onClose && (
-        <div className="detail-back-bar">
-          <button type="button" className="more-link2" onClick={onClose}>
-            ← 우측 관심·이슈 종목 요약으로 돌아가기
+      <div className="article-modal-toolbar">
+        <strong>▤ 뉴스 상세 분석</strong>
+        {onClose && (
+          <button type="button" className="article-modal-close" onClick={onClose} aria-label="기사 상세 닫기">
+            ×
           </button>
-        </div>
-      )}
+        )}
+      </div>
 
       <div className="article-detail-head">
         <div>
@@ -1002,12 +988,6 @@ INITIAL_WATCHLIST_CODES[0] || allStocks[0]?.code || '005930'
         </a>
       </div>
 
-      {/* SNS 미검증 경고 배너 (N-05 복원 필수) */}
-      {isSns && (
-        <div className="sns-warning-inline" role="alert">
-          ⚠️ <strong>참고용 · 확인되지 않은 정보:</strong> SNS(블로그·카페·커뮤니티) 게시글은 사실 여부가 검증되지 않았습니다. 투자 판단 시 공시와 원문을 반드시 확인해 주세요.
-        </div>
-      )}
 
       {article.keywords?.length > 0 && (
         <div className="theme-tags">
@@ -1019,6 +999,8 @@ INITIAL_WATCHLIST_CODES[0] || allStocks[0]?.code || '005930'
         </div>
       )}
 
+      <div className="article-detail-grid">
+        <div className="article-detail-main">
       {/* AI 3줄 핵심 요약 & 종목 감성 분석 카드 */}
       <div className="ai-card">
         <div className="ai-card-header">
@@ -1189,41 +1171,32 @@ INITIAL_WATCHLIST_CODES[0] || allStocks[0]?.code || '005930'
         )}
       </div>
 
-      {/* 인접 시각 연관 SNS 반응 목록 (뉴스일 때 최대 5건) */}
-      {!isSns && (
-        <div className="detail-section-block">
-          <div className="sub-title">
-            💬 인접 시각 연관 SNS 반응 (최대 5건 · ⚠️ 참고용 확인되지 않은 정보)
-          </div>
-          {relatedSnsList.length === 0 ? (
-            <div className="empty-text">인접 시각에 매칭된 SNS 반응이 없습니다.</div>
-          ) : (
-            <div className="related-sns-list">
-              {relatedSnsList.map((sns) => (
-                <div
-                  key={sns.id}
-                  className="related-sns-row"
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => onSelectArticle(sns.id)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      onSelectArticle(sns.id);
-                    }
-                  }}
-                >
-                  <span className="source-pill sns">{sns.channel || sns.press}</span>
-                  <span className="related-sns-title">{sns.title}</span>
-                  <span className="stock-meta num">{sns.publishedAt || sns.time}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
 
-      {/* 우측 상세보기 패널 스크롤 하단 댓글(종목 토론) 달기 영역 (showComments=true) */}
+        </div>
+        <aside className="article-detail-side" aria-label="매칭 종목 및 종목토론">
+          {sortedRelatedStocks.length > 0 && (
+            <section className="detail-side-stock">
+              <h4>📊 매칭 종목 정보</h4>
+              {sortedRelatedStocks.map((rel) => {
+                const quote = liveQuotes[rel.code];
+                const stock = allStocks.find((item) => item.code === rel.code);
+                const price = quote?.price ?? stock?.price;
+                const changeRate = quote?.changeRate ?? stock?.changeRate;
+                return (
+                  <div className="detail-side-stock-item" key={rel.code}>
+                    <button type="button" className="detail-side-stock-link" onClick={() => onSelectStock(rel.code)}>
+                      <strong>{rel.name}</strong> <span>({rel.code})</span> <span>상세 이동 →</span>
+                    </button>
+                    <div className="detail-side-stock-row"><span>현재가</span><b>{price != null ? `${Number(price).toLocaleString()}원` : '시세 준비 중'}</b></div>
+                    <div className="detail-side-stock-row"><span>등락률</span><b className={rateTone(changeRate)}>{changeRate != null ? formatRate(changeRate) : '-'}</b></div>
+                    <div className="detail-side-stock-row"><span>매칭 구분</span><b>{rel.relationType}</b></div>
+                    <div className="detail-side-stock-row"><span>관련도</span><b>{rel.relevance}%</b></div>
+                  </div>
+                );
+              })}
+            </section>
+          )}
+      {/* 종목토론 댓글 영역 (showComments=true) */}
       {showComments && primaryStock && (
         <div className="detail-comments-wrap">
           {sortedRelatedStocks.length > 1 && (
@@ -1255,6 +1228,8 @@ INITIAL_WATCHLIST_CODES[0] || allStocks[0]?.code || '005930'
           />
         </div>
       )}
+        </aside>
+      </div>
     </div>
   );
 }
@@ -1741,7 +1716,21 @@ useEffect(() => {
   };
 }, [selectedStockCode, watchlistCodes]);
 
+  const [showAuthModal, setShowAuthModal] = useState(false);
   const [selectedArticleId, setSelectedArticleId] = useState(null);
+  useEffect(() => {
+    if (!selectedArticleId) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const handleEscape = (event) => {
+      if (event.key === 'Escape' && !showAuthModal) setSelectedArticleId(null);
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', handleEscape);
+    };
+  }, [selectedArticleId, showAuthModal]);
 
   const [articleDetails, setArticleDetails] = useState({});
 // 선택한 뉴스에 매칭된 종목의 실제 주가 조회
@@ -2031,7 +2020,6 @@ useEffect(() => {
   }, []);
 
 
-  const [showAuthModal, setShowAuthModal] = useState(false);
   const [authMode, setAuthMode] = useState('login'); // 'login' | 'signup'
   const [authForm, setAuthForm] = useState({
     username: '',
@@ -2393,7 +2381,7 @@ const currentSummary = summariesByStock[selectedStockCode] || {
       Math.max(...(art.relatedStocks || []).map((r) => r.relevance), 0);
 
     return allArticles
-      .filter((art) => channelFilter === 'ALL' || art.sourceType === channelFilter)
+      .filter((art) => art.sourceType === 'NEWS')
       .filter((art) => sentimentFilter === 'ALL' || art.sentiment === sentimentFilter)
       .filter((art) => {
         if (!onlyWatchlistArticles) return true;
@@ -2506,7 +2494,7 @@ useEffect(() => {
 
     return allArticles
       .filter((art) => art.relatedStocks.some((r) => watchlistCodes.includes(r.code)))
-      .filter((art) => channelFilter === 'ALL' || art.sourceType === channelFilter)
+      .filter((art) => art.sourceType === 'NEWS')
       .filter((art) => sentimentFilter === 'ALL' || art.sentiment === sentimentFilter)
       .filter((art) => articlePeriod === 'ALL' || art.daysAgo <= Number(articlePeriod))
       .filter((art) => relevanceOf(art) >= minRelevance)
@@ -3141,6 +3129,10 @@ const handleDeleteCommentForStock = async (stockCode, postId) => {
     onToggleLikeForStock: handleToggleLikeForStock,
     onRequireLogin: requireLogin,
   };
+  const selectedDetailArticle = selectedArticleId
+    ? articleDetails[selectedArticleId] ||
+      allArticles.find((article) => String(article.id) === String(selectedArticleId))
+    : null;
 
   // ---------- 2단 자동완성 드롭다운 렌더링 헬퍼 (#searchResult) ----------
   const renderSearchAutocomplete = () => {
@@ -3170,7 +3162,6 @@ const handleDeleteCommentForStock = async (stockCode, postId) => {
             {[
               { key: 'ALL', label: '전체 출처' },
               { key: 'NEWS', label: '뉴스' },
-              { key: 'SNS', label: 'SNS' },
             ].map((src) => (
               <button
                 key={src.key}
@@ -3317,7 +3308,6 @@ const handleDeleteCommentForStock = async (stockCode, postId) => {
               {[
                 { key: 'ALL', label: '전체 채널' },
                 { key: 'NEWS', label: '📰 뉴스' },
-                { key: 'SNS', label: '💬 SNS' },
               ].map((ch) => (
                 <button
                   key={ch.key}
@@ -3449,7 +3439,7 @@ const handleDeleteCommentForStock = async (stockCode, postId) => {
                 <span className="count-badge num">{homeFeedArticles.length}</span>
               </div>
               <span className="card-caption">
-                글 클릭 시 우측 상세 분석 · #종목칩 클릭 시 종목 상세 화면 이동
+                글 클릭 시 상세 창 열기 · #종목칩 클릭 시 종목 상세 화면 이동
               </span>
             </div>
 
@@ -3463,23 +3453,12 @@ const handleDeleteCommentForStock = async (stockCode, postId) => {
             />
 
             <div className="llm-notice feed-footer-notice">
-              🤖 안내(N-05): AI(LLM) 요약·감성 분석 및 SNS 게시글(미검증 정보)은 투자 권유가 아니며, 원문과 공시를 반드시 확인해 주세요.
+              🤖 안내: AI(LLM) 요약·감성 분석은 투자 권유가 아니며, 원문과 공시를 반드시 확인해 주세요.
             </div>
           </div>
 
-          {/* 우측 패널(.sticky-detail-panel): 글 미선택 시 [1순위 🔥 이슈 종목(위) + 2순위 ⭐ 관심 종목(아래)](.side-stack), 글 선택 시 ArticleDetail */}
-          <aside className="sticky-detail-panel" aria-label="우측 요약 및 상세 분석 패널">
-            {selectedHomeArticle ? (
-              <div className="panel">
-                <ArticleDetail
-                  {...detailSharedProps}
-                  article={selectedHomeArticle}
-                  onSelectStock={(code) => navigateToStockDetail(code, 'summary')}
-                  onSelectArticle={(artId) => setSelectedArticleId(artId)}
-                  onClose={() => setSelectedArticleId(null)}
-                />
-              </div>
-            ) : (
+          {/* 기사 상세는 화면 최상위 포털에서 열고, 우측 요약 패널은 항상 유지 */}
+          <aside className="sticky-detail-panel" aria-label="관심 종목 및 이슈 종목 패널">
               <div className="side-stack">
                 {/* [1순위 - 맨 위 배치] ⭐ 나의 관심 종목 요약 카드 */}
                 <div className="content-card">
@@ -3492,7 +3471,7 @@ const handleDeleteCommentForStock = async (stockCode, postId) => {
                       className="more-link"
                       onClick={() => handleSwitchNav('watchlist')}
                     >
-                      관심종목 뉴스·SNS 모아보기 &gt;
+                      관심종목 뉴스 모아보기 &gt;
                     </button>
                   </div>
 
@@ -3728,133 +3707,7 @@ const handleDeleteCommentForStock = async (stockCode, postId) => {
                   </div>
                 </div>
 
-                {/* [2순위 - 아래 배치] ⭐ 나의 관심 종목 요약 카드 (빈 상태 시 높이 60px 이내 컴팩트 배너) */}
-                {watchlistStocks.length === 0 ? (
-                  <div className="content-card watchlist-compact-banner">
-                    <div className="watchlist-compact-row">
-                      <div className="watchlist-compact-title">
-                        ⭐ <strong>나의 관심 종목</strong> <span className="count-badge num">0</span>
-                        <span className="stock-meta">등록된 관심 종목이 없습니다.</span>
-                      </div>
-                      <form className="watch-add-inline compact" onSubmit={handleWatchAddSubmit}>
-                        <div className="watch-input-wrap">
-                          <input
-                            type="text"
-                            className="watch-inline-input"
-                            placeholder="종목명·코드 빠른 추가"
-                            aria-label="관심종목 빠른 추가"
-                            value={watchAddQuery}
-                            onChange={(e) => setWatchAddQuery(e.target.value)}
-                          />
-                        </div>
-                        <button type="submit" className="more-link2 active">
-                          + 추가
-                        </button>
-                      </form>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="content-card">
-                    <div className="card-header">
-                      <div className="card-title">
-                        ⭐ 나의 관심 종목 <span className="count-badge num">{watchlistStocks.length}</span>
-                      </div>
-                      <button
-                        type="button"
-                        className="more-link"
-                        onClick={() => handleSwitchNav('watchlist')}
-                      >
-                        관심종목 뉴스·SNS 모아보기 &gt;
-                      </button>
-                    </div>
-
-                    <form className="watch-add-inline" onSubmit={handleWatchAddSubmit}>
-                      <div className="watch-input-wrap">
-                        <input
-                          type="text"
-                          className="watch-inline-input"
-                          placeholder="종목명·코드·별칭(삼전) 빠른 추가"
-                          aria-label="관심종목 검색 및 추가"
-                          value={watchAddQuery}
-                          onChange={(e) => setWatchAddQuery(e.target.value)}
-                        />
-                        {watchAddQuery && (
-                          <button
-                            type="button"
-                            className="clear-search-btn"
-                            aria-label="관심종목 검색어 지우기"
-                            onClick={() => setWatchAddQuery('')}
-                          >
-                            ✕
-                          </button>
-                        )}
-                      </div>
-                      <button type="submit" className="more-link2 active">
-                        + 추가
-                      </button>
-                    </form>
-
-                    <table className="stock-table compact-table">
-                      <thead>
-                        <tr>
-                          <th>종목명</th>
-                          <th className="num-col">현재가</th>
-                          <th className="num-col">등락률</th>
-                          <th className="num-col">삭제</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {watchlistStocks.map((st) => {
-                          const stHasPrice = st.price !== null && st.price !== undefined;
-                          const tone = rateTone(st.changeRate);
-                          return (
-                            <tr
-                              key={st.code}
-                              tabIndex={0}
-                              onClick={() => navigateToStockDetail(st.code, 'summary')}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                  e.preventDefault();
-                                  navigateToStockDetail(st.code, 'summary');
-                                }
-                              }}
-                            >
-                              <td>
-                                <strong>{st.name}</strong>
-                                <div className="stock-meta num">오늘 {st.todayMatchedCount}건</div>
-                              </td>
-                              <td className="num-col num">
-                                {stHasPrice
-                                  ? `${st.price.toLocaleString()}원`
-                                  : `${st.todayMatchedCount}건`}
-                              </td>
-                              <td className={`num-col num ${tone}`}>
-                                {stHasPrice
-                                  ? formatRate(st.changeRate)
-                                  : `긍정 ${st.sentimentRatio.positive}%`}
-                              </td>
-                              <td className="num-col">
-                                <button
-                                  type="button"
-                                  className="remove-btn"
-                                  aria-label={`${st.name} 관심종목에서 삭제`}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleRemoveWatchlist(st.code);
-                                  }}
-                                >
-                                  ✕
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
               </div>
-            )}
           </aside>
         </div>
       </div>
@@ -4014,8 +3867,9 @@ const handleDeleteCommentForStock = async (stockCode, postId) => {
     // 2. 상세 모드 (stockViewMode === 'detail' - 개별 종목 화면)
     const hasPrice = selectedStock.price !== null && selectedStock.price !== undefined;
     const selTone = rateTone(selectedStock.changeRate);
-    const activeStockArticle =
-      stockFeedArticles.find((a) => a.id === selectedArticleId) || stockFeedArticles[0] || null;
+    const activeStockArticle = selectedArticleId
+      ? articleDetails[selectedArticleId] || stockFeedArticles.find((a) => String(a.id) === String(selectedArticleId)) || null
+      : null;
 
     const totalNews = trendSeries.reduce((sum, pt) => sum + (pt.news || 0), 0);
     const totalSns = trendSeries.reduce((sum, pt) => sum + (pt.sns || 0), 0);
@@ -4079,7 +3933,6 @@ const handleDeleteCommentForStock = async (stockCode, postId) => {
               <div className="stock-head-stats num">
                 <span>오늘 뉴스 {todayCounts.news}건</span>
                 <span>·</span>
-                <span>SNS {todayCounts.sns}건</span>
                 <span>·</span>
                 <span>최근 매칭 {selectedStock.lastMatchedAt}</span>
                 <button
@@ -4152,7 +4005,7 @@ const handleDeleteCommentForStock = async (stockCode, postId) => {
                 </div>
               </div>
 
-              {/* [복원 필수] 뉴스 핵심 요약(newsSummary) vs SNS 커뮤니티 요약(snsSummary) 구분 박스 */}
+              {/* 당일 뉴스 요약 */}
               <div className="summary-compare-grid">
                 <div className="summary-compare-box">
                   <div className="summary-compare-head">
@@ -4168,21 +4021,6 @@ const handleDeleteCommentForStock = async (stockCode, postId) => {
                   <p>{currentSummary.newsSummary || '당일 뉴스 요약 준비 중입니다.'}</p>
                 </div>
 
-                <div className="summary-compare-box">
-                  <div className="summary-compare-head">
-                    <span className="source-pill sns">
-                      💬 당일 SNS·커뮤니티 반응 요약 (⚠️ 미검증 참고용)
-                    </span>
-                    <button
-                      type="button"
-                      className="more-link"
-                      onClick={() => setStockTab('sns')}
-                    >
-                      SNS 모아보기 ({todayCounts.sns}건) &gt;
-                    </button>
-                  </div>
-                  <p>{currentSummary.snsSummary || '당일 SNS 반응 요약 준비 중입니다.'}</p>
-                </div>
               </div>
             </div>
 
@@ -4262,13 +4100,8 @@ const handleDeleteCommentForStock = async (stockCode, postId) => {
         )}
 
         {/* [탭 2 & 3] 뉴스 (news) / SNS (sns) 모아보기 및 우측 상세 패널(하단 댓글 포함) */}
-        {(stockTab === 'news' || stockTab === 'sns') && (
+        {stockTab === 'news' && (
           <>
-            {stockTab === 'sns' && (
-              <div className="sns-warning-inline" role="alert">
-                ⚠️ <strong>참고용 · 확인되지 않은 정보 (N-05):</strong> SNS 블로그·카페 게시글은 사실 여부가 검증되지 않았으므로 투자 판단 시 원문과 공시를 반드시 확인해 주세요.
-              </div>
-            )}
 
             {renderFilterControlBar({ showChannel: false, showWatchToggle: false })}
 
@@ -4276,9 +4109,7 @@ const handleDeleteCommentForStock = async (stockCode, postId) => {
               <div className="content-card">
                 <div className="card-header">
                   <div className="card-title">
-                    {stockTab === 'news'
-                      ? `📰 ${selectedStock.name} 매칭 뉴스 모아보기`
-                      : `💬 ${selectedStock.name} 매칭 SNS 모아보기`}{' '}
+                    {`📰 ${selectedStock.name} 매칭 뉴스 모아보기`}{' '}
                     <span className="count-badge num">{stockFeedArticles.length}</span>
                   </div>
                 </div>
@@ -4290,17 +4121,6 @@ const handleDeleteCommentForStock = async (stockCode, postId) => {
                 />
               </div>
 
-              <aside className="panel sticky-detail-panel" aria-label="종목 기사 상세 패널">
-                <ArticleDetail
-                  {...detailSharedProps}
-                  article={activeStockArticle}
-                  onSelectStock={(code) => navigateToStockDetail(code, 'summary')}
-                  onSelectArticle={(artId) => {
-                    setStockTab('sns');
-                    setSelectedArticleId(artId);
-                  }}
-                />
-              </aside>
             </div>
           </>
         )}
@@ -4311,7 +4131,7 @@ const handleDeleteCommentForStock = async (stockCode, postId) => {
             <div className="content-card">
               <div className="card-header">
                 <div className="card-title">
-                  📈 {selectedStock.name} ({selectedStock.code}) 뉴스·SNS 언급량 추이 차트
+                  📈 {selectedStock.name} ({selectedStock.code}) 뉴스 언급량 추이 차트
                 </div>
                 <div className="header-btn-group" role="group" aria-label="언급량 주기 선택">
                   {TREND_PERIODS.map((p) => (
@@ -4431,10 +4251,9 @@ const handleDeleteCommentForStock = async (stockCode, postId) => {
   // - 하단: 내 관심 종목 뉴스·SNS 모아보기 + 우측 상세 패널 (스크롤 하단 댓글 작성 기능 활성화)
   // ============================================================================
   const renderWatchlistView = () => {
-    const activeWatchArticle =
-      watchlistFeedArticles.find((a) => a.id === selectedArticleId) ||
-      watchlistFeedArticles[0] ||
-      null;
+    const activeWatchArticle = selectedArticleId
+      ? articleDetails[selectedArticleId] || watchlistFeedArticles.find((a) => String(a.id) === String(selectedArticleId)) || null
+      : null;
 
     return (
       <div className="wrapper">
@@ -4585,14 +4404,6 @@ const handleDeleteCommentForStock = async (stockCode, postId) => {
             />
           </div>
 
-          <aside className="panel sticky-detail-panel" aria-label="관심종목 기사 상세 및 댓글 패널">
-            <ArticleDetail
-              {...detailSharedProps}
-              article={activeWatchArticle}
-              onSelectStock={(code) => navigateToStockDetail(code, 'summary')}
-              onSelectArticle={(artId) => setSelectedArticleId(artId)}
-            />
-          </aside>
         </div>
       </div>
     );
@@ -4600,6 +4411,25 @@ const handleDeleteCommentForStock = async (stockCode, postId) => {
 
   return (
     <div className="app-shell">
+      {selectedDetailArticle && createPortal(
+        <div
+          className="news-modal-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setSelectedArticleId(null);
+          }}
+        >
+          <div className="news-modal-dialog" role="dialog" aria-modal="true" aria-label="뉴스 기사 상세">
+            <ArticleDetail
+              {...detailSharedProps}
+              article={selectedDetailArticle}
+              onSelectStock={(code) => navigateToStockDetail(code, 'summary')}
+              onSelectArticle={setSelectedArticleId}
+              onClose={() => setSelectedArticleId(null)}
+            />
+          </div>
+        </div>,
+        document.body
+      )}
       {/* 1. 왼쪽 사이드바 네비게이션 (펼침 200px: 브랜드명+메뉴명 / 접힘 64px: .nav-logo 배지+아이콘만 표시) */}
       <nav
         className={`left-nav-menu ${navCollapsed ? 'collapsed' : 'expanded'}`}
@@ -4833,7 +4663,7 @@ const handleDeleteCommentForStock = async (stockCode, postId) => {
       )}
 
       {/* 회원가입·로그인 통합 모달 (F-16, N-03) */}
-      {showAuthModal && (
+      {showAuthModal && createPortal(
         <div className="modal-backdrop" onClick={() => setShowAuthModal(false)}>
           <div
             className="modal-card"
@@ -4939,7 +4769,8 @@ const handleDeleteCommentForStock = async (stockCode, postId) => {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
